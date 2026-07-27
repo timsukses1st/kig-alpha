@@ -56,11 +56,53 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
         if (!insErr) created++;
       }
 
-      setSyncMsg(
-        created > 0
-          ? `${created} project baru dibuat dari SIGMA · ${sigmaProjects.length - toCreate.length} sudah ada.`
-          : `Semua ${sigmaProjects.length} project SIGMA sudah ada di Alpha.`
+      // ---- refresh daftar project Alpha (termasuk yang baru dibuat) ----
+      const { data: freshProjects } = await supabase.from('projects').select('*');
+      const projByName = new Map<string, string>();
+      (freshProjects || []).forEach((p: { id: string; name: string }) =>
+        projByName.set(p.name.trim().toLowerCase(), p.id)
       );
+
+      // ---- sync AKUN dari SIGMA (kombinasi unik account + project) ----
+      let accCreated = 0;
+      try {
+        const { data: feed } = await sigma
+          .from('alpha_tracker_feed')
+          .select('account, project_name, project_unit');
+        if (feed) {
+          // kumpulkan akun unik + project SIGMA-nya (skip unit null/non KC-GME-KIG)
+          const seen = new Map<string, string>(); // account -> project_name
+          for (const row of feed as { account: string | null; project_name: string | null; project_unit: string | null }[]) {
+            if (!row.account) continue;
+            if (!row.project_unit || !['KC', 'GME', 'KIG'].includes(row.project_unit)) continue;
+            const handle = row.account.trim().toLowerCase();
+            if (!seen.has(handle) && row.project_name) seen.set(handle, row.project_name);
+          }
+
+          // akun Alpha yang sudah ada
+          const { data: existAcc } = await supabase.from('accounts').select('handle');
+          const existHandles = new Set(
+            (existAcc || []).map((a: { handle: string }) => a.handle.replace(/^@/, '').trim().toLowerCase())
+          );
+
+          for (const [handle, projName] of Array.from(seen.entries())) {
+            if (existHandles.has(handle)) continue;
+            const projectId = projByName.get(projName.trim().toLowerCase()) || null;
+            const { error: accErr } = await supabase.from('accounts').insert({
+              handle: '@' + handle,
+              label: null,
+              project_id: projectId,
+              is_active: true,
+            });
+            if (!accErr) accCreated++;
+          }
+        }
+      } catch { /* sync akun gagal -> project tetap sukses */ }
+
+      const parts = [];
+      parts.push(created > 0 ? `${created} project baru` : `project sudah lengkap`);
+      parts.push(accCreated > 0 ? `${accCreated} akun baru` : `akun sudah lengkap`);
+      setSyncMsg(`Sync selesai — ${parts.join(' · ')}.`);
       load();
       onAccountsChanged?.();
     } catch {
@@ -228,13 +270,13 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
             <div className="section-head-row" style={{ marginTop: 28 }}>
               <div className="section-title" style={{ margin: 0 }}>Project &amp; Vertical</div>
               <button className="btn" onClick={syncFromSigma} disabled={syncing}>
-                {syncing ? 'Menyinkronkan…' : '⟳ Sync project dari SIGMA'}
+                {syncing ? 'Menyinkronkan…' : '⟳ Sync dari SIGMA'}
               </button>
             </div>
             <p className="section-hint">
               Vertical menentukan siapa yang boleh melihat: orang <b>KC</b> tidak melihat project <b>GME</b>, dan sebaliknya.
-              Pilih <b>KIG</b> untuk project lintas grup. <b>Sync dari SIGMA</b> menyalin project KC/GME/KIG dari SIGMA
-              (lengkap dengan unit-nya) — SIGMA tetap bersih, Alpha jadi ruang kerja.
+              Pilih <b>KIG</b> untuk project lintas grup. <b>Sync dari SIGMA</b> menyalin project <i>dan akun</i> KC/GME/KIG
+              dari SIGMA (lengkap dengan unit &amp; tautan project-nya) — SIGMA tetap bersih, Alpha jadi ruang kerja.
             </p>
             {syncMsg && <p className="sync-msg">{syncMsg}</p>}
             <div className="table-wrap" style={{ marginBottom: 8 }}>
