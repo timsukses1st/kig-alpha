@@ -755,3 +755,8 @@ td a.btn { text-decoration: none; display: inline-block; }
 }
 .atab:hover { color: var(--text); }
 .atab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ================= Fix tombol tabel tidak wrap ================= */
+.table-wrap td .btn,
+.table-wrap td button { white-space: nowrap; }
+.table-wrap td .btn.ghost { padding-left: 10px; padding-right: 10px; }
