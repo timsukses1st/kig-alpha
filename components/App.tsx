@@ -384,7 +384,7 @@ export default function App() {
           <Board profile={profile} accounts={accounts} projects={projects} projectFilter={activeProject} />
         )}
         {view === 'kalender' && <CalendarView accounts={accounts} projectFilter={activeProject} />}
-        {view === 'tracker' && <TrackerView />}
+        {view === 'tracker' && <TrackerView activeProjectName={activeProj ? activeProj.name : null} profile={profile} />}
         {view === 'ads' && (
           <Placeholder
             title="Ads Tracker"

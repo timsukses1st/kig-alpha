@@ -733,3 +733,11 @@ td a.btn { text-decoration: none; display: inline-block; }
   padding: 1px 5px; margin-left: 7px;
 }
 .plat-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; }
+
+/* ================= Sync project SIGMA ================= */
+.section-head-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.sync-msg {
+  font-size: 12.5px; color: var(--accent);
+  background: var(--accent-soft); border: 1px solid var(--accent);
+  border-radius: 8px; padding: 8px 12px; margin: 0 0 10px;
+}

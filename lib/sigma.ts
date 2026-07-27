@@ -28,4 +28,12 @@ export interface SigmaPost {
   shares: number | null;
   reposts: number | null;
   is_manual: boolean | null;
+  project_name: string | null;
+  project_unit: string | null;
+}
+
+export interface SigmaProject {
+  id: string;
+  name: string;
+  unit: string | null;
 }

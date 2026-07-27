@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { initials, VERTICALS, type Account, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
+import { sigma, type SigmaProject } from '@/lib/sigma';
 
 const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
 const TEAMS: (Team | '')[] = ['', 'delta', 'creative', 'distribution', 'ads', 'pm'];
@@ -22,10 +23,51 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
 
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
+
   const [newHandle, setNewHandle] = useState('');
   const [newLabel, setNewLabel] = useState('');
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberTeam, setNewMemberTeam] = useState<Team>('creative');
+
+  const syncFromSigma = async () => {
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      const { data, error } = await sigma.from('alpha_project_feed').select('*');
+      if (error || !data) { setSyncMsg('Gagal membaca project dari SIGMA.'); setSyncing(false); return; }
+      const sigmaProjects = data as SigmaProject[];
+
+      // project Alpha yang sudah ada (by nama, case-insensitive)
+      const existing = new Set(projects.map((p) => p.name.trim().toLowerCase()));
+      const toCreate = sigmaProjects.filter(
+        (sp) => sp.name && !existing.has(sp.name.trim().toLowerCase())
+      );
+
+      let created = 0;
+      for (const sp of toCreate) {
+        const vertical = ['KC', 'GME', 'KIG'].includes(sp.unit || '') ? sp.unit : null;
+        const { error: insErr } = await supabase.from('projects').insert({
+          name: sp.name.trim(),
+          label: null,
+          vertical,
+        });
+        if (!insErr) created++;
+      }
+
+      setSyncMsg(
+        created > 0
+          ? `${created} project baru dibuat dari SIGMA · ${sigmaProjects.length - toCreate.length} sudah ada.`
+          : `Semua ${sigmaProjects.length} project SIGMA sudah ada di Alpha.`
+      );
+      load();
+      onAccountsChanged?.();
+    } catch {
+      setSyncMsg('Gagal terhubung ke SIGMA.');
+    }
+    setSyncing(false);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -183,12 +225,18 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
             </div>
 
             {/* ================= PROJECT ================= */}
-            <div className="section-title" style={{ marginTop: 28 }}>Project &amp; Vertical</div>
+            <div className="section-head-row" style={{ marginTop: 28 }}>
+              <div className="section-title" style={{ margin: 0 }}>Project &amp; Vertical</div>
+              <button className="btn" onClick={syncFromSigma} disabled={syncing}>
+                {syncing ? 'Menyinkronkan…' : '⟳ Sync project dari SIGMA'}
+              </button>
+            </div>
             <p className="section-hint">
               Vertical menentukan siapa yang boleh melihat: orang <b>KC</b> tidak melihat project <b>GME</b>, dan sebaliknya.
-              Pilih <b>KIG</b> untuk project lintas grup. User tanpa vertical (&ldquo;semua&rdquo;) melihat seluruh project.
-              Project baru ditambahkan dari selector di sidebar.
+              Pilih <b>KIG</b> untuk project lintas grup. <b>Sync dari SIGMA</b> menyalin project KC/GME/KIG dari SIGMA
+              (lengkap dengan unit-nya) — SIGMA tetap bersih, Alpha jadi ruang kerja.
             </p>
+            {syncMsg && <p className="sync-msg">{syncMsg}</p>}
             <div className="table-wrap" style={{ marginBottom: 8 }}>
               <table>
                 <thead>

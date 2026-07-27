@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { sigma, type SigmaPost } from '@/lib/sigma';
+import type { Profile } from '@/lib/types';
 
 type SortKey = 'views' | 'likes' | 'recent';
 
@@ -24,7 +25,12 @@ const PLATFORM_COLOR: Record<string, string> = {
   youtube: '#f87171',
 };
 
-export default function TrackerView() {
+interface Props {
+  activeProjectName: string | null;
+  profile: Profile | null;
+}
+
+export default function TrackerView({ activeProjectName, profile }: Props) {
   const [posts, setPosts] = useState<SigmaPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -57,13 +63,25 @@ export default function TrackerView() {
   const platforms = useMemo(() => Array.from(new Set(posts.map((p) => p.platform).filter(Boolean))).sort() as string[], [posts]);
   const categories = useMemo(() => Array.from(new Set(posts.map((p) => p.category).filter(Boolean))).sort() as string[], [posts]);
 
+  const myVertical = profile?.vertical || null;
+  const isPrivileged = profile?.role === 'superadmin';
+
   const filtered = useMemo(() => {
-    let r = posts.filter(
-      (p) =>
+    let r = posts.filter((p) => {
+      // Tembok unit: kalau user punya vertical & bukan superadmin,
+      // hanya post yang unit-nya cocok / KIG / kosong yang boleh tampil.
+      if (myVertical && !isPrivileged) {
+        const u = p.project_unit;
+        if (u && u !== 'KIG' && u !== myVertical) return false;
+      }
+      // Filter per project aktif (by nama project SIGMA)
+      if (activeProjectName && p.project_name !== activeProjectName) return false;
+      return (
         (account === 'all' || p.account === account) &&
         (platform === 'all' || p.platform === platform) &&
         (category === 'all' || p.category === category)
-    );
+      );
+    });
     if (sort === 'views') r = [...r].sort((a, b) => (b.views || 0) - (a.views || 0));
     else if (sort === 'likes') r = [...r].sort((a, b) => (b.likes || 0) - (a.likes || 0));
     else r = [...r].sort((a, b) => new Date(b.upload_date || 0).getTime() - new Date(a.upload_date || 0).getTime());
@@ -89,7 +107,10 @@ export default function TrackerView() {
       <div className="topbar">
         <div style={{ display: 'flex', alignItems: 'baseline' }}>
           <h2>Tracker</h2>
-          <span className="top-note">data SIGMA · read-only</span>
+          <span className="top-note">
+            data SIGMA · read-only
+            {activeProjectName ? ` · ${activeProjectName}` : ''}
+          </span>
         </div>
         <div className="top-actions">
           <button className="btn" onClick={load}>↻ Muat ulang</button>
