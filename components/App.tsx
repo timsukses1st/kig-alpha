@@ -5,6 +5,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import { initials, VERTICALS, type Account, type Profile, type Project, type Vertical } from '@/lib/types';
 import Login from '@/components/Login';
+import { AlphaBadge } from '@/components/Logo';
 import Board from '@/components/Board';
 import LogView from '@/components/LogView';
 import AccessView from '@/components/AccessView';
@@ -259,7 +260,7 @@ export default function App() {
     <div className="app-shell">
       <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
         <div className="brand">
-          <div className="brand-logo">α</div>
+          <AlphaBadge size={30} />
           {!collapsed && (
             <div>
               <h1>Alpha</h1>

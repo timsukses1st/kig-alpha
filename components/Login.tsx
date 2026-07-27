@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { AlphaMark } from '@/components/Logo';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -21,7 +22,7 @@ export default function Login() {
     <div className="login-wrap">
       <div className="login-card">
         <div className="login-brand">
-          <div className="brand-logo">α</div>
+          <AlphaMark size={34} />
           <h1 style={{ fontSize: 20, fontWeight: 700 }}>Alpha</h1>
         </div>
         <p className="sub">CONTENT LAUNCH SYSTEM · INTERNAL KIG</p>
