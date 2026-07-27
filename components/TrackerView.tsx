@@ -43,11 +43,12 @@ export default function TrackerView({ activeProjectName, profile }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
-    const { data, error: err } = await sigma
-      .from('alpha_tracker_feed')
-      .select('*')
+    let q = sigma.from('alpha_tracker_feed').select('*');
+    // Filter project langsung di query SIGMA (bukan dipotong limit di browser)
+    if (activeProjectName) q = q.eq('project_name', activeProjectName);
+    const { data, error: err } = await q
       .order('upload_date', { ascending: false })
-      .limit(1000);
+      .limit(2000);
     if (err) {
       setError('Gagal memuat data SIGMA. Cek koneksi / konfigurasi.');
       setLoading(false);
@@ -55,7 +56,7 @@ export default function TrackerView({ activeProjectName, profile }: Props) {
     }
     setPosts((data as SigmaPost[]) || []);
     setLoading(false);
-  }, []);
+  }, [activeProjectName]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -74,8 +75,6 @@ export default function TrackerView({ activeProjectName, profile }: Props) {
         const u = p.project_unit;
         if (u && u !== 'KIG' && u !== myVertical) return false;
       }
-      // Filter per project aktif (by nama project SIGMA)
-      if (activeProjectName && p.project_name !== activeProjectName) return false;
       return (
         (account === 'all' || p.account === account) &&
         (platform === 'all' || p.platform === platform) &&

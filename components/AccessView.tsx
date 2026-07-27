@@ -1,213 +1,405 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { sigma, type SigmaPost } from '@/lib/sigma';
-import type { Profile } from '@/lib/types';
+import { useCallback, useEffect, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { initials, VERTICALS, type Account, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
+import { sigma, type SigmaProject } from '@/lib/sigma';
 
-type SortKey = 'views' | 'likes' | 'recent';
-
-const fmtNum = (n: number | null) => {
-  if (n === null || n === undefined) return '—';
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace('.0', '') + 'jt';
-  if (n >= 1_000) return (n / 1_000).toFixed(1).replace('.0', '') + 'rb';
-  return String(n);
-};
-
-const fmtDate = (iso: string | null) => {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: '2-digit' });
-};
-
-const PLATFORM_COLOR: Record<string, string> = {
-  instagram: '#e0338a',
-  tiktok: '#38bdf8',
-  threads: '#a78bfa',
-  youtube: '#f87171',
-};
+const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
+const TEAMS: (Team | '')[] = ['', 'delta', 'creative', 'distribution', 'ads', 'pm'];
+const MEMBER_TEAMS: Team[] = ['creative', 'distribution', 'ads', 'delta'];
 
 interface Props {
-  activeProjectName: string | null;
-  profile: Profile | null;
+  selfId: string;
+  onAccountsChanged?: () => void;
 }
 
-export default function TrackerView({ activeProjectName, profile }: Props) {
-  const [posts, setPosts] = useState<SigmaPost[]>([]);
+export default function AccessView({ selfId, onAccountsChanged }: Props) {
+  const [users, setUsers] = useState<Profile[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [newAccProject, setNewAccProject] = useState('');
+  const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [account, setAccount] = useState('all');
-  const [platform, setPlatform] = useState('all');
-  const [category, setCategory] = useState('all');
-  const [sort, setSort] = useState<SortKey>('views');
-  const [limit, setLimit] = useState(50);
+  const [msg, setMsg] = useState('');
+
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
+
+  const [newHandle, setNewHandle] = useState('');
+  const [newLabel, setNewLabel] = useState('');
+  const [newMemberName, setNewMemberName] = useState('');
+  const [newMemberTeam, setNewMemberTeam] = useState<Team>('creative');
+
+  const syncFromSigma = async () => {
+    setSyncing(true);
+    setSyncMsg('');
+    try {
+      const { data, error } = await sigma.from('alpha_project_feed').select('*');
+      if (error || !data) { setSyncMsg('Gagal membaca project dari SIGMA.'); setSyncing(false); return; }
+      const sigmaProjects = data as SigmaProject[];
+
+      // project Alpha yang sudah ada (by nama, case-insensitive)
+      const existing = new Set(projects.map((p) => p.name.trim().toLowerCase()));
+      const toCreate = sigmaProjects.filter(
+        (sp) => sp.name && !existing.has(sp.name.trim().toLowerCase())
+      );
+
+      let created = 0;
+      for (const sp of toCreate) {
+        const vertical = ['KC', 'GME', 'KIG'].includes(sp.unit || '') ? sp.unit : null;
+        const { error: insErr } = await supabase.from('projects').insert({
+          name: sp.name.trim(),
+          label: null,
+          vertical,
+        });
+        if (!insErr) created++;
+      }
+
+      // ---- refresh daftar project Alpha (termasuk yang baru dibuat) ----
+      const { data: freshProjects } = await supabase.from('projects').select('*');
+      const projByName = new Map<string, string>();
+      (freshProjects || []).forEach((p: { id: string; name: string }) =>
+        projByName.set(p.name.trim().toLowerCase(), p.id)
+      );
+
+      // ---- sync AKUN dari SIGMA (kombinasi unik account + project) ----
+      let accCreated = 0;
+      try {
+        const { data: feed } = await sigma
+          .from('alpha_tracker_feed')
+          .select('account, project_name, project_unit');
+        if (feed) {
+          // kumpulkan akun unik + project SIGMA-nya (skip unit null/non KC-GME-KIG)
+          const seen = new Map<string, string>(); // account -> project_name
+          for (const row of feed as { account: string | null; project_name: string | null; project_unit: string | null }[]) {
+            if (!row.account) continue;
+            if (!row.project_unit || !['KC', 'GME', 'KIG'].includes(row.project_unit)) continue;
+            const handle = row.account.trim().toLowerCase();
+            if (!seen.has(handle) && row.project_name) seen.set(handle, row.project_name);
+          }
+
+          // akun Alpha yang sudah ada
+          const { data: existAcc } = await supabase.from('accounts').select('handle');
+          const existHandles = new Set(
+            (existAcc || []).map((a: { handle: string }) => a.handle.replace(/^@/, '').trim().toLowerCase())
+          );
+
+          for (const [handle, projName] of Array.from(seen.entries())) {
+            if (existHandles.has(handle)) continue;
+            const projectId = projByName.get(projName.trim().toLowerCase()) || null;
+            const { error: accErr } = await supabase.from('accounts').insert({
+              handle: '@' + handle,
+              label: null,
+              project_id: projectId,
+              is_active: true,
+            });
+            if (!accErr) accCreated++;
+          }
+        }
+      } catch { /* sync akun gagal -> project tetap sukses */ }
+
+      const parts = [];
+      parts.push(created > 0 ? `${created} project baru` : `project sudah lengkap`);
+      parts.push(accCreated > 0 ? `${accCreated} akun baru` : `akun sudah lengkap`);
+      setSyncMsg(`Sync selesai — ${parts.join(' · ')}.`);
+      load();
+      onAccountsChanged?.();
+    } catch {
+      setSyncMsg('Gagal terhubung ke SIGMA.');
+    }
+    setSyncing(false);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError('');
-    let q = sigma.from('alpha_tracker_feed').select('*');
-    // Filter project langsung di query SIGMA (bukan dipotong limit di browser)
-    if (activeProjectName) q = q.eq('project_name', activeProjectName);
-    const { data, error: err } = await q
-      .order('upload_date', { ascending: false })
-      .limit(2000);
-    if (err) {
-      setError('Gagal memuat data SIGMA. Cek koneksi / konfigurasi.');
-      setLoading(false);
-      return;
-    }
-    setPosts((data as SigmaPost[]) || []);
+    const [u, a, m, pr] = await Promise.all([
+      supabase.from('profiles').select('*').order('created_at'),
+      supabase.from('accounts').select('*').order('handle'),
+      supabase.from('team_members').select('*').order('team').order('name'),
+      supabase.from('projects').select('*').order('name'),
+    ]);
+    setUsers((u.data as Profile[]) || []);
+    setAccounts((a.data as Account[]) || []);
+    setMembers((m.data as TeamMember[]) || []);
+    setProjects((pr.data as Project[]) || []);
     setLoading(false);
-  }, [activeProjectName]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  const accounts = useMemo(() => Array.from(new Set(posts.map((p) => p.account).filter(Boolean))).sort() as string[], [posts]);
-  const platforms = useMemo(() => Array.from(new Set(posts.map((p) => p.platform).filter(Boolean))).sort() as string[], [posts]);
-  const categories = useMemo(() => Array.from(new Set(posts.map((p) => p.category).filter(Boolean))).sort() as string[], [posts]);
+  const flash = (m: string) => setMsg(m);
 
-  const myVertical = profile?.vertical || null;
-  const isPrivileged = profile?.role === 'superadmin';
+  const updateUser = async (id: string, patch: Partial<Profile>) => {
+    setMsg('');
+    const { error } = await supabase.from('profiles').update(patch).eq('id', id);
+    flash(error ? 'Gagal menyimpan perubahan akses.' : 'Perubahan tersimpan.');
+    load();
+  };
 
-  const filtered = useMemo(() => {
-    let r = posts.filter((p) => {
-      // Tembok unit: kalau user punya vertical & bukan superadmin,
-      // hanya post yang unit-nya cocok / KIG / kosong yang boleh tampil.
-      if (myVertical && !isPrivileged) {
-        const u = p.project_unit;
-        if (u && u !== 'KIG' && u !== myVertical) return false;
-      }
-      return (
-        (account === 'all' || p.account === account) &&
-        (platform === 'all' || p.platform === platform) &&
-        (category === 'all' || p.category === category)
-      );
+  // ---------- Akun ----------
+  const addAccount = async () => {
+    const handle = newHandle.trim();
+    if (!handle) return;
+    setMsg('');
+    const { error } = await supabase.from('accounts').insert({
+      handle: handle.startsWith('@') ? handle : '@' + handle,
+      label: newLabel.trim() || null,
+      project_id: newAccProject || null,
     });
-    if (sort === 'views') r = [...r].sort((a, b) => (b.views || 0) - (a.views || 0));
-    else if (sort === 'likes') r = [...r].sort((a, b) => (b.likes || 0) - (a.likes || 0));
-    else r = [...r].sort((a, b) => new Date(b.upload_date || 0).getTime() - new Date(a.upload_date || 0).getTime());
-    return r;
-  }, [posts, account, platform, category, sort]);
+    if (error) { flash('Gagal menambah akun (handle mungkin sudah ada).'); return; }
+    setNewHandle(''); setNewLabel('');
+    flash('Akun ditambahkan.');
+    load(); onAccountsChanged?.();
+  };
 
-  const totals = useMemo(() => {
-    const sum = (k: keyof SigmaPost) => filtered.reduce((a, p) => a + (Number(p[k]) || 0), 0);
-    const views = sum('views');
-    const eng = sum('likes') + sum('comments') + sum('saves') + sum('shares');
-    return {
-      count: filtered.length,
-      views,
-      likes: sum('likes'),
-      engRate: views ? ((eng / views) * 100).toFixed(1) + '%' : '—',
-    };
-  }, [filtered]);
+  const toggleAccount = async (a: Account) => {
+    setMsg('');
+    const { error } = await supabase.from('accounts').update({ is_active: !a.is_active }).eq('id', a.id);
+    flash(error ? 'Gagal mengubah status akun.' : 'Status akun diubah.');
+    load(); onAccountsChanged?.();
+  };
 
-  const shown = filtered.slice(0, limit);
+  const deleteAccount = async (a: Account) => {
+    if (!window.confirm(`Hapus akun ${a.handle}?`)) return;
+    setMsg('');
+    const { error } = await supabase.from('accounts').delete().eq('id', a.id);
+    if (error) { flash('Tidak bisa dihapus — akun sudah dipakai konten. Gunakan Nonaktif.'); return; }
+    flash('Akun dihapus.');
+    load(); onAccountsChanged?.();
+  };
+
+  // ---------- Anggota tim (PIC) ----------
+  const addMember = async () => {
+    const name = newMemberName.trim();
+    if (!name) return;
+    setMsg('');
+    const { error } = await supabase.from('team_members').insert({ name, team: newMemberTeam });
+    if (error) { flash('Gagal menambah anggota.'); return; }
+    setNewMemberName('');
+    flash('Anggota ditambahkan.');
+    load();
+  };
+
+  const toggleMember = async (m: TeamMember) => {
+    setMsg('');
+    const { error } = await supabase.from('team_members').update({ is_active: !m.is_active }).eq('id', m.id);
+    flash(error ? 'Gagal mengubah status anggota.' : 'Status anggota diubah.');
+    load();
+  };
+
+  const deleteMember = async (m: TeamMember) => {
+    if (!window.confirm(`Hapus ${m.name} dari daftar PIC?`)) return;
+    setMsg('');
+    const { error } = await supabase.from('team_members').delete().eq('id', m.id);
+    if (error) { flash('Tidak bisa dihapus — masih jadi PIC konten. Gunakan Nonaktif.'); return; }
+    flash('Anggota dihapus.');
+    load();
+  };
 
   return (
     <>
       <div className="topbar">
         <div style={{ display: 'flex', alignItems: 'baseline' }}>
-          <h2>Tracker</h2>
-          <span className="top-note">
-            data SIGMA · read-only
-            {activeProjectName ? ` · ${activeProjectName}` : ''}
-          </span>
-        </div>
-        <div className="top-actions">
-          <button className="btn" onClick={load}>↻ Muat ulang</button>
+          <h2>Kelola Akses</h2>
+          <span className="top-note">khusus superadmin</span>
         </div>
       </div>
-
       <div className="content-area">
-        {error ? (
-          <div className="table-wrap"><p className="empty">{error}</p></div>
-        ) : loading ? (
-          <div className="table-wrap"><p className="empty">Memuat data dari SIGMA…</p></div>
+        {loading ? (
+          <p className="empty">Memuat…</p>
         ) : (
           <>
-            <div className="kpi-row">
-              <div className="kpi"><div className="kpi-label">Post</div><div className="kpi-value">{totals.count}</div></div>
-              <div className="kpi"><div className="kpi-label">Total views</div><div className="kpi-value">{fmtNum(totals.views)}</div></div>
-              <div className="kpi"><div className="kpi-label">Total likes</div><div className="kpi-value">{fmtNum(totals.likes)}</div></div>
-              <div className="kpi"><div className="kpi-label">Engagement rate</div><div className="kpi-value" style={{ color: 'var(--accent)' }}>{totals.engRate}</div></div>
-            </div>
-
-            <div className="tracker-filters">
-              <select value={account} onChange={(e) => setAccount(e.target.value)}>
-                <option value="all">Semua akun</option>
-                {accounts.map((a) => <option key={a} value={a}>{a}</option>)}
-              </select>
-              <select value={platform} onChange={(e) => setPlatform(e.target.value)}>
-                <option value="all">Semua platform</option>
-                {platforms.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-              <select value={category} onChange={(e) => setCategory(e.target.value)}>
-                <option value="all">Semua kategori</option>
-                {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-                <option value="views">Urut: Views terbanyak</option>
-                <option value="likes">Urut: Likes terbanyak</option>
-                <option value="recent">Urut: Terbaru</option>
-              </select>
-            </div>
-
+            {/* ================= USER LOGIN ================= */}
+            <div className="section-title">User Login</div>
+            <p className="section-hint">
+              Tambah user baru: Supabase Dashboard → Authentication → Add user — otomatis muncul di sini.
+            </p>
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr>
-                    <th>Konten</th>
-                    <th>Akun</th>
-                    <th>Views</th>
-                    <th>Likes</th>
-                    <th>Komentar</th>
-                    <th>Saves</th>
-                    <th>Shares</th>
-                    <th>Upload</th>
-                  </tr>
+                  <tr><th>User</th><th>Role</th><th>Team</th><th>Vertical</th><th>Status</th></tr>
                 </thead>
                 <tbody>
-                  {shown.map((p) => (
-                    <tr key={p.id} className="tracker-row" onClick={() => p.url && window.open(p.url, '_blank', 'noopener')}>
+                  {users.map((u) => (
+                    <tr key={u.id}>
                       <td>
-                        <div className="tracker-post">
-                          {p.cover_url
-                            ? <img className="tracker-thumb" src={p.cover_url} alt="" loading="lazy" />
-                            : <div className="tracker-thumb ph" />}
-                          <div style={{ minWidth: 0 }}>
-                            <div className="tracker-cat">
-                              {p.category || '—'}
-                              {p.is_manual && <span className="manual-tag">manual</span>}
-                            </div>
-                            <div className="sub" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {p.url || '—'}
-                            </div>
-                          </div>
-                        </div>
+                        <span className="row-avatar">{initials(u.full_name || u.email)}</span>
+                        <b>{u.full_name || '(tanpa nama)'}</b>
+                        <div className="sub" style={{ marginLeft: 40 }}>{u.email}</div>
                       </td>
                       <td>
-                        <span className="plat-dot" style={{ background: PLATFORM_COLOR[p.platform || ''] || 'var(--text-3)' }} />
-                        {p.account || '—'}
+                        <select
+                          value={u.role}
+                          disabled={u.id === selfId}
+                          style={u.role === 'superadmin' ? { color: 'var(--st-review)', borderColor: 'var(--st-review)' } :
+                            u.role === 'manager' ? { color: 'var(--accent)', borderColor: 'var(--accent)' } : undefined}
+                          onChange={(e) => updateUser(u.id, { role: e.target.value as Role })}
+                        >
+                          {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                        </select>
                       </td>
-                      <td><b>{fmtNum(p.views)}</b></td>
-                      <td>{fmtNum(p.likes)}</td>
-                      <td>{fmtNum(p.comments)}</td>
-                      <td>{fmtNum(p.saves)}</td>
-                      <td>{fmtNum(p.shares)}</td>
-                      <td className="sub">{fmtDate(p.upload_date)}</td>
+                      <td>
+                        <select value={u.team || ''} onChange={(e) => updateUser(u.id, { team: (e.target.value || null) as Team | null })}>
+                          {TEAMS.map((t) => <option key={t} value={t}>{t || '—'}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          value={u.vertical || ''}
+                          disabled={u.id === selfId}
+                          onChange={(e) => updateUser(u.id, { vertical: e.target.value || null })}
+                        >
+                          <option value="">semua</option>
+                          {VERTICALS.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}
+                        </select>
+                      </td>
+                      <td>
+                        <button className="btn ghost" disabled={u.id === selfId} onClick={() => updateUser(u.id, { is_active: !u.is_active })}>
+                          <span className="status-dot" style={{ background: u.is_active ? 'var(--green)' : 'var(--text-3)' }} />
+                          {u.is_active ? 'Aktif' : 'Nonaktif'}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {filtered.length > limit && (
-              <div style={{ textAlign: 'center', marginTop: 14 }}>
-                <button className="btn" onClick={() => setLimit(limit + 50)}>Tampilkan lebih banyak ({filtered.length - limit} lagi)</button>
-              </div>
-            )}
-            <p className="cal-legend">
-              Data ditarik langsung dari SIGMA (read-only). Scraping &amp; input tetap dilakukan di SIGMA — Alpha hanya menampilkan.
+
+            {/* ================= PROJECT ================= */}
+            <div className="section-head-row" style={{ marginTop: 28 }}>
+              <div className="section-title" style={{ margin: 0 }}>Project &amp; Vertical</div>
+              <button className="btn" onClick={syncFromSigma} disabled={syncing}>
+                {syncing ? 'Menyinkronkan…' : '⟳ Sync dari SIGMA'}
+              </button>
+            </div>
+            <p className="section-hint">
+              Vertical menentukan siapa yang boleh melihat: orang <b>KC</b> tidak melihat project <b>GME</b>, dan sebaliknya.
+              Pilih <b>KIG</b> untuk project lintas grup. <b>Sync dari SIGMA</b> menyalin project <i>dan akun</i> KC/GME/KIG
+              dari SIGMA (lengkap dengan unit &amp; tautan project-nya) — SIGMA tetap bersih, Alpha jadi ruang kerja.
             </p>
+            {syncMsg && <p className="sync-msg">{syncMsg}</p>}
+            <div className="table-wrap" style={{ marginBottom: 8 }}>
+              <table>
+                <thead>
+                  <tr><th>Project</th><th>Vertical</th><th>Label</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {projects.map((pr) => (
+                    <tr key={pr.id}>
+                      <td><b>{pr.name}</b></td>
+                      <td>
+                        <select
+                          value={pr.vertical || ''}
+                          onChange={(e) => supabase.from('projects').update({ vertical: e.target.value || null }).eq('id', pr.id).then(() => { load(); onAccountsChanged?.(); })}
+                        >
+                          <option value="">—</option>
+                          {VERTICALS.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}
+                        </select>
+                      </td>
+                      <td>{pr.label || '—'}</td>
+                      <td>
+                        <button
+                          className="btn ghost"
+                          onClick={() => supabase.from('projects').update({ is_active: !pr.is_active }).eq('id', pr.id).then(() => { load(); onAccountsChanged?.(); })}
+                        >
+                          <span className="status-dot" style={{ background: pr.is_active ? 'var(--green)' : 'var(--text-3)' }} />
+                          {pr.is_active ? 'Aktif' : 'Nonaktif'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                  {projects.length === 0 && <tr><td colSpan={4} className="empty">Belum ada project.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ================= AKUN MEDIA ================= */}
+            <div className="section-title" style={{ marginTop: 28 }}>Akun Media</div>
+            <p className="section-hint">Akun media milik tiap project. Akun yang sudah dipakai konten tidak bisa dihapus — nonaktifkan saja. Project ditambah dari selector di sidebar.</p>
+            <div className="add-row">
+              <input placeholder="@handle akun" value={newHandle} onChange={(e) => setNewHandle(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addAccount()} />
+              <input placeholder="Label (opsional) — mis. Media film" value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addAccount()} />
+              <select value={newAccProject} onChange={(e) => setNewAccProject(e.target.value)}>
+                <option value="">— project —</option>
+                {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+              </select>
+              <button className="btn primary" onClick={addAccount} disabled={!newHandle.trim()}>+ Tambah</button>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Akun</th><th>Project</th><th>Label</th><th>Status</th><th style={{ width: 90 }}></th></tr>
+                </thead>
+                <tbody>
+                  {accounts.map((a) => (
+                    <tr key={a.id}>
+                      <td><b>{a.handle}</b></td>
+                      <td>
+                        <select
+                          value={a.project_id || ''}
+                          onChange={(e) => supabase.from('accounts').update({ project_id: e.target.value || null }).eq('id', a.id).then(() => { load(); onAccountsChanged?.(); })}
+                        >
+                          <option value="">—</option>
+                          {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+                        </select>
+                      </td>
+                      <td>{a.label || '—'}</td>
+                      <td>
+                        <button className="btn ghost" onClick={() => toggleAccount(a)}>
+                          <span className="status-dot" style={{ background: a.is_active ? 'var(--green)' : 'var(--text-3)' }} />
+                          {a.is_active ? 'Aktif' : 'Nonaktif'}
+                        </button>
+                      </td>
+                      <td><button className="btn ghost danger-text" onClick={() => deleteAccount(a)}>Hapus</button></td>
+                    </tr>
+                  ))}
+                  {accounts.length === 0 && <tr><td colSpan={5} className="empty">Belum ada akun.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+
+            {/* ================= ANGGOTA TIM (PIC) ================= */}
+            <div className="section-title" style={{ marginTop: 28 }}>Anggota Tim (opsi PIC)</div>
+            <p className="section-hint">
+              Opsi dropdown PIC di form konten — tidak wajib punya akun login. Anggota yang masih jadi PIC konten tidak bisa dihapus — nonaktifkan saja.
+            </p>
+            <div className="add-row">
+              <input placeholder="Nama anggota" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addMember()} />
+              <select value={newMemberTeam} onChange={(e) => setNewMemberTeam(e.target.value as Team)}>
+                {MEMBER_TEAMS.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <button className="btn primary" onClick={addMember} disabled={!newMemberName.trim()}>+ Tambah</button>
+            </div>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>Nama</th><th>Tim</th><th>Status</th><th style={{ width: 90 }}></th></tr>
+                </thead>
+                <tbody>
+                  {members.map((m) => (
+                    <tr key={m.id}>
+                      <td><span className="row-avatar">{initials(m.name)}</span><b>{m.name}</b></td>
+                      <td>{m.team}</td>
+                      <td>
+                        <button className="btn ghost" onClick={() => toggleMember(m)}>
+                          <span className="status-dot" style={{ background: m.is_active ? 'var(--green)' : 'var(--text-3)' }} />
+                          {m.is_active ? 'Aktif' : 'Nonaktif'}
+                        </button>
+                      </td>
+                      <td><button className="btn ghost danger-text" onClick={() => deleteMember(m)}>Hapus</button></td>
+                    </tr>
+                  ))}
+                  {members.length === 0 && <tr><td colSpan={4} className="empty">Belum ada anggota.</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
+        {msg && <p style={{ marginTop: 12, fontSize: 12.5, color: 'var(--text-2)' }}>{msg}</p>}
       </div>
     </>
   );
