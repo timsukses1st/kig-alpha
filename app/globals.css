@@ -760,3 +760,15 @@ td a.btn { text-decoration: none; display: inline-block; }
 .table-wrap td .btn,
 .table-wrap td button { white-space: nowrap; }
 .table-wrap td .btn.ghost { padding-left: 10px; padding-right: 10px; }
+
+/* ================= Tambah user ================= */
+.user-add {
+  display: grid; grid-template-columns: 1.4fr 1fr 1.2fr auto auto auto auto;
+  gap: 8px; margin-bottom: 18px; align-items: center;
+}
+.user-add input, .user-add select {
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 11px; font-size: 12.5px; outline: none; width: 100%;
+}
+.user-add input:focus, .user-add select:focus { border-color: var(--accent); }
+@media (max-width: 1000px) { .user-add { grid-template-columns: 1fr 1fr; } }

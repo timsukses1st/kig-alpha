@@ -26,6 +26,55 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   const [msg, setMsg] = useState('');
 
   const [tab, setTab] = useState<'user' | 'project' | 'akun' | 'tim'>('user');
+  const [nu, setNu] = useState({ email: '', full_name: '', password: '', role: 'tim', team: '', vertical: '' });
+  const [uBusy, setUBusy] = useState(false);
+
+  const callUserApi = async (payload: Record<string, unknown>) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { flash('Sesi tidak ditemukan, login ulang.'); return null; }
+    const r = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + session.access_token },
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) { flash(d.error || 'Gagal.'); return null; }
+    return d;
+  };
+
+  const createUser = async () => {
+    if (!nu.email.trim() || nu.password.length < 6) { flash('Email wajib & password min. 6 karakter.'); return; }
+    setUBusy(true);
+    const d = await callUserApi({
+      action: 'create',
+      email: nu.email.trim(),
+      password: nu.password,
+      full_name: nu.full_name.trim(),
+      role: nu.role,
+      team: nu.team || null,
+      vertical: nu.vertical || null,
+    });
+    setUBusy(false);
+    if (d) {
+      flash('User dibuat. Minta orangnya login lalu ganti password.');
+      setNu({ email: '', full_name: '', password: '', role: 'tim', team: '', vertical: '' });
+      load();
+    }
+  };
+
+  const resetPw = async (u: Profile) => {
+    const pw = window.prompt(`Password baru untuk ${u.email} (min. 6 karakter):`);
+    if (!pw) return;
+    if (pw.length < 6) { flash('Password minimal 6 karakter.'); return; }
+    const d = await callUserApi({ action: 'reset_password', user_id: u.id, password: pw });
+    if (d) flash('Password direset.');
+  };
+
+  const deleteUser = async (u: Profile) => {
+    if (!window.confirm(`Hapus user ${u.email}? Tindakan ini permanen.`)) return;
+    const d = await callUserApi({ action: 'delete', user_id: u.id });
+    if (d) { flash('User dihapus.'); load(); }
+  };
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
 
@@ -232,12 +281,31 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
             {/* ================= USER LOGIN ================= */}
             <div className="section-title">User Login</div>
             <p className="section-hint">
-              Tambah user baru: Supabase Dashboard → Authentication → Add user — otomatis muncul di sini.
+              Tambah user langsung di sini. Akun dibuat dengan password sementara — minta orangnya login lalu ganti lewat <b>Reset PW</b>.
             </p>
+            <div className="user-add">
+              <input placeholder="email@perusahaan.com" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} />
+              <input placeholder="Nama tampilan" value={nu.full_name} onChange={(e) => setNu({ ...nu, full_name: e.target.value })} />
+              <input type="text" placeholder="Password sementara (min 6)" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} />
+              <select value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })}>
+                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+              <select value={nu.team} onChange={(e) => setNu({ ...nu, team: e.target.value })}>
+                <option value="">— team —</option>
+                {['delta', 'creative', 'distribution', 'ads', 'pm'].map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select value={nu.vertical} onChange={(e) => setNu({ ...nu, vertical: e.target.value })}>
+                <option value="">vertical: semua</option>
+                {VERTICALS.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}
+              </select>
+              <button className="btn primary" onClick={createUser} disabled={uBusy || !nu.email.trim() || nu.password.length < 6}>
+                {uBusy ? 'Membuat…' : '+ Tambah user'}
+              </button>
+            </div>
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>User</th><th>Role</th><th>Team</th><th>Vertical</th><th>Status</th></tr>
+                  <tr><th>User</th><th>Role</th><th>Team</th><th>Vertical</th><th>Status</th><th style={{ width: 150 }}></th></tr>
                 </thead>
                 <tbody>
                   {users.map((u) => (
@@ -278,6 +346,21 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                           <span className="status-dot" style={{ background: u.is_active ? 'var(--green)' : 'var(--text-3)' }} />
                           {u.is_active ? 'Aktif' : 'Nonaktif'}
                         </button>
+                      </td>
+                      <td>
+                        <div className="recap-actions">
+                          <button className="btn act" onClick={() => resetPw(u)}>Reset PW</button>
+                          {u.id !== selfId && (
+                            <button className="icon-del" title="Hapus user" onClick={() => deleteUser(u)}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                                <path d="M10 11v6M14 11v6" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
