@@ -28,6 +28,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   const [tab, setTab] = useState<'user' | 'project' | 'akun' | 'tim'>('user');
   const [nu, setNu] = useState({ email: '', full_name: '', password: '', role: 'tim', team: '', vertical: '' });
   const [uBusy, setUBusy] = useState(false);
+  const [userModal, setUserModal] = useState(false);
 
   const callUserApi = async (payload: Record<string, unknown>) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -58,6 +59,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
     if (d) {
       flash('User dibuat. Minta orangnya login lalu ganti password.');
       setNu({ email: '', full_name: '', password: '', role: 'tim', team: '', vertical: '' });
+      setUserModal(false);
       load();
     }
   };
@@ -279,29 +281,15 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
 
             {tab === 'user' && (<>
             {/* ================= USER LOGIN ================= */}
-            <div className="section-title">User Login</div>
-            <p className="section-hint">
-              Tambah user langsung di sini. Akun dibuat dengan password sementara — minta orangnya login lalu ganti lewat <b>Reset PW</b>.
-            </p>
-            <div className="user-add">
-              <input placeholder="email@perusahaan.com" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} />
-              <input placeholder="Nama tampilan" value={nu.full_name} onChange={(e) => setNu({ ...nu, full_name: e.target.value })} />
-              <input type="text" placeholder="Password sementara (min 6)" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} />
-              <select value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })}>
-                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-              <select value={nu.team} onChange={(e) => setNu({ ...nu, team: e.target.value })}>
-                <option value="">— team —</option>
-                {['delta', 'creative', 'distribution', 'ads', 'pm'].map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <select value={nu.vertical} onChange={(e) => setNu({ ...nu, vertical: e.target.value })}>
-                <option value="">vertical: semua</option>
-                {VERTICALS.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}
-              </select>
-              <button className="btn primary" onClick={createUser} disabled={uBusy || !nu.email.trim() || nu.password.length < 6}>
-                {uBusy ? 'Membuat…' : '+ Tambah user'}
+            <div className="section-head-row">
+              <div className="section-title" style={{ margin: 0 }}>User Login</div>
+              <button className="btn primary" onClick={() => { setUserModal(true); setNu({ email: '', full_name: '', password: '', role: 'tim', team: '', vertical: '' }); }}>
+                + Tambah user
               </button>
             </div>
+            <p className="section-hint">
+              Akun dibuat dengan password sementara — minta orangnya login lalu ganti lewat <b>Reset PW</b>.
+            </p>
             <div className="table-wrap">
               <table>
                 <thead>
@@ -517,6 +505,68 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
         )}
         {msg && <p style={{ marginTop: 12, fontSize: 12.5, color: 'var(--text-2)' }}>{msg}</p>}
       </div>
+
+      {userModal && (
+        <div className="overlay">
+          <div className="modal" style={{ maxWidth: 440 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--accent)' }} />
+                  User baru
+                </div>
+                <div className="modal-title">Tambah User</div>
+                <div className="modal-sub">Akun dibuat dengan password sementara. Minta orangnya ganti lewat Reset PW.</div>
+              </div>
+              <button className="btn ghost modal-close" onClick={() => setUserModal(false)}>✕</button>
+            </div>
+            <div style={{ padding: '18px 24px' }}>
+              <div className="field">
+                <label>Email</label>
+                <input placeholder="email@perusahaan.com" value={nu.email} onChange={(e) => setNu({ ...nu, email: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>Nama tampilan</label>
+                <input placeholder="mis. Bagus" value={nu.full_name} onChange={(e) => setNu({ ...nu, full_name: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>Password sementara (min. 6)</label>
+                <input type="text" placeholder="••••••" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} />
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label>Role</label>
+                  <select value={nu.role} onChange={(e) => setNu({ ...nu, role: e.target.value })}>
+                    {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Team</label>
+                  <select value={nu.team} onChange={(e) => setNu({ ...nu, team: e.target.value })}>
+                    <option value="">—</option>
+                    {['delta', 'creative', 'distribution', 'ads', 'pm'].map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Vertical</label>
+                  <select value={nu.vertical} onChange={(e) => setNu({ ...nu, vertical: e.target.value })}>
+                    <option value="">semua</option>
+                    {VERTICALS.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" onClick={() => setUserModal(false)} disabled={uBusy}>Batal</button>
+                <button className="btn primary" onClick={createUser} disabled={uBusy || !nu.email.trim() || nu.password.length < 6}>
+                  {uBusy ? 'Membuat…' : 'Tambah user'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
