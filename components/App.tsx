@@ -13,6 +13,7 @@ import CalendarView from '@/components/CalendarView';
 import ReportView from '@/components/ReportView';
 import RecapView from '@/components/RecapView';
 import ComplaintView from '@/components/ComplaintView';
+import TrackerView from '@/components/TrackerView';
 
 type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'laporan' | 'komplain' | 'log' | 'access';
 
@@ -383,12 +384,7 @@ export default function App() {
           <Board profile={profile} accounts={accounts} projects={projects} projectFilter={activeProject} />
         )}
         {view === 'kalender' && <CalendarView accounts={accounts} projectFilter={activeProject} />}
-        {view === 'tracker' && (
-          <Placeholder
-            title="Tracker Distribution"
-            desc="Tracker hashtag, buzzer, dan community seeding per konten. Menyusul di fase berikutnya sesuai blueprint."
-          />
-        )}
+        {view === 'tracker' && <TrackerView />}
         {view === 'ads' && (
           <Placeholder
             title="Ads Tracker"

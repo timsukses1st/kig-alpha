@@ -710,3 +710,26 @@ td a.btn { text-decoration: none; display: inline-block; }
   border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; overflow-wrap: anywhere;
 }
 .thread-box { max-height: 300px; overflow-y: auto; }
+
+/* ================= Tracker SIGMA ================= */
+.tracker-filters { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.tracker-filters select {
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 11px; font-size: 12.5px; outline: none;
+}
+.tracker-filters select:focus { border-color: var(--accent); }
+.tracker-row { cursor: pointer; transition: background .12s; }
+.tracker-row:hover { background: var(--hover); }
+.tracker-post { display: flex; align-items: center; gap: 10px; }
+.tracker-thumb {
+  width: 40px; height: 40px; border-radius: 8px; object-fit: cover;
+  flex-shrink: 0; background: var(--raised); border: 1px solid var(--border);
+}
+.tracker-thumb.ph { display: block; }
+.tracker-cat { font-size: 13px; font-weight: 600; }
+.manual-tag {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em;
+  color: var(--amber); border: 1px solid var(--amber); border-radius: 5px;
+  padding: 1px 5px; margin-left: 7px;
+}
+.plat-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; }
