@@ -397,7 +397,7 @@ export default function App() {
         {view === 'laporan' && <ReportView projects={projects} projectFilter={activeProject} />}
         {view === 'komplain' && <ComplaintView profile={profile} />}
         {view === 'log' && canSeeLog && <LogView />}
-        {view === 'access' && isSuper && <AccessView selfId={session.user.id} onAccountsChanged={loadAccounts} />}
+        {view === 'access' && isSuper && <AccessView selfId={session.user.id} onAccountsChanged={loadAccounts} activeProjectId={activeProject} activeProjectName={activeProj ? activeProj.name : null} />}
       </main>
     </div>
   );

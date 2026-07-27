@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { initials, VERTICALS, type Account, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
 import { sigma, type SigmaProject } from '@/lib/sigma';
@@ -12,9 +12,11 @@ const MEMBER_TEAMS: Team[] = ['creative', 'distribution', 'ads', 'delta'];
 interface Props {
   selfId: string;
   onAccountsChanged?: () => void;
+  activeProjectId?: string;
+  activeProjectName?: string | null;
 }
 
-export default function AccessView({ selfId, onAccountsChanged }: Props) {
+export default function AccessView({ selfId, onAccountsChanged, activeProjectId = 'all', activeProjectName = null }: Props) {
   const [users, setUsers] = useState<Profile[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -23,6 +25,7 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
 
+  const [tab, setTab] = useState<'user' | 'project' | 'akun' | 'tim'>('user');
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
 
@@ -128,6 +131,14 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Akun yang ditampilkan: ikut project aktif di sidebar (kalau bukan 'all')
+  const shownAccounts = useMemo(
+    () => (activeProjectId && activeProjectId !== 'all'
+      ? accounts.filter((a) => a.project_id === activeProjectId)
+      : accounts),
+    [accounts, activeProjectId]
+  );
+
   const flash = (m: string) => setMsg(m);
 
   const updateUser = async (id: string, patch: Partial<Profile>) => {
@@ -210,6 +221,14 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
           <p className="empty">Memuat…</p>
         ) : (
           <>
+            <div className="access-tabs">
+              <button className={`atab ${tab === 'user' ? 'active' : ''}`} onClick={() => setTab('user')}>User Login</button>
+              <button className={`atab ${tab === 'project' ? 'active' : ''}`} onClick={() => setTab('project')}>Project &amp; Vertical</button>
+              <button className={`atab ${tab === 'akun' ? 'active' : ''}`} onClick={() => setTab('akun')}>Akun Media</button>
+              <button className={`atab ${tab === 'tim' ? 'active' : ''}`} onClick={() => setTab('tim')}>Anggota Tim</button>
+            </div>
+
+            {tab === 'user' && (<>
             {/* ================= USER LOGIN ================= */}
             <div className="section-title">User Login</div>
             <p className="section-hint">
@@ -266,8 +285,11 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
               </table>
             </div>
 
+            </>)}
+
+            {tab === 'project' && (<>
             {/* ================= PROJECT ================= */}
-            <div className="section-head-row" style={{ marginTop: 28 }}>
+            <div className="section-head-row">
               <div className="section-title" style={{ margin: 0 }}>Project &amp; Vertical</div>
               <button className="btn" onClick={syncFromSigma} disabled={syncing}>
                 {syncing ? 'Menyinkronkan…' : '⟳ Sync dari SIGMA'}
@@ -314,9 +336,16 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
               </table>
             </div>
 
+            </>)}
+
+            {tab === 'akun' && (<>
             {/* ================= AKUN MEDIA ================= */}
-            <div className="section-title" style={{ marginTop: 28 }}>Akun Media</div>
-            <p className="section-hint">Akun media milik tiap project. Akun yang sudah dipakai konten tidak bisa dihapus — nonaktifkan saja. Project ditambah dari selector di sidebar.</p>
+            <div className="section-title">Akun Media</div>
+            <p className="section-hint">
+              {activeProjectName
+                ? <>Menampilkan akun project <b>{activeProjectName}</b> — ganti lewat selector Project di sidebar. Akun yang dipakai konten tidak bisa dihapus, nonaktifkan saja.</>
+                : <>Semua akun media. Pilih project di sidebar untuk menyaring. Akun yang dipakai konten tidak bisa dihapus — nonaktifkan saja.</>}
+            </p>
             <div className="add-row">
               <input placeholder="@handle akun" value={newHandle} onChange={(e) => setNewHandle(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addAccount()} />
@@ -334,7 +363,7 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
                   <tr><th>Akun</th><th>Project</th><th>Label</th><th>Status</th><th style={{ width: 90 }}></th></tr>
                 </thead>
                 <tbody>
-                  {accounts.map((a) => (
+                  {shownAccounts.map((a) => (
                     <tr key={a.id}>
                       <td><b>{a.handle}</b></td>
                       <td>
@@ -356,13 +385,16 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
                       <td><button className="btn ghost danger-text" onClick={() => deleteAccount(a)}>Hapus</button></td>
                     </tr>
                   ))}
-                  {accounts.length === 0 && <tr><td colSpan={5} className="empty">Belum ada akun.</td></tr>}
+                  {shownAccounts.length === 0 && <tr><td colSpan={5} className="empty">{activeProjectName ? `Belum ada akun di project ${activeProjectName}.` : 'Belum ada akun.'}</td></tr>}
                 </tbody>
               </table>
             </div>
 
+            </>)}
+
+            {tab === 'tim' && (<>
             {/* ================= ANGGOTA TIM (PIC) ================= */}
-            <div className="section-title" style={{ marginTop: 28 }}>Anggota Tim (opsi PIC)</div>
+            <div className="section-title">Anggota Tim (opsi PIC)</div>
             <p className="section-hint">
               Opsi dropdown PIC di form konten — tidak wajib punya akun login. Anggota yang masih jadi PIC konten tidak bisa dihapus — nonaktifkan saja.
             </p>
@@ -397,6 +429,7 @@ export default function AccessView({ selfId, onAccountsChanged }: Props) {
                 </tbody>
               </table>
             </div>
+            </>)}
           </>
         )}
         {msg && <p style={{ marginTop: 12, fontSize: 12.5, color: 'var(--text-2)' }}>{msg}</p>}
