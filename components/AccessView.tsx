@@ -85,6 +85,25 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberTeam, setNewMemberTeam] = useState<Team>('creative');
 
+  const deleteProject = async (pr: Project) => {
+    // Cegah hapus kalau masih ada data nempel
+    const [c, a, b] = await Promise.all([
+      supabase.from('contents').select('id', { count: 'exact', head: true }).eq('project_id', pr.id),
+      supabase.from('accounts').select('id', { count: 'exact', head: true }).eq('project_id', pr.id),
+      supabase.from('budget_requests').select('id', { count: 'exact', head: true }).eq('project_id', pr.id),
+    ]);
+    const nContent = c.count || 0, nAcc = a.count || 0, nBudget = b.count || 0;
+    if (nContent + nAcc + nBudget > 0) {
+      flash(`Tidak bisa dihapus — masih ada ${nContent} konten, ${nAcc} akun, ${nBudget} budget. Nonaktifkan saja, atau pindahkan/hapus datanya dulu.`);
+      return;
+    }
+    if (!window.confirm(`Hapus permanen project "${pr.name}"? Tindakan ini tidak bisa dibatalkan.`)) return;
+    const { error } = await supabase.from('projects').delete().eq('id', pr.id);
+    if (error) { flash('Gagal menghapus project.'); return; }
+    flash('Project dihapus.');
+    load(); onAccountsChanged?.();
+  };
+
   const syncFromSigma = async () => {
     setSyncing(true);
     setSyncMsg('');
@@ -375,7 +394,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
             <div className="table-wrap" style={{ marginBottom: 8 }}>
               <table>
                 <thead>
-                  <tr><th>Project</th><th>Vertical</th><th>Label</th><th>Status</th></tr>
+                  <tr><th>Project</th><th>Vertical</th><th>Label</th><th>Status</th><th style={{ width: 60 }}></th></tr>
                 </thead>
                 <tbody>
                   {projects.map((pr) => (
@@ -400,9 +419,20 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                           {pr.is_active ? 'Aktif' : 'Nonaktif'}
                         </button>
                       </td>
+                      <td>
+                        <button className="icon-del" title="Hapus project" onClick={() => deleteProject(pr)}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                          </svg>
+                        </button>
+                      </td>
                     </tr>
                   ))}
-                  {projects.length === 0 && <tr><td colSpan={4} className="empty">Belum ada project.</td></tr>}
+                  {projects.length === 0 && <tr><td colSpan={5} className="empty">Belum ada project.</td></tr>}
                 </tbody>
               </table>
             </div>
