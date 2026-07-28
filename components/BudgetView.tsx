@@ -37,6 +37,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'diajukan' | 'disetujui' | 'dibayar' | 'ditolak'>('all');
   const [open, setOpen] = useState(false);
+  const [editId, setEditId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({ title: '', category: 'ads', amount: '', description: '', urgency: 'normal', project_id: '' });
@@ -62,11 +63,31 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
   useEffect(() => { load(); }, [load]);
 
   const openModal = () => {
+    setEditId(null);
     setForm({ title: '', category: 'ads', amount: '', description: '', urgency: 'normal', project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || '') });
     setFile(null);
     setError('');
     setOpen(true);
   };
+
+  const openEdit = (b: BudgetRequest) => {
+    setEditId(b.id);
+    setForm({
+      title: b.title,
+      category: b.category,
+      amount: String(b.amount || ''),
+      description: b.description || '',
+      urgency: b.urgency || 'normal',
+      project_id: b.project_id || '',
+    });
+    setFile(null);
+    setError('');
+    setDetail(null);
+    setOpen(true);
+  };
+
+  const canEdit = (b: BudgetRequest) =>
+    b.status === 'diajukan' && (b.requester_id === profile?.id || profile?.role === 'superadmin');
 
   const uploadProof = async (f: File, prefix: string): Promise<{ path: string; name: string } | null> => {
     const safe = f.name.replace(/[^\w.\-]+/g, '_');
@@ -88,6 +109,25 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
     if (file) {
       proof = await uploadProof(file, 'request');
       if (!proof) { setBusy(false); setError('Gagal mengunggah bukti.'); return; }
+    }
+
+    if (editId) {
+      // update — hanya field yang boleh diubah; bukti hanya diganti kalau upload baru
+      const patch: Record<string, unknown> = {
+        project_id: form.project_id || null,
+        category: form.category,
+        title: form.title.trim(),
+        description: form.description.trim() || null,
+        amount,
+        urgency: form.urgency,
+      };
+      if (proof) { patch.request_proof_path = proof.path; patch.request_proof_name = proof.name; }
+      const { error: err } = await supabase.from('budget_requests').update(patch).eq('id', editId);
+      setBusy(false);
+      if (err) { setError('Gagal menyimpan perubahan.'); return; }
+      setOpen(false);
+      load();
+      return;
     }
 
     const { error: err } = await supabase.from('budget_requests').insert({
@@ -312,6 +352,9 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
               </div>
             </div>
             <div className="modal-foot">
+              {canEdit(detail) && (
+                <button className="btn" onClick={() => openEdit(detail)}>✎ Edit</button>
+              )}
               {detail.status === 'diajukan' && isPM && (
                 <>
                   <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => reject(detail)}>Tolak</button>
@@ -339,8 +382,8 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
             <div className="modal-head">
               <div>
                 <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--accent)' }} />Budget</div>
-                <div className="modal-title">Ajukan Budget</div>
-                <div className="modal-sub">Pengajuan masuk antrian → di-ACC PM → diproses Finance.</div>
+                <div className="modal-title">{editId ? 'Edit Pengajuan' : 'Ajukan Budget'}</div>
+                <div className="modal-sub">{editId ? 'Perubahan hanya bisa selama status masih Diajukan.' : 'Pengajuan masuk antrian → di-ACC PM → diproses Finance.'}</div>
               </div>
               <button className="btn ghost modal-close" onClick={() => setOpen(false)}>✕</button>
             </div>
@@ -384,7 +427,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                 <label>Bukti (QR / halaman payment)</label>
                 <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg"
                   onChange={(e) => setFile(e.target.files?.[0] || null)} />
-                <div className="hint">{file ? file.name : `Opsional · maks ${MAX_MB} MB`}</div>
+                <div className="hint">{file ? file.name : (editId ? 'Kosongkan bila tidak ingin mengganti bukti lama' : `Opsional · maks ${MAX_MB} MB`)}</div>
               </div>
               <div className="field">
                 <label>Keterangan</label>
@@ -397,7 +440,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
               <div className="right">
                 <button className="btn" onClick={() => setOpen(false)} disabled={busy}>Batal</button>
                 <button className="btn primary" onClick={submit} disabled={busy || !form.title.trim()}>
-                  {busy ? 'Mengirim…' : 'Ajukan'}
+                  {busy ? 'Menyimpan…' : (editId ? 'Simpan perubahan' : 'Ajukan')}
                 </button>
               </div>
             </div>
