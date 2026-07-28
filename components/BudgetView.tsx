@@ -42,6 +42,9 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
   const [form, setForm] = useState({ title: '', category: 'ads', amount: '', description: '', urgency: 'normal', project_id: '' });
   const [file, setFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [detail, setDetail] = useState<BudgetRequest | null>(null);
+  const [reqProofUrl, setReqProofUrl] = useState<string | null>(null);
+  const [payProofUrl, setPayProofUrl] = useState<string | null>(null);
 
   const isPM = profile?.team === 'pm' || profile?.role === 'superadmin';
   const isFinance = profile?.team === 'finance' || profile?.role === 'superadmin';
@@ -112,7 +115,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
       approver_name: profile.full_name || profile.email, approved_at: new Date().toISOString(),
     }).eq('id', b.id);
     if (err) { window.alert('Gagal menyetujui — hanya PM.'); return; }
-    load();
+    setDetail(null); load();
   };
 
   const reject = async (b: BudgetRequest) => {
@@ -124,7 +127,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
       approver_name: profile.full_name || profile.email, reject_reason: reason || null,
     }).eq('id', b.id);
     if (err) { window.alert('Gagal menolak.'); return; }
-    load();
+    setDetail(null); load();
   };
 
   const markPaid = async (b: BudgetRequest, f: File | null) => {
@@ -141,14 +144,24 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
       payment_proof_path: proof?.path || null, payment_proof_name: proof?.name || null,
     }).eq('id', b.id);
     if (err) { window.alert('Gagal menandai dibayar — hanya Finance.'); return; }
-    load();
+    setDetail(null); load();
   };
 
-  const openProof = async (path: string | null) => {
-    if (!path) return;
-    const { data } = await supabase.storage.from('budget').createSignedUrl(path, 60);
-    if (data) window.open(data.signedUrl, '_blank', 'noopener');
+  const signed = async (path: string | null): Promise<string | null> => {
+    if (!path) return null;
+    const { data } = await supabase.storage.from('budget').createSignedUrl(path, 300);
+    return data?.signedUrl || null;
   };
+
+  const openDetail = async (b: BudgetRequest) => {
+    setDetail(b);
+    setReqProofUrl(null);
+    setPayProofUrl(null);
+    setReqProofUrl(await signed(b.request_proof_path));
+    setPayProofUrl(await signed(b.payment_proof_path));
+  };
+
+  const isImage = (name: string | null) => !!name && /\.(png|jpe?g|webp|gif)$/i.test(name);
 
   const filtered = useMemo(() => rows.filter((r) => filter === 'all' || r.status === filter), [rows, filter]);
   const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
@@ -201,9 +214,9 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
               </thead>
               <tbody>
                 {filtered.map((b) => (
-                  <tr key={b.id}>
+                  <tr key={b.id} className="tracker-row" onClick={() => openDetail(b)}>
                     <td>
-                      <b>{b.title}</b>
+                      <b className="budget-title-link">{b.title}</b>
                       {b.urgency === 'mendesak' && <span className="manual-tag" style={{ color: 'var(--red)', borderColor: 'var(--red)', marginLeft: 6 }}>mendesak</span>}
                       {b.description && <div className="sub" style={{ fontFamily: 'inherit' }}>{b.description.slice(0, 70)}{b.description.length > 70 ? '…' : ''}</div>}
                       {b.reject_reason && <div className="sub" style={{ color: 'var(--red)' }}>Ditolak: {b.reject_reason}</div>}
@@ -220,9 +233,8 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                       {STATUS_META[b.status]?.label || b.status}
                     </td>
                     <td>
-                      <div className="recap-actions">
-                        {b.request_proof_path && <button className="btn act" onClick={() => openProof(b.request_proof_path)}>Bukti</button>}
-                        {b.payment_proof_path && <button className="btn act" onClick={() => openProof(b.payment_proof_path)}>Struk</button>}
+                      <div className="recap-actions" onClick={(e) => e.stopPropagation()}>
+                        <button className="btn act" onClick={() => openDetail(b)}>Detail</button>
                         {b.status === 'diajukan' && isPM && (
                           <>
                             <button className="btn act" style={{ borderColor: 'var(--green)', color: 'var(--green)' }} onClick={() => approve(b)}>ACC</button>
@@ -248,6 +260,78 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
           Alur: <b>Team/Manager ajukan</b> (+ bukti) → <b>PM ACC</b> → <b>Finance tandai dibayar</b> (+ struk). Ikut tembok unit project.
         </p>
       </div>
+
+      {detail && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setDetail(null)}>
+          <div className="modal" style={{ maxWidth: 520 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: STATUS_META[detail.status]?.color }} />
+                  {catLabel(detail.category)} · {STATUS_META[detail.status]?.label}
+                </div>
+                <div className="modal-title">{detail.title}</div>
+                <div className="modal-sub">{projName(detail.project_id)} · {rupiah(detail.amount)}{detail.urgency === 'mendesak' ? ' · MENDESAK' : ''}</div>
+              </div>
+              <button className="btn ghost modal-close" onClick={() => setDetail(null)}>✕</button>
+            </div>
+            <div style={{ padding: '16px 24px' }}>
+              {detail.description && <p className="thread-detail">{detail.description}</p>}
+
+              {/* Bukti QR / payment */}
+              <div className="budget-detail-label">Bukti pengajuan</div>
+              {detail.request_proof_path ? (
+                isImage(detail.request_proof_name)
+                  ? (reqProofUrl
+                      ? <img className="budget-qr" src={reqProofUrl} alt="Bukti pengajuan" />
+                      : <div className="notes-empty">Memuat bukti…</div>)
+                  : <a className="btn" href={reqProofUrl || '#'} target="_blank" rel="noopener noreferrer">Buka bukti (PDF) ↗</a>
+              ) : <div className="notes-empty">Tidak ada bukti dilampirkan.</div>}
+
+              {/* Bukti pembayaran */}
+              {detail.status === 'dibayar' && (
+                <>
+                  <div className="budget-detail-label" style={{ marginTop: 16 }}>Bukti pembayaran</div>
+                  {detail.payment_proof_path ? (
+                    isImage(detail.payment_proof_name)
+                      ? (payProofUrl
+                          ? <img className="budget-qr" src={payProofUrl} alt="Bukti pembayaran" />
+                          : <div className="notes-empty">Memuat…</div>)
+                      : <a className="btn" href={payProofUrl || '#'} target="_blank" rel="noopener noreferrer">Buka struk (PDF) ↗</a>
+                  ) : <div className="notes-empty">Tidak ada struk.</div>}
+                </>
+              )}
+
+              {/* Riwayat */}
+              <div className="budget-detail-label" style={{ marginTop: 16 }}>Riwayat</div>
+              <div className="budget-trace">
+                <div><b>Diajukan</b> oleh {detail.requester_name} · {fmt(detail.created_at)}</div>
+                {detail.approver_name && <div><b>{detail.status === 'ditolak' ? 'Ditolak' : 'Disetujui'}</b> oleh {detail.approver_name}{detail.approved_at ? ' · ' + fmt(detail.approved_at) : ''}</div>}
+                {detail.reject_reason && <div style={{ color: 'var(--red)' }}>Alasan: {detail.reject_reason}</div>}
+                {detail.payer_name && <div><b>Dibayar</b> oleh {detail.payer_name}{detail.paid_at ? ' · ' + fmt(detail.paid_at) : ''}</div>}
+              </div>
+            </div>
+            <div className="modal-foot">
+              {detail.status === 'diajukan' && isPM && (
+                <>
+                  <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => reject(detail)}>Tolak</button>
+                  <button className="btn primary" onClick={() => approve(detail)}>✓ ACC</button>
+                </>
+              )}
+              {detail.status === 'disetujui' && isFinance && (
+                <label className="btn primary" style={{ cursor: 'pointer' }}>
+                  ✓ Tandai dibayar (pilih struk)
+                  <input type="file" accept=".pdf,.png,.jpg,.jpeg" style={{ display: 'none' }}
+                    onChange={(e) => markPaid(detail, e.target.files?.[0] || null)} />
+                </label>
+              )}
+              <div className="right">
+                <button className="btn" onClick={() => setDetail(null)}>Tutup</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {open && (
         <div className="overlay">
