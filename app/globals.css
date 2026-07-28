@@ -772,3 +772,7 @@ td a.btn { text-decoration: none; display: inline-block; }
 }
 .user-add input:focus, .user-add select:focus { border-color: var(--accent); }
 @media (max-width: 1000px) { .user-add { grid-template-columns: 1fr 1fr; } }
+
+/* ================= Pengajuan Budget ================= */
+.budget-proof-btn { cursor: pointer; }
+label.btn.act input[type='file'] { display: none; }

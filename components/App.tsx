@@ -12,10 +12,11 @@ import AccessView from '@/components/AccessView';
 import CalendarView from '@/components/CalendarView';
 import ReportView from '@/components/ReportView';
 import RecapView from '@/components/RecapView';
+import BudgetView from '@/components/BudgetView';
 import ComplaintView from '@/components/ComplaintView';
 import TrackerView from '@/components/TrackerView';
 
-type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'laporan' | 'komplain' | 'log' | 'access';
+type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'laporan' | 'komplain' | 'log' | 'access';
 
 const NAV: { key: View; label: string }[] = [
   { key: 'board', label: 'Board Pipeline' },
@@ -23,6 +24,7 @@ const NAV: { key: View; label: string }[] = [
   { key: 'tracker', label: 'Tracker' },
   { key: 'ads', label: 'Ads Tracker' },
   { key: 'recap', label: 'Recap Report' },
+  { key: 'budget', label: 'Pengajuan Budget' },
   { key: 'laporan', label: 'Laporan Kerja' },
   { key: 'komplain', label: 'Komplain' },
   { key: 'log', label: 'Log Aktivitas' },
@@ -66,6 +68,13 @@ const ICON_PATHS: Record<View, React.ReactNode> = {
       <polyline points="13 2 13 7 18 7" />
       <polyline points="9 14 12 11 15 14" />
       <line x1="12" y1="11" x2="12" y2="18" />
+    </>
+  ),
+  budget: (
+    <>
+      <rect x="2" y="6" width="20" height="13" rx="2" />
+      <path d="M2 10h20" />
+      <circle cx="17" cy="14" r="1.5" />
     </>
   ),
   laporan: (
@@ -394,6 +403,7 @@ export default function App() {
         {view === 'recap' && (
           <RecapView profile={profile} projects={projects} projectFilter={activeProject} />
         )}
+        {view === 'budget' && <BudgetView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'laporan' && <ReportView projects={projects} projectFilter={activeProject} />}
         {view === 'komplain' && <ComplaintView profile={profile} />}
         {view === 'log' && canSeeLog && <LogView />}

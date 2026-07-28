@@ -1,5 +1,5 @@
 export type Role = 'superadmin' | 'manager' | 'tim';
-export type Team = 'delta' | 'creative' | 'distribution' | 'ads' | 'pm';
+export type Team = 'delta' | 'creative' | 'distribution' | 'ads' | 'pm' | 'finance';
 export type ContentStatus =
   | 'drafting' | 'review'
   | 'siap_upload' | 'terjadwal'
@@ -134,6 +134,31 @@ export interface ComplaintMessage {
   created_at: string;
 }
 
+export interface BudgetRequest {
+  id: string;
+  project_id: string | null;
+  category: string;
+  title: string;
+  description: string | null;
+  amount: number;
+  urgency: string | null;
+  request_proof_path: string | null;
+  request_proof_name: string | null;
+  status: string;
+  requester_id: string | null;
+  requester_name: string | null;
+  approver_id: string | null;
+  approver_name: string | null;
+  approved_at: string | null;
+  reject_reason: string | null;
+  payer_id: string | null;
+  payer_name: string | null;
+  paid_at: string | null;
+  payment_proof_path: string | null;
+  payment_proof_name: string | null;
+  created_at: string;
+}
+
 export interface ActivityLog {
   id: number;
   actor_email: string | null;
@@ -197,6 +222,7 @@ export const TEAM_EDITABLE: Record<Team, ContentStatus[]> = {
   distribution: ['siap_upload', 'terjadwal'],
   ads: ['published', 'diiklankan'],
   pm: [],
+  finance: [],
 };
 
 export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
@@ -205,6 +231,7 @@ export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
   distribution: ['siap_upload', 'terjadwal', 'published'],
   ads: ['published', 'diiklankan'],
   pm: [],
+  finance: [],
 };
 
 export function canEditRow(profile: Profile | null, status: ContentStatus): boolean {

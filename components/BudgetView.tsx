@@ -1,0 +1,325 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import { initials, type BudgetRequest, type Profile, type Project } from '@/lib/types';
+
+interface Props {
+  profile: Profile | null;
+  projects: Project[];
+  projectFilter: string;
+}
+
+const CATEGORIES = [
+  { key: 'ads', label: 'Ads' },
+  { key: 'boosting', label: 'Boosting' },
+  { key: 'langganan', label: 'Langganan Tools' },
+  { key: 'buzzer', label: 'Buzzer' },
+  { key: 'clipper', label: 'Clipper' },
+  { key: 'homeless', label: 'Homeless (media paid)' },
+  { key: 'kol', label: 'KOL' },
+  { key: 'lainnya', label: 'Lainnya' },
+];
+const catLabel = (k: string) => CATEGORIES.find((c) => c.key === k)?.label || k;
+
+const STATUS_META: Record<string, { label: string; color: string }> = {
+  diajukan: { label: 'Diajukan', color: 'var(--st-review)' },
+  disetujui: { label: 'Disetujui (ke Finance)', color: 'var(--amber)' },
+  dibayar: { label: 'Dibayar', color: 'var(--green)' },
+  ditolak: { label: 'Ditolak', color: 'var(--red)' },
+};
+
+const MAX_MB = 10;
+const rupiah = (n: number) => 'Rp' + (n || 0).toLocaleString('id-ID');
+
+export default function BudgetView({ profile, projects, projectFilter }: Props) {
+  const [rows, setRows] = useState<BudgetRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<'all' | 'diajukan' | 'disetujui' | 'dibayar' | 'ditolak'>('all');
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({ title: '', category: 'ads', amount: '', description: '', urgency: 'normal', project_id: '' });
+  const [file, setFile] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const isPM = profile?.team === 'pm' || profile?.role === 'superadmin';
+  const isFinance = profile?.team === 'finance' || profile?.role === 'superadmin';
+  const canRequest = profile?.role === 'tim' || profile?.role === 'manager' || profile?.role === 'superadmin';
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    let q = supabase.from('budget_requests').select('*').order('created_at', { ascending: false });
+    if (projectFilter !== 'all') q = q.eq('project_id', projectFilter);
+    const { data } = await q;
+    setRows((data as BudgetRequest[]) || []);
+    setLoading(false);
+  }, [projectFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openModal = () => {
+    setForm({ title: '', category: 'ads', amount: '', description: '', urgency: 'normal', project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || '') });
+    setFile(null);
+    setError('');
+    setOpen(true);
+  };
+
+  const uploadProof = async (f: File, prefix: string): Promise<{ path: string; name: string } | null> => {
+    const safe = f.name.replace(/[^\w.\-]+/g, '_');
+    const path = `${prefix}/${Date.now()}_${safe}`;
+    const up = await supabase.storage.from('budget').upload(path, f);
+    if (up.error) return null;
+    return { path, name: f.name };
+  };
+
+  const submit = async () => {
+    if (!profile) return;
+    if (!form.title.trim()) { setError('Judul wajib diisi.'); return; }
+    const amount = parseInt(form.amount.replace(/\D/g, ''), 10) || 0;
+    if (amount <= 0) { setError('Jumlah harus lebih dari 0.'); return; }
+    if (file && file.size > MAX_MB * 1024 * 1024) { setError(`Bukti maksimal ${MAX_MB} MB.`); return; }
+    setBusy(true); setError('');
+
+    let proof: { path: string; name: string } | null = null;
+    if (file) {
+      proof = await uploadProof(file, 'request');
+      if (!proof) { setBusy(false); setError('Gagal mengunggah bukti.'); return; }
+    }
+
+    const { error: err } = await supabase.from('budget_requests').insert({
+      project_id: form.project_id || null,
+      category: form.category,
+      title: form.title.trim(),
+      description: form.description.trim() || null,
+      amount,
+      urgency: form.urgency,
+      request_proof_path: proof?.path || null,
+      request_proof_name: proof?.name || null,
+      requester_id: profile.id,
+      requester_name: profile.full_name || profile.email,
+    });
+    setBusy(false);
+    if (err) { setError('Gagal menyimpan pengajuan.'); return; }
+    setOpen(false);
+    load();
+  };
+
+  const approve = async (b: BudgetRequest) => {
+    if (!profile) return;
+    const { error: err } = await supabase.from('budget_requests').update({
+      status: 'disetujui', approver_id: profile.id,
+      approver_name: profile.full_name || profile.email, approved_at: new Date().toISOString(),
+    }).eq('id', b.id);
+    if (err) { window.alert('Gagal menyetujui — hanya PM.'); return; }
+    load();
+  };
+
+  const reject = async (b: BudgetRequest) => {
+    const reason = window.prompt('Alasan menolak pengajuan ini:');
+    if (reason === null) return;
+    if (!profile) return;
+    const { error: err } = await supabase.from('budget_requests').update({
+      status: 'ditolak', approver_id: profile.id,
+      approver_name: profile.full_name || profile.email, reject_reason: reason || null,
+    }).eq('id', b.id);
+    if (err) { window.alert('Gagal menolak.'); return; }
+    load();
+  };
+
+  const markPaid = async (b: BudgetRequest, f: File | null) => {
+    if (!profile) return;
+    let proof: { path: string; name: string } | null = null;
+    if (f) {
+      if (f.size > MAX_MB * 1024 * 1024) { window.alert(`Bukti maksimal ${MAX_MB} MB.`); return; }
+      proof = await uploadProof(f, 'payment');
+      if (!proof) { window.alert('Gagal mengunggah bukti pembayaran.'); return; }
+    }
+    const { error: err } = await supabase.from('budget_requests').update({
+      status: 'dibayar', payer_id: profile.id,
+      payer_name: profile.full_name || profile.email, paid_at: new Date().toISOString(),
+      payment_proof_path: proof?.path || null, payment_proof_name: proof?.name || null,
+    }).eq('id', b.id);
+    if (err) { window.alert('Gagal menandai dibayar — hanya Finance.'); return; }
+    load();
+  };
+
+  const openProof = async (path: string | null) => {
+    if (!path) return;
+    const { data } = await supabase.storage.from('budget').createSignedUrl(path, 60);
+    if (data) window.open(data.signedUrl, '_blank', 'noopener');
+  };
+
+  const filtered = useMemo(() => rows.filter((r) => filter === 'all' || r.status === filter), [rows, filter]);
+  const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
+
+  const stats = useMemo(() => {
+    const sum = (s: string) => rows.filter((r) => r.status === s).reduce((a, r) => a + (r.amount || 0), 0);
+    return {
+      diajukan: sum('diajukan'), disetujui: sum('disetujui'), dibayar: sum('dibayar'),
+      countDiajukan: rows.filter((r) => r.status === 'diajukan').length,
+    };
+  }, [rows]);
+
+  const fmt = (iso: string) => new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  return (
+    <>
+      <div className="topbar">
+        <div style={{ display: 'flex', alignItems: 'baseline' }}>
+          <h2>Pengajuan Budget</h2>
+          <span className="top-note">{rows.length} pengajuan</span>
+        </div>
+        <div className="top-actions">
+          {canRequest && <button className="btn primary" onClick={openModal}>+ Ajukan budget</button>}
+        </div>
+      </div>
+
+      <div className="content-area">
+        <div className="kpi-row">
+          <div className="kpi"><div className="kpi-label">Menunggu ACC</div><div className="kpi-value" style={{ color: 'var(--st-review)' }}>{stats.countDiajukan}</div></div>
+          <div className="kpi"><div className="kpi-label">Diajukan (Rp)</div><div className="kpi-value" style={{ fontSize: 18 }}>{rupiah(stats.diajukan)}</div></div>
+          <div className="kpi"><div className="kpi-label">Disetujui, blm dibayar</div><div className="kpi-value" style={{ fontSize: 18, color: 'var(--amber)' }}>{rupiah(stats.disetujui)}</div></div>
+          <div className="kpi"><div className="kpi-label">Sudah dibayar</div><div className="kpi-value" style={{ fontSize: 18, color: 'var(--green)' }}>{rupiah(stats.dibayar)}</div></div>
+        </div>
+
+        <div className="team-filter">
+          {(['all', 'diajukan', 'disetujui', 'dibayar', 'ditolak'] as const).map((f) => (
+            <button key={f} className={`chip-btn ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
+              {f === 'all' ? 'Semua' : STATUS_META[f].label}
+            </button>
+          ))}
+        </div>
+
+        <div className="table-wrap">
+          {loading ? <p className="empty">Memuat…</p> : filtered.length === 0 ? (
+            <p className="empty">Belum ada pengajuan pada filter ini.</p>
+          ) : (
+            <table>
+              <thead>
+                <tr><th>Pengajuan</th><th>Project</th><th>Kategori</th><th>Jumlah</th><th>Pemohon</th><th>Status</th><th style={{ width: 200 }}></th></tr>
+              </thead>
+              <tbody>
+                {filtered.map((b) => (
+                  <tr key={b.id}>
+                    <td>
+                      <b>{b.title}</b>
+                      {b.urgency === 'mendesak' && <span className="manual-tag" style={{ color: 'var(--red)', borderColor: 'var(--red)', marginLeft: 6 }}>mendesak</span>}
+                      {b.description && <div className="sub" style={{ fontFamily: 'inherit' }}>{b.description.slice(0, 70)}{b.description.length > 70 ? '…' : ''}</div>}
+                      {b.reject_reason && <div className="sub" style={{ color: 'var(--red)' }}>Ditolak: {b.reject_reason}</div>}
+                    </td>
+                    <td>{projName(b.project_id)}</td>
+                    <td><span className="link-tag">{catLabel(b.category)}</span></td>
+                    <td><b>{rupiah(b.amount)}</b></td>
+                    <td>
+                      <span className="row-avatar">{initials(b.requester_name)}</span>{b.requester_name}
+                      <div className="sub" style={{ marginLeft: 40 }}>{fmt(b.created_at)}</div>
+                    </td>
+                    <td>
+                      <span className="status-dot" style={{ background: STATUS_META[b.status]?.color }} />
+                      {STATUS_META[b.status]?.label || b.status}
+                    </td>
+                    <td>
+                      <div className="recap-actions">
+                        {b.request_proof_path && <button className="btn act" onClick={() => openProof(b.request_proof_path)}>Bukti</button>}
+                        {b.payment_proof_path && <button className="btn act" onClick={() => openProof(b.payment_proof_path)}>Struk</button>}
+                        {b.status === 'diajukan' && isPM && (
+                          <>
+                            <button className="btn act" style={{ borderColor: 'var(--green)', color: 'var(--green)' }} onClick={() => approve(b)}>ACC</button>
+                            <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => reject(b)}>Tolak</button>
+                          </>
+                        )}
+                        {b.status === 'disetujui' && isFinance && (
+                          <label className="btn act" style={{ borderColor: 'var(--green)', color: 'var(--green)', cursor: 'pointer' }}>
+                            ✓ Dibayar
+                            <input type="file" accept=".pdf,.png,.jpg,.jpeg" style={{ display: 'none' }}
+                              onChange={(e) => markPaid(b, e.target.files?.[0] || null)} />
+                          </label>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <p className="cal-legend">
+          Alur: <b>Team/Manager ajukan</b> (+ bukti) → <b>PM ACC</b> → <b>Finance tandai dibayar</b> (+ struk). Ikut tembok unit project.
+        </p>
+      </div>
+
+      {open && (
+        <div className="overlay">
+          <div className="modal" style={{ maxWidth: 460 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--accent)' }} />Budget</div>
+                <div className="modal-title">Ajukan Budget</div>
+                <div className="modal-sub">Pengajuan masuk antrian → di-ACC PM → diproses Finance.</div>
+              </div>
+              <button className="btn ghost modal-close" onClick={() => setOpen(false)}>✕</button>
+            </div>
+            <div style={{ padding: '18px 24px' }}>
+              <div className="field">
+                <label>Judul / keperluan</label>
+                <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="mis. Boosting konten REXONA minggu ini" />
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label>Project</label>
+                  <select value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
+                    <option value="">— umum —</option>
+                    {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Kategori</label>
+                  <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                    {CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label>Jumlah (Rp)</label>
+                  <input value={form.amount} inputMode="numeric"
+                    onChange={(e) => setForm({ ...form, amount: e.target.value.replace(/\D/g, '') })}
+                    placeholder="500000" />
+                  {form.amount && <div className="hint">{rupiah(parseInt(form.amount, 10) || 0)}</div>}
+                </div>
+                <div className="field">
+                  <label>Urgensi</label>
+                  <select value={form.urgency} onChange={(e) => setForm({ ...form, urgency: e.target.value })}>
+                    <option value="normal">Normal</option>
+                    <option value="mendesak">Mendesak</option>
+                  </select>
+                </div>
+              </div>
+              <div className="field">
+                <label>Bukti (QR / halaman payment)</label>
+                <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg"
+                  onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                <div className="hint">{file ? file.name : `Opsional · maks ${MAX_MB} MB`}</div>
+              </div>
+              <div className="field">
+                <label>Keterangan</label>
+                <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  placeholder="Detail keperluan / rincian" />
+              </div>
+              {error && <p className="error-msg">{error}</p>}
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" onClick={() => setOpen(false)} disabled={busy}>Batal</button>
+                <button className="btn primary" onClick={submit} disabled={busy || !form.title.trim()}>
+                  {busy ? 'Mengirim…' : 'Ajukan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}

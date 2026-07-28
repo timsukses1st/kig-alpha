@@ -6,7 +6,7 @@ import { initials, VERTICALS, type Account, type Profile, type Project, type Rol
 import { sigma, type SigmaProject } from '@/lib/sigma';
 
 const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
-const TEAMS: (Team | '')[] = ['', 'delta', 'creative', 'distribution', 'ads', 'pm'];
+const TEAMS: (Team | '')[] = ['', 'delta', 'creative', 'distribution', 'ads', 'pm', 'finance'];
 const MEMBER_TEAMS: Team[] = ['creative', 'distribution', 'ads', 'delta'];
 
 interface Props {
@@ -544,7 +544,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                   <label>Team</label>
                   <select value={nu.team} onChange={(e) => setNu({ ...nu, team: e.target.value })}>
                     <option value="">—</option>
-                    {['delta', 'creative', 'distribution', 'ads', 'pm'].map((t) => <option key={t} value={t}>{t}</option>)}
+                    {['delta', 'creative', 'distribution', 'ads', 'pm', 'finance'].map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div className="field">
