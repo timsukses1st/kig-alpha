@@ -29,8 +29,9 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   const [nu, setNu] = useState({ email: '', full_name: '', password: '', role: 'tim', team: '', vertical: '' });
   const [uBusy, setUBusy] = useState(false);
   const [userModal, setUserModal] = useState(false);
-  const [delProj, setDelProj] = useState<{ pr: Project; counts: string; warn: boolean } | null>(null);
+  const [delProj, setDelProj] = useState<{ pr: Project; nContent: number; nAcc: number; nBudget: number } | null>(null);
   const [delBusy, setDelBusy] = useState(false);
+  const [delConfirmText, setDelConfirmText] = useState('');
 
   const callUserApi = async (payload: Record<string, unknown>) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -92,29 +93,47 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
       try {
         const { count, error } = await supabase
           .from(table).select('id', { count: 'exact', head: true }).eq('project_id', pr.id);
-        if (error) return -1;
+        if (error) return 0;
         return count || 0;
-      } catch { return -1; }
+      } catch { return 0; }
     };
     const nContent = await countIn('contents');
     const nAcc = await countIn('accounts');
     const nBudget = await countIn('budget_requests');
-    const total = Math.max(nContent, 0) + Math.max(nAcc, 0) + Math.max(nBudget, 0);
-    if (total > 0) {
-      flash(`Tidak bisa dihapus — masih ada ${Math.max(nContent,0)} konten, ${Math.max(nAcc,0)} akun, ${Math.max(nBudget,0)} budget. Nonaktifkan saja.`);
-      return;
-    }
-    const warn = nContent < 0 || nAcc < 0 || nBudget < 0;
-    setDelProj({ pr, counts: `${Math.max(nContent,0)} konten · ${Math.max(nAcc,0)} akun · ${Math.max(nBudget,0)} budget`, warn });
+    setDelConfirmText('');
+    setDelProj({ pr, nContent, nAcc, nBudget });
   };
 
   const confirmDeleteProject = async () => {
     if (!delProj) return;
+    const { pr, nContent, nAcc, nBudget } = delProj;
+    const hasData = nContent + nAcc + nBudget > 0;
+    // kalau ada isi, wajib ketik nama persis
+    if (hasData && delConfirmText.trim() !== pr.name) {
+      flash('Ketik nama project dengan benar untuk menghapus total.');
+      return;
+    }
     setDelBusy(true);
-    const { error } = await supabase.from('projects').delete().eq('id', delProj.pr.id);
+
+    // Hapus isi dulu (cascade manual) bila ada
+    if (hasData) {
+      // hapus file recap milik project (kalau ada) — abaikan error storage
+      try {
+        const { data: recaps } = await supabase.from('recap_reports').select('file_path').eq('project_id', pr.id);
+        const paths = (recaps || []).map((r: { file_path: string | null }) => r.file_path).filter(Boolean) as string[];
+        if (paths.length) await supabase.storage.from('reports').remove(paths);
+      } catch { /* skip */ }
+      await supabase.from('recap_reports').delete().eq('project_id', pr.id);
+      await supabase.from('budget_requests').delete().eq('project_id', pr.id);
+      await supabase.from('content_requests').delete().eq('project_id', pr.id);
+      await supabase.from('contents').delete().eq('project_id', pr.id);
+      await supabase.from('accounts').delete().eq('project_id', pr.id);
+    }
+
+    const { error } = await supabase.from('projects').delete().eq('id', pr.id);
     setDelBusy(false);
-    if (error) { flash('Gagal menghapus project: ' + error.message); setDelProj(null); return; }
-    flash('Project dihapus.');
+    if (error) { flash('Gagal menghapus project: ' + error.message); return; }
+    flash(hasData ? 'Project & seluruh isinya dihapus.' : 'Project dihapus.');
     setDelProj(null);
     load(); onAccountsChanged?.();
   };
@@ -561,34 +580,55 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
         )}
       </div>
 
-      {delProj && (
+      {delProj && (() => {
+        const hasData = delProj.nContent + delProj.nAcc + delProj.nBudget > 0;
+        const canDelete = !hasData || delConfirmText.trim() === delProj.pr.name;
+        return (
         <div className="overlay" onClick={(e) => e.target === e.currentTarget && setDelProj(null)}>
-          <div className="modal" style={{ maxWidth: 420 }}>
+          <div className="modal" style={{ maxWidth: 440 }}>
             <div className="modal-head">
               <div>
                 <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--red)' }} />Hapus Project</div>
                 <div className="modal-title">Hapus &ldquo;{delProj.pr.name}&rdquo;?</div>
-                <div className="modal-sub">Isi project: {delProj.counts}. Tindakan ini permanen dan tidak bisa dibatalkan.</div>
+                <div className="modal-sub">
+                  {hasData
+                    ? 'Project ini masih berisi data. Menghapus akan menghilangkan SEMUANYA secara permanen.'
+                    : 'Project kosong. Tindakan ini permanen dan tidak bisa dibatalkan.'}
+                </div>
               </div>
               <button className="btn ghost modal-close" onClick={() => setDelProj(null)}>✕</button>
             </div>
-            {delProj.warn && (
-              <div style={{ padding: '0 24px' }}>
-                <p className="error-msg">Sebagian pengecekan data gagal — pastikan project benar-benar kosong sebelum menghapus.</p>
-              </div>
-            )}
+            <div style={{ padding: '4px 24px 0' }}>
+              {hasData && (
+                <>
+                  <div className="del-counts">
+                    <span>{delProj.nContent} konten</span>
+                    <span>{delProj.nAcc} akun</span>
+                    <span>{delProj.nBudget} budget</span>
+                    <span className="del-counts-note">+ recap & request terkait</span>
+                  </div>
+                  <div className="field" style={{ marginTop: 14 }}>
+                    <label>Ketik <b style={{ color: 'var(--red)' }}>{delProj.pr.name}</b> untuk konfirmasi</label>
+                    <input value={delConfirmText} onChange={(e) => setDelConfirmText(e.target.value)}
+                      placeholder={delProj.pr.name} autoFocus />
+                  </div>
+                </>
+              )}
+            </div>
             <div className="modal-foot">
               <div className="right">
                 <button className="btn" onClick={() => setDelProj(null)} disabled={delBusy}>Batal</button>
-                <button className="btn" style={{ background: 'var(--red)', color: '#fff', borderColor: 'var(--red)' }}
-                  onClick={confirmDeleteProject} disabled={delBusy}>
-                  {delBusy ? 'Menghapus…' : 'Hapus permanen'}
+                <button className="btn"
+                  style={{ background: canDelete ? 'var(--red)' : 'var(--raised)', color: canDelete ? '#fff' : 'var(--text-3)', borderColor: canDelete ? 'var(--red)' : 'var(--border)' }}
+                  onClick={confirmDeleteProject} disabled={delBusy || !canDelete}>
+                  {delBusy ? 'Menghapus…' : (hasData ? 'Hapus total' : 'Hapus permanen')}
                 </button>
               </div>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {userModal && (
         <div className="overlay">
