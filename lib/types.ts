@@ -180,6 +180,7 @@ export interface DistributionLog {
   id: string;
   project_id: string | null;
   platform: string;
+  content_category: string | null;
   group_names: string;
   group_count: number;
   content_url: string | null;

@@ -78,6 +78,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [loading, setLoading] = useState(true);
   const [division, setDivision] = useState<Division>('semua');
   const [range, setRange] = useState<Range>('all');
+  const [catFilter, setCatFilter] = useState<'all' | Pillar>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ContentRow | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -118,8 +119,11 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   }, [range]);
 
   const filtered = useMemo(
-    () => rows.filter((r) => (projectFilter === 'all' || r.project_id === projectFilter) && inRange(r)),
-    [rows, projectFilter, inRange]
+    () => rows.filter((r) =>
+      (projectFilter === 'all' || r.project_id === projectFilter)
+      && (catFilter === 'all' || r.pillar === catFilter)
+      && inRange(r)),
+    [rows, projectFilter, catFilter, inRange]
   );
 
   const visibleRequests = useMemo(
@@ -504,6 +508,12 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
         <span className="bar" style={{ background: activeDiv.color }} />
         <span className="div-name">{division === 'semua' ? 'Semua Divisi' : `Divisi ${activeDiv.label}`}</span>
         <span>· {activeDiv.desc}</span>
+        <select className="cat-filter" value={catFilter} onChange={(e) => setCatFilter(e.target.value as 'all' | Pillar)}>
+          <option value="all">Semua kategori</option>
+          {(Object.keys(PILLAR_LABEL) as Pillar[]).map((k) => (
+            <option key={k} value={k}>{PILLAR_LABEL[k]}</option>
+          ))}
+        </select>
         <div className="range-tabs">
           {([['today', 'Hari ini'], ['yesterday', 'Kemarin'], ['week', '7 Hari'], ['all', 'Semua']] as [Range, string][]).map(([k, label]) => (
             <button key={k} className={`range-tab ${range === k ? 'active' : ''}`} onClick={() => setRange(k)}>{label}</button>

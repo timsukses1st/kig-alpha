@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { initials, type DistributionLog, type Profile, type Project } from '@/lib/types';
+import { initials, PILLAR_LABEL, type DistributionLog, type Pillar, type Profile, type Project } from '@/lib/types';
 
 interface Props {
   profile: Profile | null;
@@ -31,11 +31,12 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
   const [loading, setLoading] = useState(true);
   const [scope, setScope] = useState<'saya' | 'tim'>('saya');
   const [platFilter, setPlatFilter] = useState('all');
+  const [catFilter, setCatFilter] = useState('all');
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [dupWarn, setDupWarn] = useState<string | null>(null);
-  const [form, setForm] = useState({ platform: 'whatsapp', group_names: '', content_url: '', note: '', project_id: '' });
+  const [form, setForm] = useState({ platform: 'whatsapp', content_category: 'lagi_ramai', group_names: '', content_url: '', note: '', project_id: '' });
   const [file, setFile] = useState<File | null>(null);
   const [detail, setDetail] = useState<DistributionLog | null>(null);
   const [proofUrl, setProofUrl] = useState<string | null>(null);
@@ -54,7 +55,7 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
   useEffect(() => { load(); }, [load]);
 
   const openModal = () => {
-    setForm({ platform: 'whatsapp', group_names: '', content_url: '', note: '', project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || '') });
+    setForm({ platform: 'whatsapp', content_category: 'lagi_ramai', group_names: '', content_url: '', note: '', project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || '') });
     setFile(null);
     setDupWarn(null);
     setError('');
@@ -100,6 +101,7 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
     const { error: err } = await supabase.from('distribution_logs').insert({
       project_id: form.project_id || null,
       platform: form.platform,
+      content_category: form.content_category,
       group_names: form.group_names.trim(),
       group_count: countGroups(form.group_names),
       content_url: form.content_url.trim() || null,
@@ -139,8 +141,10 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
     [rows, scope, profile],
   );
   const filtered = useMemo(
-    () => scoped.filter((r) => platFilter === 'all' || r.platform === platFilter),
-    [scoped, platFilter],
+    () => scoped.filter((r) =>
+      (platFilter === 'all' || r.platform === platFilter)
+      && (catFilter === 'all' || r.content_category === catFilter)),
+    [scoped, platFilter, catFilter],
   );
 
   const todayKey = new Date().toISOString().slice(0, 10);
@@ -185,11 +189,15 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
         </div>
 
         <div className="team-filter" style={{ justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <button className={`chip-btn ${platFilter === 'all' ? 'active' : ''}`} onClick={() => setPlatFilter('all')}>Semua platform</button>
             {PLATFORMS.map((p) => (
               <button key={p.key} className={`chip-btn ${platFilter === p.key ? 'active' : ''}`} onClick={() => setPlatFilter(p.key)}>{p.label}</button>
             ))}
+            <select className="cat-filter" style={{ marginLeft: 4 }} value={catFilter} onChange={(e) => setCatFilter(e.target.value)}>
+              <option value="all">Semua kategori</option>
+              {(Object.keys(PILLAR_LABEL) as Pillar[]).map((k) => <option key={k} value={k}>{PILLAR_LABEL[k]}</option>)}
+            </select>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button className={`chip-btn ${scope === 'saya' ? 'active' : ''}`} onClick={() => setScope('saya')}>Sebaran saya</button>
@@ -259,7 +267,7 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
               <div>
                 <div className="modal-eyebrow"><span className="sq" style={{ background: platMeta(detail.platform).color }} />{platMeta(detail.platform).label} · {detail.group_count} grup</div>
                 <div className="modal-title">Laporan Sebaran</div>
-                <div className="modal-sub">{fmtDateTime(detail.created_at)} · {detail.reporter_name} · {projName(detail.project_id)}</div>
+                <div className="modal-sub">{fmtDateTime(detail.created_at)} · {detail.reporter_name} · {projName(detail.project_id)}{detail.content_category ? ' · ' + (PILLAR_LABEL[detail.content_category as Pillar] || detail.content_category) : ''}</div>
               </div>
               <button className="btn ghost modal-close" onClick={() => setDetail(null)}>✕</button>
             </div>
@@ -317,6 +325,12 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
                     {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
+              </div>
+              <div className="field">
+                <label>Kategori konten</label>
+                <select value={form.content_category} onChange={(e) => setForm({ ...form, content_category: e.target.value })}>
+                  {(Object.keys(PILLAR_LABEL) as Pillar[]).map((k) => <option key={k} value={k}>{PILLAR_LABEL[k]}</option>)}
+                </select>
               </div>
               <div className="field">
                 <label>Nama grup / komunitas <span style={{ color: 'var(--text-3)' }}>(1 per baris, boleh banyak)</span></label>
