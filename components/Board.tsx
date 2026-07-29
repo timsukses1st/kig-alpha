@@ -79,6 +79,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [division, setDivision] = useState<Division>('semua');
   const [range, setRange] = useState<Range>('all');
   const [catFilter, setCatFilter] = useState<'all' | Pillar>('all');
+  const [pickDate, setPickDate] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ContentRow | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -105,6 +106,10 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   useEffect(() => { load(); }, [load]);
 
   const inRange = useCallback((r: ContentRow) => {
+    // Tanggal spesifik menang atas rentang cepat
+    if (pickDate) {
+      return new Date(r.updated_at).toISOString().slice(0, 10) === pickDate;
+    }
     if (range === 'all') return true;
     const d = new Date(r.updated_at);
     const now = new Date();
@@ -116,7 +121,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     }
     const start7 = new Date(startToday); start7.setDate(start7.getDate() - 6);
     return d >= start7;
-  }, [range]);
+  }, [range, pickDate]);
 
   const filtered = useMemo(
     () => rows.filter((r) =>
@@ -516,8 +521,12 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
         </select>
         <div className="range-tabs">
           {([['today', 'Hari ini'], ['yesterday', 'Kemarin'], ['week', '7 Hari'], ['all', 'Semua']] as [Range, string][]).map(([k, label]) => (
-            <button key={k} className={`range-tab ${range === k ? 'active' : ''}`} onClick={() => setRange(k)}>{label}</button>
+            <button key={k} className={`range-tab ${range === k ? 'active' : ''}`} disabled={!!pickDate} onClick={() => setRange(k)}>{label}</button>
           ))}
+        </div>
+        <div className="date-pick">
+          <input type="date" value={pickDate} onChange={(e) => setPickDate(e.target.value)} title="Pilih tanggal spesifik" />
+          {pickDate && <button className="date-clear" onClick={() => setPickDate('')} title="Hapus filter tanggal">✕</button>}
         </div>
       </div>
 
