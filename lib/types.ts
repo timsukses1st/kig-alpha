@@ -159,6 +159,23 @@ export interface BudgetRequest {
   created_at: string;
 }
 
+export interface OvertimeRequest {
+  id: string;
+  project_id: string | null;
+  work_date: string;
+  start_time: string;
+  end_time: string;
+  description: string;
+  status: string;
+  requester_id: string | null;
+  requester_name: string | null;
+  approver_id: string | null;
+  approver_name: string | null;
+  decided_at: string | null;
+  reject_reason: string | null;
+  created_at: string;
+}
+
 export interface ActivityLog {
   id: number;
   actor_email: string | null;

@@ -13,10 +13,11 @@ import CalendarView from '@/components/CalendarView';
 import ReportView from '@/components/ReportView';
 import RecapView from '@/components/RecapView';
 import BudgetView from '@/components/BudgetView';
+import OvertimeView from '@/components/OvertimeView';
 import ComplaintView from '@/components/ComplaintView';
 import TrackerView from '@/components/TrackerView';
 
-type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'laporan' | 'komplain' | 'log' | 'access';
+type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'laporan' | 'komplain' | 'log' | 'access';
 
 const NAV: { key: View; label: string }[] = [
   { key: 'board', label: 'Board Pipeline' },
@@ -25,6 +26,7 @@ const NAV: { key: View; label: string }[] = [
   { key: 'ads', label: 'Ads Tracker' },
   { key: 'recap', label: 'Recap Report' },
   { key: 'budget', label: 'Pengajuan Budget' },
+  { key: 'lembur', label: 'Lembur' },
   { key: 'laporan', label: 'Laporan Kerja' },
   { key: 'komplain', label: 'Komplain' },
   { key: 'log', label: 'Log Aktivitas' },
@@ -75,6 +77,12 @@ const ICON_PATHS: Record<View, React.ReactNode> = {
       <rect x="2" y="6" width="20" height="13" rx="2" />
       <path d="M2 10h20" />
       <circle cx="17" cy="14" r="1.5" />
+    </>
+  ),
+  lembur: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
     </>
   ),
   laporan: (
@@ -404,6 +412,7 @@ export default function App() {
           <RecapView profile={profile} projects={projects} projectFilter={activeProject} />
         )}
         {view === 'budget' && <BudgetView profile={profile} projects={projects} projectFilter={activeProject} />}
+        {view === 'lembur' && <OvertimeView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'laporan' && <ReportView projects={projects} projectFilter={activeProject} />}
         {view === 'komplain' && <ComplaintView profile={profile} />}
         {view === 'log' && canSeeLog && <LogView />}
