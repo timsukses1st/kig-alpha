@@ -1,299 +1,831 @@
-'use client';
-
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { initials, type OvertimeRequest, type Profile, type Project } from '@/lib/types';
-
-interface Props {
-  profile: Profile | null;
-  projects: Project[];
-  projectFilter: string;
+:root, [data-theme='dark'] {
+  --bg: #08090a;
+  --panel: #101113;
+  --raised: #17181b;
+  --hover: #1d1f23;
+  --border: #222428;
+  --border-strong: #2e3138;
+  --text: #f2f3f5;
+  --text-2: #9a9ca4;
+  --text-3: #5f6168;
+  --accent: #2f9bff;
+  --accent-strong: #1e8fff;
+  --accent-soft: rgba(47, 155, 255, 0.13);
+  --st-ide: #3ea6ff;
+  --st-drafting: #f5a623;
+  --st-review: #ff4d9d;
+  --st-siap: #38bdf8;
+  --st-terjadwal: #fbbf24;
+  --st-published: #fb7185;
+  --st-diiklankan: #ec4899;
+  --green: #34d399;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+  --shadow: 0 1px 2px rgba(0,0,0,.5), 0 12px 32px rgba(0,0,0,.45);
 }
 
-const STATUS_META: Record<string, { label: string; color: string }> = {
-  diajukan: { label: 'Diajukan', color: 'var(--st-review)' },
-  disetujui: { label: 'Disetujui', color: 'var(--green)' },
-  ditolak: { label: 'Ditolak', color: 'var(--red)' },
-};
-
-// hitung durasi jam (mendukung lintas tengah malam)
-function durationHours(start: string, end: string): number {
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  let mins = eh * 60 + em - (sh * 60 + sm);
-  if (mins < 0) mins += 24 * 60; // lewat tengah malam
-  return mins / 60;
+[data-theme='light'] {
+  --bg: #f6f7f9;
+  --panel: #ffffff;
+  --raised: #f1f2f5;
+  --hover: #e9ebef;
+  --border: #e3e5e9;
+  --border-strong: #d2d5db;
+  --text: #17181b;
+  --text-2: #565961;
+  --text-3: #9a9da5;
+  --accent: #1677e6;
+  --accent-strong: #0f6ad6;
+  --accent-soft: rgba(22, 119, 230, 0.1);
+  --st-ide: #1e88e5;
+  --st-drafting: #d98200;
+  --st-review: #e0338a;
+  --st-siap: #0e9fd8;
+  --st-terjadwal: #d99a00;
+  --st-published: #e05563;
+  --st-diiklankan: #d6247f;
+  --green: #0f9d6e;
+  --amber: #b97b00;
+  --red: #d64545;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 10px 30px rgba(0,0,0,.08);
 }
-const fmtDur = (h: number) => {
-  const H = Math.floor(h);
-  const M = Math.round((h - H) * 60);
-  return M ? `${H}j ${M}m` : `${H}j`;
-};
 
-export default function OvertimeView({ profile, projects, projectFilter }: Props) {
-  const [rows, setRows] = useState<OvertimeRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'diajukan' | 'disetujui' | 'ditolak'>('all');
-  const [scope, setScope] = useState<'saya' | 'tim'>('saya');
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [form, setForm] = useState({
-    work_date: new Date().toISOString().slice(0, 10),
-    start_time: '17:00', end_time: '20:00',
-    description: '', project_id: '',
-  });
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
-  const canApprove = profile?.role === 'manager' || profile?.role === 'superadmin';
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    let q = supabase.from('overtime_requests').select('*').order('work_date', { ascending: false });
-    if (projectFilter !== 'all') q = q.eq('project_id', projectFilter);
-    const { data } = await q;
-    setRows((data as OvertimeRequest[]) || []);
-    setLoading(false);
-  }, [projectFilter]);
+button { font: inherit; cursor: pointer; color: inherit; }
+input, select, textarea { font: inherit; color: var(--text); }
+.mono { font-family: var(--mono); letter-spacing: .04em; }
 
-  useEffect(() => { load(); }, [load]);
+.app-shell { display: flex; min-height: 100vh; }
 
-  const openModal = () => {
-    setForm({
-      work_date: new Date().toISOString().slice(0, 10),
-      start_time: '17:00', end_time: '20:00', description: '',
-      project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || ''),
-    });
-    setError('');
-    setOpen(true);
-  };
+/* ================= Sidebar ================= */
+.sidebar {
+  width: 232px; flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  padding: 18px 14px;
+  display: flex; flex-direction: column; gap: 3px;
+  position: sticky; top: 0; height: 100vh;
+}
+.brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px 16px; }
+.brand-logo {
+  width: 30px; height: 30px; border-radius: 8px;
+  background: var(--accent-soft); color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; font-size: 16px;
+}
+.brand h1 { font-size: 15.5px; font-weight: 700; letter-spacing: -0.01em; }
+.brand .brand-sub { font-size: 10px; color: var(--text-3); font-family: var(--mono); letter-spacing: .06em; }
 
-  const submit = async () => {
-    if (!profile) return;
-    if (!form.description.trim()) { setError('Isi dulu apa yang dikerjakan.'); return; }
-    if (form.start_time === form.end_time) { setError('Jam mulai dan selesai tidak boleh sama.'); return; }
-    setBusy(true); setError('');
-    const { error: err } = await supabase.from('overtime_requests').insert({
-      project_id: form.project_id || null,
-      work_date: form.work_date,
-      start_time: form.start_time,
-      end_time: form.end_time,
-      description: form.description.trim(),
-      requester_id: profile.id,
-      requester_name: profile.full_name || profile.email,
-    });
-    setBusy(false);
-    if (err) { setError('Gagal menyimpan pengajuan.'); return; }
-    setOpen(false);
-    load();
-  };
+.section-label {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--text-3);
+  padding: 10px 8px 6px;
+}
+.account-picker {
+  width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 10px; padding: 9px 10px; margin-bottom: 8px;
+  text-align: left; transition: border-color .12s;
+}
+.account-picker:hover { border-color: var(--border-strong); }
+.acc-avatar {
+  width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px;
+}
+.acc-name { font-size: 13px; font-weight: 700; line-height: 1.2; }
+.acc-sub { font-size: 10.5px; color: var(--text-3); font-family: var(--mono); }
+.acc-caret { margin-left: auto; color: var(--text-3); font-size: 11px; }
+.account-menu {
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 12px; padding: 6px; margin-bottom: 8px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.account-option {
+  display: flex; align-items: center; gap: 10px;
+  border: none; background: transparent; border-radius: 8px;
+  padding: 8px; text-align: left; transition: background .12s;
+}
+.account-option:hover { background: var(--hover); }
+.account-option .check { margin-left: auto; color: var(--accent); font-weight: 700; }
 
-  const decide = async (o: OvertimeRequest, approve: boolean) => {
-    if (!profile) return;
-    let reason: string | null = null;
-    if (!approve) {
-      const r = window.prompt('Alasan menolak (opsional):');
-      if (r === null) return;
-      reason = r || null;
-    }
-    const { error: err } = await supabase.from('overtime_requests').update({
-      status: approve ? 'disetujui' : 'ditolak',
-      approver_id: profile.id,
-      approver_name: profile.full_name || profile.email,
-      decided_at: new Date().toISOString(),
-      reject_reason: reason,
-    }).eq('id', o.id);
-    if (err) { window.alert('Gagal — hanya manager yang bisa menyetujui.'); return; }
-    load();
-  };
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px;
+  color: var(--text-2); background: transparent; border: none;
+  text-align: left; width: 100%; font-size: 13.5px; font-weight: 600;
+  transition: background .12s, color .12s;
+}
+.nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex-shrink: 0; transition: background .12s; }
+.nav-item:hover { background: var(--hover); color: var(--text); }
+.nav-item.active { background: var(--raised); color: var(--text); }
+.nav-item.active .dot { background: var(--accent); }
 
-  const removeOwn = async (o: OvertimeRequest) => {
-    if (!window.confirm('Hapus pengajuan lembur ini?')) return;
-    const { error: err } = await supabase.from('overtime_requests').delete().eq('id', o.id);
-    if (err) { window.alert('Gagal menghapus.'); return; }
-    load();
-  };
+.sidebar-footer { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
+.user-chip {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px; border-radius: 10px;
+}
+.user-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px; flex-shrink: 0;
+}
+.user-chip .u-name { font-size: 12.5px; font-weight: 700; line-height: 1.2; }
+.user-chip .u-role { font-size: 10.5px; color: var(--text-3); font-family: var(--mono); }
+.icon-btn {
+  border: none; background: transparent; color: var(--text-3);
+  padding: 6px; border-radius: 7px; margin-left: auto;
+}
+.icon-btn:hover { background: var(--hover); color: var(--text); }
 
-  const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
-  const fmtDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+/* ================= Main ================= */
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 18px 28px; border-bottom: 1px solid var(--border); flex-wrap: wrap;
+}
+.topbar h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+.topbar .top-note { font-size: 11.5px; color: var(--text-3); font-family: var(--mono); margin-left: 10px; }
+.top-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.content-area { padding: 20px 28px 32px; }
 
-  const scoped = useMemo(
-    () => rows.filter((r) => (scope === 'saya' ? r.requester_id === profile?.id : true)),
-    [rows, scope, profile],
-  );
-  const filtered = useMemo(
-    () => scoped.filter((r) => filter === 'all' || r.status === filter),
-    [scoped, filter],
-  );
+/* ================= Buttons ================= */
+.btn {
+  border: 1px solid var(--border-strong); background: var(--panel); color: var(--text);
+  border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 600;
+  transition: border-color .12s, background .12s;
+}
+.btn:hover { border-color: var(--text-3); }
+.btn.primary { background: var(--accent-strong); border-color: var(--accent-strong); color: #fff; }
+.btn.primary:hover { filter: brightness(1.1); }
+.btn.ghost { border-color: transparent; background: transparent; color: var(--text-2); }
+.btn.ghost:hover { background: var(--hover); color: var(--text); }
+.btn.danger { color: var(--red); border-color: var(--red); background: transparent; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
 
-  // rekap per orang (hanya yang disetujui)
-  const rekap = useMemo(() => {
-    const map = new Map<string, { name: string; hours: number; count: number }>();
-    rows.filter((r) => r.status === 'disetujui').forEach((r) => {
-      const key = r.requester_id || r.requester_name || '?';
-      const cur = map.get(key) || { name: r.requester_name || '—', hours: 0, count: 0 };
-      cur.hours += durationHours(r.start_time, r.end_time);
-      cur.count += 1;
-      map.set(key, cur);
-    });
-    return Array.from(map.values()).sort((a, b) => b.hours - a.hours);
-  }, [rows]);
+/* ================= Division tabs ================= */
+.div-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); padding: 0 28px; flex-wrap: wrap; }
+.div-tab {
+  display: flex; align-items: center; gap: 8px;
+  border: none; background: transparent; color: var(--text-2);
+  padding: 11px 14px; font-size: 13.5px; font-weight: 600;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color .12s;
+}
+.div-tab:hover { color: var(--text); }
+.div-tab.active { color: var(--text); border-bottom-color: var(--accent); background: var(--raised); border-radius: 8px 8px 0 0; }
+.div-dot { width: 7px; height: 7px; border-radius: 50%; }
+.div-count {
+  font-size: 10.5px; font-family: var(--mono); color: var(--text-3);
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 20px; padding: 1px 7px;
+}
+.div-tab.active .div-count { background: var(--panel); }
 
-  const myPending = rows.filter((r) => r.status === 'diajukan' && (scope === 'tim' || r.requester_id === profile?.id)).length;
+.div-desc {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px 28px 0; font-size: 12.5px; color: var(--text-2);
+}
+.div-desc .bar { width: 18px; height: 3px; border-radius: 3px; }
+.div-desc .div-name { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: var(--text); }
+.range-tabs {
+  margin-left: auto; display: flex; gap: 2px;
+  background: var(--raised); border: 1px solid var(--border); border-radius: 9px; padding: 3px;
+}
+.range-tab { border: none; background: transparent; color: var(--text-2); font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 7px; }
+.range-tab.active { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
 
-  return (
-    <>
-      <div className="topbar">
-        <div style={{ display: 'flex', alignItems: 'baseline' }}>
-          <h2>Lembur</h2>
-          <span className="top-note">{scoped.length} pengajuan</span>
-        </div>
-        <div className="top-actions">
-          <button className="btn primary" onClick={openModal}>+ Ajukan lembur</button>
-        </div>
-      </div>
+/* ================= Board ================= */
+.board { display: flex; gap: 16px; overflow-x: auto; padding: 16px 28px 30px; align-items: flex-start; }
+.column { width: 292px; flex-shrink: 0; }
+.column-head { display: flex; align-items: center; gap: 8px; padding: 4px 4px 10px; }
+.column-head .st-square { width: 9px; height: 9px; border-radius: 2.5px; }
+.column-head h3 { font-family: var(--mono); font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.column-head .count { font-size: 10.5px; font-family: var(--mono); color: var(--text-3); background: var(--raised); border: 1px solid var(--border); border-radius: 20px; padding: 1px 8px; }
+.column-head .owner-chip { margin-left: auto; font-size: 10px; font-family: var(--mono); border: 1px solid var(--border-strong); border-radius: 5px; padding: 2px 7px; color: var(--text-2); }
+.col-body {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 14px; padding: 12px;
+  min-height: 340px; display: flex; flex-direction: column; gap: 10px;
+}
+.col-empty { color: var(--text-3); font-size: 12.5px; text-align: center; margin: auto; }
 
-      <div className="content-area">
-        <div className="kpi-row">
-          <div className="kpi"><div className="kpi-label">Menunggu keputusan</div><div className="kpi-value" style={{ color: 'var(--st-review)' }}>{myPending}</div></div>
-          <div className="kpi"><div className="kpi-label">Disetujui (pengajuan)</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{rows.filter((r) => r.status === 'disetujui').length}</div></div>
-          <div className="kpi"><div className="kpi-label">Total jam disetujui</div><div className="kpi-value" style={{ fontSize: 20 }}>{fmtDur(rekap.reduce((a, r) => a + r.hours, 0))}</div></div>
-        </div>
+.card {
+  background: var(--raised); border: 1px solid var(--border);
+  border-left: 3px solid var(--card-accent, var(--accent));
+  border-radius: 10px; padding: 12px 12px 9px;
+  text-align: left; width: 100%;
+  transition: border-color .12s, background .12s;
+}
+.card:hover { background: var(--hover); border-color: var(--border-strong); border-left-color: var(--card-accent, var(--accent)); }
+.card.locked { opacity: .7; }
+.card-title { font-size: 13.5px; font-weight: 700; line-height: 1.4; margin-bottom: 8px; }
+.card-acc { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); font-weight: 600; }
+.card-acc .sq { width: 8px; height: 8px; border-radius: 2px; background: var(--text-3); }
+.card-foot {
+  display: flex; align-items: center; gap: 6px; margin-top: 10px;
+  border-top: 1px solid var(--border); padding-top: 8px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--text-2);
+}
+.card-foot .flag-dot { width: 6px; height: 6px; border-radius: 50%; }
+.pic-avatar {
+  margin-left: auto; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--hover); border: 1px solid var(--border-strong);
+  color: var(--text); font-size: 10.5px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
 
-        <div className="team-filter" style={{ justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {(['all', 'diajukan', 'disetujui', 'ditolak'] as const).map((f) => (
-              <button key={f} className={`chip-btn ${filter === f ? 'active' : ''}`} onClick={() => setFilter(f)}>
-                {f === 'all' ? 'Semua' : STATUS_META[f].label}
-              </button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button className={`chip-btn ${scope === 'saya' ? 'active' : ''}`} onClick={() => setScope('saya')}>Lembur saya</button>
-            {canApprove && <button className={`chip-btn ${scope === 'tim' ? 'active' : ''}`} onClick={() => setScope('tim')}>Semua tim</button>}
-          </div>
-        </div>
+/* ================= Modal ================= */
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.62);
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 5vh 16px; z-index: 50; overflow-y: auto;
+}
+.modal {
+  background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: 16px; width: 100%; max-width: 720px;
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.modal-head { padding: 20px 24px 0; display: flex; align-items: flex-start; gap: 10px; }
+.modal-eyebrow { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-2); display: flex; align-items: center; gap: 7px; }
+.modal-eyebrow .sq { width: 8px; height: 8px; border-radius: 2px; }
+.modal-title { font-size: 17px; font-weight: 700; margin-top: 6px; letter-spacing: -0.01em; }
+.modal-sub { font-size: 12.5px; color: var(--text-2); margin-top: 4px; }
+.modal-close { margin-left: auto; }
+.modal-body { padding: 18px 24px; display: grid; grid-template-columns: 1.35fr 1fr; gap: 22px; }
+.modal-col-label { font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); margin-bottom: 12px; }
+.field { margin-bottom: 13px; }
+.field label { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--text-2); margin-bottom: 6px; }
+.field input, .field select, .field textarea {
+  width: 100%; background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 11px; font-size: 13.5px; outline: none;
+  transition: border-color .12s;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+.field textarea { resize: vertical; min-height: 90px; }
+.field .hint { font-size: 11.5px; color: var(--text-3); margin-top: 5px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.check-row { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text-2); font-weight: 600; }
+.check-row input { width: auto; }
+.modal-foot {
+  border-top: 1px solid var(--border);
+  padding: 14px 24px; display: flex; align-items: center; gap: 10px;
+}
+.modal-foot .foot-note { font-size: 12px; color: var(--text-3); }
+.modal-foot .right { display: flex; gap: 10px; margin-left: auto; }
 
-        <div className="table-wrap">
-          {loading ? <p className="empty">Memuat…</p> : filtered.length === 0 ? (
-            <p className="empty">Belum ada pengajuan lembur pada filter ini.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr><th>Tanggal</th><th>Jam</th><th>Durasi</th><th>Project</th><th>Yang dikerjakan</th><th>Pemohon</th><th>Status</th><th style={{ width: 150 }}></th></tr>
-              </thead>
-              <tbody>
-                {filtered.map((o) => (
-                  <tr key={o.id}>
-                    <td><b>{fmtDate(o.work_date)}</b></td>
-                    <td>{o.start_time.slice(0, 5)}–{o.end_time.slice(0, 5)}</td>
-                    <td><b>{fmtDur(durationHours(o.start_time, o.end_time))}</b></td>
-                    <td>{projName(o.project_id)}</td>
-                    <td>
-                      <span style={{ display: 'block', maxWidth: 260, whiteSpace: 'normal' }}>{o.description}</span>
-                      {o.reject_reason && <div className="sub" style={{ color: 'var(--red)' }}>Ditolak: {o.reject_reason}</div>}
-                    </td>
-                    <td><span className="row-avatar">{initials(o.requester_name)}</span>{o.requester_name}</td>
-                    <td><span className="status-dot" style={{ background: STATUS_META[o.status]?.color }} />{STATUS_META[o.status]?.label}</td>
-                    <td>
-                      <div className="recap-actions">
-                        {o.status === 'diajukan' && canApprove && (
-                          <>
-                            <button className="btn act" style={{ borderColor: 'var(--green)', color: 'var(--green)' }} onClick={() => decide(o, true)}>Setujui</button>
-                            <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => decide(o, false)}>Tolak</button>
-                          </>
-                        )}
-                        {o.status === 'diajukan' && o.requester_id === profile?.id && (
-                          <button className="btn act" onClick={() => removeOwn(o)}>Hapus</button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+/* ================= Tables / feed ================= */
+.table-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  text-align: left; padding: 11px 16px;
+  font-family: var(--mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .1em;
+  color: var(--text-3); border-bottom: 1px solid var(--border); font-weight: 700;
+}
+td { padding: 12px 16px; border-bottom: 1px solid var(--border); color: var(--text-2); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+td b { color: var(--text); font-weight: 700; }
+td .sub { font-size: 11.5px; color: var(--text-3); font-family: var(--mono); }
+td select {
+  background: var(--raised); border: 1px solid var(--border-strong);
+  border-radius: 20px; padding: 4px 10px; font-size: 12px; font-weight: 600;
+}
+.row-avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--raised); border: 1px solid var(--border-strong);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; margin-right: 10px; color: var(--text);
+}
+.status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; }
 
-        {rekap.length > 0 && (
-          <>
-            <div className="section-title" style={{ marginTop: 28 }}>Rekap Jam (disetujui)</div>
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Nama</th><th>Jumlah pengajuan</th><th>Total jam lembur</th></tr></thead>
-                <tbody>
-                  {rekap.map((r, i) => (
-                    <tr key={i}>
-                      <td><span className="row-avatar">{initials(r.name)}</span><b>{r.name}</b></td>
-                      <td>{r.count}×</td>
-                      <td><b>{fmtDur(r.hours)}</b></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
+.feed { display: flex; flex-direction: column; }
+.feed-item { display: flex; gap: 12px; padding: 14px 6px; border-bottom: 1px solid var(--border); align-items: flex-start; }
+.feed-item:last-child { border-bottom: none; }
+.feed-text { font-size: 13.5px; line-height: 1.45; }
+.feed-text b { font-weight: 700; }
+.feed-text .obj { color: var(--accent); }
+.feed-time { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 4px; }
+.feed-badge {
+  margin-left: auto; font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-2);
+  border: 1px solid var(--border-strong); border-radius: 5px; padding: 3px 8px; flex-shrink: 0;
+}
 
-        <p className="cal-legend">
-          Semua user boleh mengajukan · <b>Manager</b> menyetujui/menolak · rekap jam dihitung dari pengajuan yang disetujui. Jam diisi manual.
-        </p>
-      </div>
+/* ================= Login ================= */
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+.login-card {
+  width: 100%; max-width: 372px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px; padding: 32px; box-shadow: var(--shadow);
+}
+.login-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.login-card .sub { font-size: 12px; color: var(--text-3); font-family: var(--mono); letter-spacing: .04em; margin-bottom: 24px; }
 
-      {open && (
-        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setOpen(false)}>
-          <div className="modal" style={{ maxWidth: 460 }}>
-            <div className="modal-head">
-              <div>
-                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--accent)' }} />Lembur</div>
-                <div className="modal-title">Ajukan Lembur</div>
-                <div className="modal-sub">Isi manual. Setelah diajukan, manager akan menyetujui atau menolak.</div>
-              </div>
-              <button className="btn ghost modal-close" onClick={() => setOpen(false)}>✕</button>
-            </div>
-            <div style={{ padding: '18px 24px' }}>
-              <div className="field">
-                <label>Tanggal</label>
-                <input type="date" value={form.work_date} onChange={(e) => setForm({ ...form, work_date: e.target.value })} />
-              </div>
-              <div className="field-row">
-                <div className="field">
-                  <label>Mulai</label>
-                  <input type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
-                </div>
-                <div className="field">
-                  <label>Selesai</label>
-                  <input type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
-                </div>
-                <div className="field" style={{ justifyContent: 'flex-end' }}>
-                  <label>Durasi</label>
-                  <div className="dur-pill">{fmtDur(durationHours(form.start_time, form.end_time))}</div>
-                </div>
-              </div>
-              <div className="field">
-                <label>Project terkait</label>
-                <select value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
-                  <option value="">— umum —</option>
-                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label>Apa saja yang dikerjakan</label>
-                <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="mis. Edit 5 reels REXONA, revisi caption, jadwalkan upload" />
-              </div>
-              {error && <p className="error-msg">{error}</p>}
-            </div>
-            <div className="modal-foot">
-              <div className="right">
-                <button className="btn" onClick={() => setOpen(false)} disabled={busy}>Batal</button>
-                <button className="btn primary" onClick={submit} disabled={busy || !form.description.trim()}>
-                  {busy ? 'Mengirim…' : 'Ajukan'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
+/* ================= Utils ================= */
+.error-msg { color: var(--red); font-size: 12.5px; margin-top: 10px; }
+.empty { color: var(--text-3); font-size: 13px; padding: 32px; text-align: center; }
+.placeholder-page { text-align: center; padding: 70px 20px; color: var(--text-2); }
+.placeholder-page .ph-badge {
+  display: inline-block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--accent); background: var(--accent-soft);
+  border-radius: 20px; padding: 4px 12px; margin-bottom: 14px;
+}
+.placeholder-page h3 { color: var(--text); font-size: 17px; margin-bottom: 8px; }
+.placeholder-page p { font-size: 13px; max-width: 420px; margin: 0 auto; line-height: 1.6; }
+
+@media (max-width: 820px) {
+  .app-shell { flex-direction: column; }
+  .sidebar { width: 100%; height: auto; position: static; }
+  .modal-body { grid-template-columns: 1fr; }
+  .topbar, .content-area, .div-tabs, .div-desc { padding-left: 16px; padding-right: 16px; }
+  .board { padding: 14px 16px 24px; }
+}
+
+/* ================= Sidebar collapsed ================= */
+.collapse-btn { margin-left: auto; }
+.sidebar.collapsed {
+  width: 64px;
+  padding: 18px 10px;
+  align-items: center;
+}
+.sidebar.collapsed .brand { flex-direction: column; gap: 8px; padding: 2px 0 14px; }
+.sidebar.collapsed .collapse-btn { margin-left: 0; }
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 10px 0;
+  width: 44px;
+}
+.nav-icon { font-size: 16px; line-height: 1; }
+.sidebar.collapsed .sidebar-footer { align-items: center; gap: 10px; }
+.footer-icon {
+  width: 40px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 9px;
+}
+.footer-icon:hover { border-color: var(--border-strong); }
+
+/* ================= Nav SVG icons ================= */
+.nav-item .nav-svg { flex-shrink: 0; opacity: .85; }
+.nav-item.active .nav-svg { color: var(--accent); opacity: 1; }
+.theme-btn { display: flex; align-items: center; justify-content: center; }
+
+/* ================= Fix overflow teks panjang / link ================= */
+.card-title {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.card-acc, .feed-text, td, .modal-sub { overflow-wrap: anywhere; }
+.col-body { overflow: hidden; }
+
+/* ================= Kelola opsi (Akun & PIC) ================= */
+.section-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.section-hint { font-size: 12.5px; color: var(--text-2); margin-bottom: 12px; }
+.add-row { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.add-row input, .add-row select {
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 11px; font-size: 13px; outline: none;
+  min-width: 180px;
+}
+.add-row input:focus, .add-row select:focus { border-color: var(--accent); }
+.danger-text { color: var(--red); }
+
+/* ================= Notes & link buka ================= */
+.open-link {
+  float: right; color: var(--accent); text-decoration: none;
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
+}
+.open-link:hover { text-decoration: underline; }
+.notes-box { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 4px; }
+.notes-empty { font-size: 12.5px; color: var(--text-3); margin-bottom: 10px; }
+.note-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; }
+.note-avatar { width: 26px; height: 26px; font-size: 11px; margin-right: 0; flex-shrink: 0; }
+.note-body { flex: 1; min-width: 0; }
+.note-meta { display: flex; gap: 8px; align-items: baseline; font-size: 12px; }
+.note-meta b { color: var(--text); }
+.note-meta span { font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+.note-text { font-size: 13px; color: var(--text-2); line-height: 1.45; overflow-wrap: anywhere; margin-top: 2px; }
+.note-del { border: none; background: transparent; color: var(--text-3); font-size: 11px; padding: 4px; border-radius: 5px; }
+.note-del:hover { color: var(--red); background: var(--hover); }
+.note-input { display: flex; gap: 8px; margin-top: 8px; }
+.note-input input {
+  flex: 1; background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 11px; font-size: 13px; outline: none;
+}
+.note-input input:focus { border-color: var(--accent); }
+
+/* ================= Catatan per-field (ala spreadsheet) ================= */
+.note-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: none; background: transparent; color: var(--text-3);
+  padding: 1px 5px; border-radius: 5px; margin-left: 6px;
+  font-family: var(--mono); font-size: 10px; vertical-align: middle;
+}
+.note-btn:hover { color: var(--text); background: var(--hover); }
+.note-btn.has { color: var(--amber); }
+.note-btn.open { color: var(--accent); background: var(--accent-soft); }
+.field-notes {
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px; margin-top: 8px;
+}
+
+/* ================= Panel catatan samping ================= */
+.modal-wrap { display: flex; gap: 14px; align-items: flex-start; width: 100%; max-width: 1060px; justify-content: center; }
+.modal-wrap .modal { max-width: 720px; flex-shrink: 0; }
+.note-side {
+  width: 300px; flex-shrink: 0;
+  background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: 16px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
+  max-height: 82vh; position: sticky; top: 0;
+  animation: noteSlide .16s ease-out;
+}
+@keyframes noteSlide { from { opacity: 0; transform: translateX(-6px); } to { opacity: 1; transform: none; } }
+.note-side-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+}
+.note-side-head b { font-size: 14px; }
+.note-side-body { padding: 10px 16px; overflow-y: auto; flex: 1; }
+.note-side .note-input { padding: 12px 16px; border-top: 1px solid var(--border); margin-top: 0; }
+
+@media (max-width: 1080px) {
+  .modal-wrap { flex-direction: column; align-items: stretch; }
+  .note-side { width: 100%; position: static; max-height: 50vh; }
+}
+
+/* ================= Fix offset label + ikon catatan ================= */
+.field label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: 10px;
+  letter-spacing: .07em;
+  min-height: 18px;
+}
+.field .note-btn { margin-left: 1px; flex-shrink: 0; }
+.open-link { float: none; margin-left: auto; flex-shrink: 0; }
+
+/* ================= Editor Hook/Brief (bold Ctrl+B) ================= */
+.rich-input {
+  width: 100%; min-height: 110px; max-height: 340px; overflow-y: auto;
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 11px; font-size: 13.5px;
+  outline: none; line-height: 1.5; overflow-wrap: anywhere;
+  transition: border-color .12s;
+}
+.rich-input:focus { border-color: var(--accent); }
+.rich-input.ro { opacity: .7; pointer-events: none; }
+.rich-input:empty::before { content: attr(data-placeholder); color: var(--text-3); }
+.rich-input b, .card-title b { font-weight: 800; }
+
+/* ================= Tombol ACC di kartu Review ================= */
+.card { cursor: pointer; }
+.acc-btn {
+  width: 100%; margin-top: 10px;
+  background: var(--green); border: none; color: #08090a;
+  font-weight: 800; font-size: 12px; letter-spacing: .02em;
+  border-radius: 8px; padding: 8px 10px;
+  transition: filter .12s;
+}
+.acc-btn:hover { filter: brightness(1.1); }
+.acc-btn:disabled { opacity: .6; }
+.acc-wait {
+  margin-top: 10px; text-align: center;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .08em;
+  color: var(--st-review); border: 1px dashed var(--st-review);
+  border-radius: 8px; padding: 6px;
+  opacity: .8;
+}
+
+/* ================= Status by sistem ================= */
+.status-chip {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 11px;
+  font-size: 13px; font-weight: 700;
+}
+.status-chip .sq { width: 9px; height: 9px; border-radius: 2.5px; }
+.flow-btn { width: 100%; margin-top: 8px; }
+.flow-back { width: 100%; margin-top: 6px; font-size: 12px; }
+
+/* ================= Chip catatan umum di header modal ================= */
+.umum-note {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 10px; padding: 5px 11px;
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 20px; color: var(--text-2);
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em;
+  transition: border-color .12s, color .12s;
+}
+.umum-note:hover { border-color: var(--border-strong); color: var(--text); }
+.umum-note.has { color: var(--amber); border-color: var(--amber); }
+.umum-note.open { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.umum-count {
+  background: var(--panel); border-radius: 20px; padding: 0 6px;
+  font-weight: 700;
+}
+
+/* ================= Kalender Tayang ================= */
+.cal-nav { display: flex; align-items: center; gap: 10px; }
+.cal-month { font-weight: 700; font-size: 14px; min-width: 140px; text-align: center; }
+.calendar {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;
+}
+.cal-dayname {
+  font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-3); padding: 4px 6px;
+}
+.cal-cell {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; min-height: 96px; padding: 8px;
+}
+.cal-cell.blank { background: transparent; border-color: transparent; }
+.cal-cell.today { border-color: var(--accent); background: var(--accent-soft); }
+.cal-daynum { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-bottom: 6px; }
+.cal-cell.today .cal-daynum { color: var(--accent); font-weight: 700; }
+.cal-item {
+  background: var(--raised); border: 1px solid var(--border);
+  border-left: 3px solid var(--ci, var(--accent));
+  border-radius: 7px; padding: 6px 8px; margin-bottom: 6px;
+}
+.cal-item-title {
+  font-size: 11.5px; font-weight: 700; line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
+.cal-item-acc { font-family: var(--mono); font-size: 9.5px; color: var(--text-3); margin-top: 3px; }
+.cal-legend { margin-top: 14px; font-size: 12px; color: var(--text-3); }
+
+@media (max-width: 820px) {
+  .calendar { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+  .cal-cell { min-height: 64px; padding: 4px; }
+  .cal-item-acc { display: none; }
+}
+
+/* ================= Request Content (PM) ================= */
+:root, [data-theme='dark'] { --req: #a78bfa; }
+[data-theme='light'] { --req: #7c5cd6; }
+.req-note {
+  font-size: 11.5px; color: var(--text-3); margin-top: 6px;
+  overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.lift-btn { background: var(--req); }
+.req-reject { width: 100%; margin-top: 4px; font-size: 11.5px; }
+
+/* ================= Laporan Kerja ================= */
+.search-input {
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 12px; font-size: 13px; outline: none; min-width: 180px;
+}
+.search-input:focus { border-color: var(--accent); }
+.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.kpi {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 16px;
+}
+.kpi-label {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-3); margin-bottom: 6px;
+}
+.kpi-value { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+.team-filter { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.chip-btn {
+  border: 1px solid var(--border); background: var(--panel); color: var(--text-2);
+  border-radius: 20px; padding: 5px 13px; font-size: 12px; font-weight: 600;
+  transition: border-color .12s, color .12s;
+}
+.chip-btn:hover { color: var(--text); border-color: var(--border-strong); }
+.chip-btn.active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+/* ================= Log: rapikan baris ================= */
+.feed-item { align-items: center; }
+.feed-text {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.feed-detail { color: var(--text-3); }
+
+/* ================= Tambah project di sidebar ================= */
+.proj-add { display: flex; flex-direction: column; gap: 6px; padding: 8px 6px 4px; border-top: 1px solid var(--border); margin-top: 4px; }
+.proj-add input {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 7px; padding: 7px 9px; font-size: 12.5px; outline: none; width: 100%;
+}
+.proj-add input:focus { border-color: var(--accent); }
+.proj-add .btn { width: 100%; font-size: 12px; }
+
+/* ================= Dropdown & kontrol native ikut tema ================= */
+:root, [data-theme='dark'] { color-scheme: dark; }
+[data-theme='light'] { color-scheme: light; }
+
+select option {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.proj-add select {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 7px; padding: 7px 9px; font-size: 12.5px;
+  outline: none; width: 100%;
+}
+.proj-add select:focus { border-color: var(--accent); }
+
+/* ================= Recap Report ================= */
+.field input[type='file'] {
+  padding: 7px 9px; font-size: 12.5px;
+  background: var(--raised); border: 1px dashed var(--border-strong);
+  border-radius: 8px; cursor: pointer;
+}
+.field input[type='file']::file-selector-button {
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: 6px;
+  padding: 4px 10px; margin-right: 10px; font-size: 12px; cursor: pointer;
+}
+
+/* ================= Recap: link & pratinjau slide ================= */
+.link-tag {
+  display: inline-block; font-family: var(--mono); font-size: 10px;
+  letter-spacing: .06em; color: var(--accent);
+  background: var(--accent-soft); border-radius: 20px; padding: 2px 9px; margin-bottom: 4px;
+}
+.preview-modal { max-width: 920px; }
+.preview-frame { padding: 0 24px; }
+.preview-frame iframe {
+  width: 100%; aspect-ratio: 16 / 9; border: 1px solid var(--border);
+  border-radius: 10px; background: #000;
+}
+td a.btn { text-decoration: none; display: inline-block; }
+
+/* ================= Recap: grup tombol aksi ================= */
+.recap-actions {
+  display: flex; align-items: center; gap: 6px;
+  justify-content: flex-end; flex-wrap: nowrap;
+}
+.btn.act {
+  padding: 5px 10px; font-size: 12px; font-weight: 600;
+  border-color: var(--border); background: var(--raised);
+  white-space: nowrap;
+}
+.btn.act:hover { border-color: var(--border-strong); background: var(--hover); }
+.icon-del {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex-shrink: 0;
+  border: 1px solid transparent; background: transparent;
+  color: var(--text-3); border-radius: 7px;
+  transition: color .12s, background .12s, border-color .12s;
+}
+.icon-del:hover { color: var(--red); border-color: var(--red); background: var(--hover); }
+
+/* ================= Komplain ================= */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.stat-box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.stat-line { display: flex; align-items: center; gap: 10px; font-size: 12.5px; padding: 5px 0; }
+.stat-line > span:first-child { min-width: 110px; color: var(--text-2); }
+.stat-line b { min-width: 22px; text-align: right; }
+.stat-bar { flex: 1; height: 6px; background: var(--raised); border-radius: 20px; overflow: hidden; }
+.stat-bar span { display: block; height: 100%; background: var(--accent); border-radius: 20px; }
+.thread-detail {
+  font-size: 13px; color: var(--text-2); line-height: 1.5;
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; overflow-wrap: anywhere;
+}
+.thread-box { max-height: 300px; overflow-y: auto; }
+
+/* ================= Tracker SIGMA ================= */
+.tracker-filters { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.tracker-filters select {
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; padding: 7px 11px; font-size: 12.5px; outline: none;
+}
+.tracker-filters select:focus { border-color: var(--accent); }
+.tracker-row { cursor: pointer; transition: background .12s; }
+.tracker-row:hover { background: var(--hover); }
+.tracker-post { display: flex; align-items: center; gap: 10px; }
+.tracker-thumb {
+  width: 40px; height: 40px; border-radius: 8px; object-fit: cover;
+  flex-shrink: 0; background: var(--raised); border: 1px solid var(--border);
+}
+.tracker-thumb.ph { display: block; }
+.tracker-cat { font-size: 13px; font-weight: 600; }
+.manual-tag {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em;
+  color: var(--amber); border: 1px solid var(--amber); border-radius: 5px;
+  padding: 1px 5px; margin-left: 7px;
+}
+.plat-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; }
+
+/* ================= Sync project SIGMA ================= */
+.section-head-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+.sync-msg {
+  font-size: 12.5px; color: var(--accent);
+  background: var(--accent-soft); border: 1px solid var(--accent);
+  border-radius: 8px; padding: 8px 12px; margin: 0 0 10px;
+}
+
+/* ================= Kelola Akses: tab ================= */
+.access-tabs {
+  display: flex; gap: 4px; margin-bottom: 22px;
+  border-bottom: 1px solid var(--border); padding-bottom: 0;
+}
+.atab {
+  background: transparent; border: none; color: var(--text-3);
+  font-size: 13px; font-weight: 600; padding: 10px 16px;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color .12s, border-color .12s;
+}
+.atab:hover { color: var(--text); }
+.atab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ================= Fix tombol tabel tidak wrap ================= */
+.table-wrap td .btn,
+.table-wrap td button { white-space: nowrap; }
+.table-wrap td .btn.ghost { padding-left: 10px; padding-right: 10px; }
+
+/* ================= Tambah user ================= */
+.user-add {
+  display: grid; grid-template-columns: 1.4fr 1fr 1.2fr auto auto auto auto;
+  gap: 8px; margin-bottom: 18px; align-items: center;
+}
+.user-add input, .user-add select {
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 11px; font-size: 12.5px; outline: none; width: 100%;
+}
+.user-add input:focus, .user-add select:focus { border-color: var(--accent); }
+@media (max-width: 1000px) { .user-add { grid-template-columns: 1fr 1fr; } }
+
+/* ================= Pengajuan Budget ================= */
+.budget-proof-btn { cursor: pointer; }
+label.btn.act input[type='file'] { display: none; }
+
+/* ================= Budget: detail & QR ================= */
+.budget-title-link { color: var(--accent); }
+.tracker-row:hover .budget-title-link { text-decoration: underline; }
+.budget-detail-label {
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--text-3); margin-bottom: 8px;
+}
+.budget-qr {
+  display: block; max-width: 280px; width: 100%; border-radius: 12px;
+  border: 1px solid var(--border); background: #fff; padding: 8px;
+}
+.budget-trace { font-size: 12.5px; color: var(--text-2); line-height: 1.9; }
+.budget-trace b { color: var(--text); }
+
+/* ================= Toast notifikasi (kanan atas) ================= */
+.toast {
+  position: fixed; top: 20px; right: 20px; z-index: 200;
+  max-width: 380px;
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: 10px; padding: 13px 16px;
+  font-size: 13px; line-height: 1.5; color: var(--text);
+  box-shadow: 0 12px 32px rgba(0,0,0,.4);
+  cursor: pointer;
+  animation: toastIn .25s ease;
+}
+.toast-dot {
+  width: 8px; height: 8px; border-radius: 50%; margin-top: 5px;
+  background: var(--accent); flex-shrink: 0;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* ================= Hapus project: hitungan isi ================= */
+.del-counts {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;
+}
+.del-counts span {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 9px; color: var(--text-2);
+}
+.del-counts-note { color: var(--text-3) !important; border-style: dashed !important; }
+
+/* ================= Lembur: pill durasi ================= */
+.dur-pill {
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--raised); font-weight: 600; font-size: 13px;
+  color: var(--accent); text-align: center;
 }
