@@ -16,6 +16,7 @@ import BudgetView from '@/components/BudgetView';
 import OvertimeView from '@/components/OvertimeView';
 import SebaranView from '@/components/SebaranView';
 import ComplaintView from '@/components/ComplaintView';
+import ComplaintWidget from '@/components/ComplaintWidget';
 import TrackerView from '@/components/TrackerView';
 
 type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'sebaran' | 'laporan' | 'komplain' | 'log' | 'access';
@@ -429,6 +430,7 @@ export default function App() {
         {view === 'log' && canSeeLog && <LogView />}
         {view === 'access' && isSuper && <AccessView selfId={session.user.id} onAccountsChanged={loadAccounts} activeProjectId={activeProject} activeProjectName={activeProj ? activeProj.name : null} />}
       </main>
+      <ComplaintWidget profile={profile} />
     </div>
   );
 }

@@ -859,3 +859,101 @@ label.btn.act input[type='file'] { display: none; }
 }
 .date-clear:hover { border-color: var(--red); color: var(--red); }
 .range-tab:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ================= Complaint Widget (bubble melayang) ================= */
+.cw-bubble {
+  position: fixed; bottom: 24px; right: 24px; z-index: 300;
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--accent); color: #fff; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 8px 24px rgba(0,0,0,.35); transition: transform .15s, opacity .15s;
+}
+.cw-bubble:hover { transform: scale(1.06); }
+.cw-bubble.hidden { opacity: 0; pointer-events: none; }
+.cw-badge {
+  position: absolute; top: -2px; right: -2px; min-width: 20px; height: 20px;
+  background: var(--red); color: #fff; border-radius: 10px; font-size: 11px;
+  font-weight: 700; display: flex; align-items: center; justify-content: center;
+  padding: 0 5px; border: 2px solid var(--bg);
+}
+.cw-panel {
+  position: fixed; bottom: 24px; right: 24px; z-index: 300;
+  width: 380px; max-width: calc(100vw - 32px); height: 560px; max-height: calc(100vh - 48px);
+  background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  display: flex; flex-direction: column; overflow: hidden;
+  animation: cwIn .2s ease;
+}
+@keyframes cwIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+.cw-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; border-bottom: 1px solid var(--border);
+  background: var(--raised);
+}
+.cw-head-l { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cw-back { background: none; border: none; color: var(--text); font-size: 22px; cursor: pointer; line-height: 1; padding: 0 4px; }
+.cw-title { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+.cw-sub { font-size: 11.5px; color: var(--text-3); }
+.cw-close { background: none; border: none; color: var(--text-3); font-size: 15px; cursor: pointer; }
+.cw-close:hover { color: var(--text); }
+.cw-body { flex: 1; overflow-y: auto; padding: 12px; }
+.cw-empty { text-align: center; color: var(--text-3); font-size: 13px; padding: 40px 20px; line-height: 1.6; }
+.cw-item {
+  width: 100%; display: flex; align-items: flex-start; gap: 10px; text-align: left;
+  background: none; border: none; border-radius: 10px; padding: 11px; cursor: pointer;
+  transition: background .12s;
+}
+.cw-item:hover { background: var(--raised); }
+.cw-item-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+.cw-item-body { flex: 1; min-width: 0; }
+.cw-item-title { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cw-item-meta { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.cw-item-status { font-size: 11px; font-weight: 600; flex-shrink: 0; }
+.cw-foot { padding: 12px; border-top: 1px solid var(--border); }
+.cw-foot-row { display: flex; gap: 8px; justify-content: flex-end; }
+.cw-new-btn {
+  width: 100%; background: var(--accent-soft); color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 10px; padding: 10px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.cw-new-btn:hover { background: var(--accent); color: #fff; }
+.cw-stats { background: var(--raised); border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+.cw-stat-row { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 8px; }
+.cw-stat-block { margin-top: 8px; }
+.cw-stat-label { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); margin-bottom: 4px; }
+.cw-stat-item { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-2); padding: 2px 0; }
+/* thread */
+.cw-thread { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.cw-msg-row { display: flex; }
+.cw-msg-row.me { justify-content: flex-end; }
+.cw-bubble-msg {
+  max-width: 78%; padding: 9px 12px; border-radius: 14px; font-size: 13px; line-height: 1.45;
+  white-space: pre-wrap; word-break: break-word;
+}
+.cw-bubble-msg.them { background: var(--raised); color: var(--text); border-bottom-left-radius: 4px; }
+.cw-bubble-msg.me { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+.cw-first { display: flex; }
+.cw-msg-author { font-size: 10.5px; font-weight: 700; opacity: .7; margin-bottom: 3px; }
+.cw-msg-time { font-size: 9.5px; opacity: .55; margin-top: 4px; text-align: right; }
+.cw-status-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-2);
+}
+.cw-mark { background: none; border: 1px solid var(--green); color: var(--green); border-radius: 8px; padding: 4px 10px; font-size: 11.5px; cursor: pointer; }
+.cw-mark:hover { background: var(--green); color: #fff; }
+.cw-resolved { text-align: center; color: var(--text-3); font-size: 12.5px; }
+.cw-reply { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
+.cw-reply input {
+  flex: 1; background: var(--raised); border: 1px solid var(--border); border-radius: 20px;
+  padding: 9px 14px; font-size: 13px; color: var(--text); outline: none;
+}
+.cw-reply input:focus { border-color: var(--accent); }
+.cw-send { background: var(--accent); color: #fff; border: none; border-radius: 50%; width: 38px; height: 38px; cursor: pointer; font-size: 14px; flex-shrink: 0; }
+.cw-send:disabled { opacity: .5; cursor: not-allowed; }
+.cw-panel .field { margin-bottom: 12px; }
+.cw-panel .field label { font-size: 11.5px; color: var(--text-2); font-weight: 600; display: block; margin-bottom: 5px; }
+.cw-panel .field input, .cw-panel .field select, .cw-panel .field textarea {
+  width: 100%; background: var(--raised); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 11px; font-size: 13px; color: var(--text); outline: none; font-family: inherit;
+}
+.cw-panel .field input:focus, .cw-panel .field select:focus, .cw-panel .field textarea:focus { border-color: var(--accent); }
