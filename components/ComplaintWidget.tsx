@@ -51,6 +51,32 @@ export default function ComplaintWidget({ profile }: Props) {
 
   useEffect(() => { if (open) load(); }, [open, load]);
 
+  // Realtime: dengarkan komplain baru/berubah (untuk list)
+  useEffect(() => {
+    if (!open) return;
+    const ch = supabase
+      .channel('cw-complaints')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' }, () => { load(); })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [open, load]);
+
+  // Realtime: dengarkan pesan baru pada thread yang sedang dibuka
+  useEffect(() => {
+    if (!active) return;
+    const ch = supabase
+      .channel('cw-messages-' + active.id)
+      .on('postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'complaint_messages', filter: 'complaint_id=eq.' + active.id },
+        (payload) => {
+          const nm = payload.new as ComplaintMessage;
+          setMessages((prev) => (prev.some((x) => x.id === nm.id) ? prev : [...prev, nm]));
+          setTimeout(() => threadEnd.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+        })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [active]);
+
   const openThread = async (c: Complaint) => {
     setActive(c);
     setView('thread');
