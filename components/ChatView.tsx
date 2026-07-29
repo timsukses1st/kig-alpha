@@ -48,6 +48,25 @@ type Person = {
   vertical: string | null;
 };
 
+/* ---------- warna per user (deterministik dari id) ---------- */
+const HUES = [262, 340, 25, 45, 88, 152, 178, 205, 300, 12, 120, 232];
+
+const hueOf = (id: string) => {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return HUES[h % HUES.length];
+};
+
+const userTint = (id: string) => {
+  const h = hueOf(id);
+  return {
+    text: `hsl(${h} 70% 62%)`,
+    bg: `hsl(${h} 55% 50% / 0.13)`,
+    line: `hsl(${h} 60% 55% / 0.55)`,
+    avBg: `hsl(${h} 55% 50% / 0.22)`,
+  };
+};
+
 /* ---------- util ---------- */
 const nameOf = (p: Person | undefined) => p?.full_name || p?.email || 'Pengguna';
 
@@ -538,6 +557,7 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
                           new Date(m.created_at).toDateString();
                       const sameSender = prev && prev.sender_id === m.sender_id && !newDay;
                       const person = peopleMap.get(m.sender_id);
+                      const tint = userTint(m.sender_id);
                       return (
                         <div key={m.id}>
                           {newDay && (
@@ -547,13 +567,27 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
                           )}
                           <div className={`cv-row ${mine ? 'me' : ''}`}>
                             {!mine && (
-                              <div className={`cv-av ${sameSender ? 'ghost' : ''}`}>
+                              <div
+                                className={`cv-av ${sameSender ? 'ghost' : ''}`}
+                                style={
+                                  sameSender
+                                    ? undefined
+                                    : { background: tint.avBg, color: tint.text }
+                                }
+                              >
                                 {sameSender ? '' : initials(nameOf(person))}
                               </div>
                             )}
-                            <div className={`cv-bub ${mine ? 'me' : 'them'}`}>
+                            <div
+                              className={`cv-bub ${mine ? 'me' : 'them'}`}
+                              style={
+                                mine
+                                  ? undefined
+                                  : { background: tint.bg, borderLeft: `2px solid ${tint.line}` }
+                              }
+                            >
                               {!mine && !sameSender && (
-                                <div className="cv-sender">
+                                <div className="cv-sender" style={{ color: tint.text }}>
                                   {nameOf(person)}
                                   {person?.team ? <span> · {person.team}</span> : null}
                                 </div>
@@ -575,9 +609,12 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
                     <div className="cv-side-t">Anggota aktif ({activeMembers.length})</div>
                     {activeMembers.map((m) => {
                       const p = peopleMap.get(m.user_id);
+                      const t = userTint(m.user_id);
                       return (
                         <div key={m.id} className="cv-mrow">
-                          <div className="cv-mav">{initials(nameOf(p))}</div>
+                          <div className="cv-mav" style={{ background: t.avBg, color: t.text }}>
+                            {initials(nameOf(p))}
+                          </div>
                           <div className="cv-mbody">
                             <div className="cv-mname">
                               {nameOf(p)}
@@ -848,6 +885,7 @@ const CSS = `
 .cv-bub{max-width:min(560px,72%);padding:9px 13px;border-radius:14px;font-size:13.5px;line-height:1.55;
   word-break:break-word;white-space:pre-wrap}
 .cv-bub.them{background:var(--raised,#191A1D);color:var(--text,#e8e9ea);border-bottom-left-radius:5px}
+.cv-bub.them .cv-text{color:var(--text,#e8e9ea)}
 .cv-bub.me{background:var(--accent,#2f7cf6);color:#fff;border-bottom-right-radius:5px}
 .cv-sender{font-size:11.5px;font-weight:600;margin-bottom:3px;color:var(--accent,#2f7cf6)}
 .cv-sender span{font-weight:400;opacity:.6;color:var(--muted,#8b8d92)}
