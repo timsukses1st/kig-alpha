@@ -37,6 +37,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   const [scope, setScope] = useState<'saya' | 'tim'>('saya');
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<OvertimeRequest | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({
@@ -70,6 +71,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   };
 
   const openEdit = (o: OvertimeRequest) => {
+    setDetail(null);
     setEditId(o.id);
     setForm({
       work_date: o.work_date,
@@ -124,7 +126,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
       reject_reason: reason,
     }).eq('id', o.id);
     if (err) { window.alert('Gagal — hanya manager yang bisa menyetujui.'); return; }
-    load();
+    setDetail(null); load();
   };
 
   const removeOwn = async (o: OvertimeRequest) => {
@@ -204,19 +206,19 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
               </thead>
               <tbody>
                 {filtered.map((o) => (
-                  <tr key={o.id}>
+                  <tr key={o.id} className="tracker-row" onClick={() => setDetail(o)}>
                     <td><b>{fmtDate(o.work_date)}</b></td>
                     <td>{o.start_time.slice(0, 5)}–{o.end_time.slice(0, 5)}</td>
                     <td><b>{fmtDur(durationHours(o.start_time, o.end_time))}</b></td>
                     <td>{projName(o.project_id)}</td>
                     <td>
-                      <span style={{ display: 'block', maxWidth: 260, whiteSpace: 'normal' }}>{o.description}</span>
+                      <span className="ot-desc-clip">{o.description}</span>
                       {o.reject_reason && <div className="sub" style={{ color: 'var(--red)' }}>Ditolak: {o.reject_reason}</div>}
                     </td>
                     <td><span className="row-avatar">{initials(o.requester_name)}</span>{o.requester_name}</td>
                     <td><span className="status-dot" style={{ background: STATUS_META[o.status]?.color }} />{STATUS_META[o.status]?.label}</td>
                     <td>
-                      <div className="recap-actions">
+                      <div className="recap-actions" onClick={(e) => e.stopPropagation()}>
                         {o.status === 'diajukan' && canApprove && (
                           <>
                             <button className="btn act" style={{ borderColor: 'var(--green)', color: 'var(--green)' }} onClick={() => decide(o, true)}>Setujui</button>
@@ -262,6 +264,50 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
           Semua user boleh mengajukan · <b>Manager</b> menyetujui/menolak · rekap jam dihitung dari pengajuan yang disetujui. Jam diisi manual.
         </p>
       </div>
+
+      {detail && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setDetail(null)}>
+          <div className="modal" style={{ maxWidth: 480 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: STATUS_META[detail.status]?.color }} />
+                  Lembur · {STATUS_META[detail.status]?.label}
+                </div>
+                <div className="modal-title">{fmtDate(detail.work_date)}</div>
+                <div className="modal-sub">
+                  {detail.start_time.slice(0,5)}–{detail.end_time.slice(0,5)} · {fmtDur(durationHours(detail.start_time, detail.end_time))} · {projName(detail.project_id)}
+                </div>
+              </div>
+              <button className="btn ghost modal-close" onClick={() => setDetail(null)}>✕</button>
+            </div>
+            <div style={{ padding: '16px 24px' }}>
+              <div className="budget-detail-label">Yang dikerjakan</div>
+              <p className="thread-detail" style={{ whiteSpace: 'pre-wrap' }}>{detail.description}</p>
+              <div className="budget-detail-label" style={{ marginTop: 16 }}>Riwayat</div>
+              <div className="budget-trace">
+                <div><b>Diajukan</b> oleh {detail.requester_name}</div>
+                {detail.approver_name && <div><b>{detail.status === 'ditolak' ? 'Ditolak' : 'Disetujui'}</b> oleh {detail.approver_name}</div>}
+                {detail.reject_reason && <div style={{ color: 'var(--red)' }}>Alasan: {detail.reject_reason}</div>}
+              </div>
+            </div>
+            <div className="modal-foot">
+              {detail.status === 'diajukan' && canApprove && (
+                <>
+                  <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => decide(detail, false)}>Tolak</button>
+                  <button className="btn primary" onClick={() => decide(detail, true)}>✓ Setujui</button>
+                </>
+              )}
+              {detail.status === 'diajukan' && detail.requester_id === profile?.id && (
+                <button className="btn" onClick={() => openEdit(detail)}>✎ Edit</button>
+              )}
+              <div className="right">
+                <button className="btn" onClick={() => setDetail(null)}>Tutup</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {open && (
         <div className="overlay" onClick={(e) => e.target === e.currentTarget && setOpen(false)}>
