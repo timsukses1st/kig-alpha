@@ -17,9 +17,10 @@ import OvertimeView from '@/components/OvertimeView';
 import SebaranView from '@/components/SebaranView';
 import ComplaintView from '@/components/ComplaintView';
 import ComplaintWidget from '@/components/ComplaintWidget';
+import ChatView from '@/components/ChatView';
 import TrackerView from '@/components/TrackerView';
 
-type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'sebaran' | 'laporan' | 'komplain' | 'log' | 'access';
+type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'sebaran' | 'chat' | 'laporan' | 'komplain' | 'log' | 'access';
 
 const NAV: { key: View; label: string }[] = [
   { key: 'board', label: 'Board Pipeline' },
@@ -30,6 +31,7 @@ const NAV: { key: View; label: string }[] = [
   { key: 'budget', label: 'Pengajuan Budget' },
   { key: 'lembur', label: 'Lembur' },
   { key: 'sebaran', label: 'Sebaran Harian' },
+  { key: 'chat', label: 'Chat Project' },
   { key: 'laporan', label: 'Laporan Kerja' },
   { key: 'komplain', label: 'Komplain' },
   { key: 'log', label: 'Log Aktivitas' },
@@ -94,6 +96,14 @@ const ICON_PATHS: Record<View, React.ReactNode> = {
       <circle cx="6" cy="12" r="3" />
       <circle cx="18" cy="19" r="3" />
       <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+    </>
+  ),
+  chat: (
+    <>
+      <path d="M20.5 12.2a6.6 6.6 0 0 1-9.4 6L4.5 20l1.7-5.2a6.6 6.6 0 1 1 14.3-2.6z" />
+      <circle cx="9" cy="12.4" r=".9" />
+      <circle cx="12.5" cy="12.4" r=".9" />
+      <circle cx="16" cy="12.4" r=".9" />
     </>
   ),
   laporan: (
@@ -425,6 +435,7 @@ export default function App() {
         {view === 'budget' && <BudgetView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'lembur' && <OvertimeView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'sebaran' && <SebaranView profile={profile} projects={projects} projectFilter={activeProject} />}
+        {view === 'chat' && <ChatView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'laporan' && <ReportView projects={projects} projectFilter={activeProject} />}
         {view === 'komplain' && <ComplaintView profile={profile} />}
         {view === 'log' && canSeeLog && <LogView />}
