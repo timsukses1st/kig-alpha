@@ -86,20 +86,32 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   const [newMemberTeam, setNewMemberTeam] = useState<Team>('creative');
 
   const deleteProject = async (pr: Project) => {
-    // Cegah hapus kalau masih ada data nempel
-    const [c, a, b] = await Promise.all([
-      supabase.from('contents').select('id', { count: 'exact', head: true }).eq('project_id', pr.id),
-      supabase.from('accounts').select('id', { count: 'exact', head: true }).eq('project_id', pr.id),
-      supabase.from('budget_requests').select('id', { count: 'exact', head: true }).eq('project_id', pr.id),
-    ]);
-    const nContent = c.count || 0, nAcc = a.count || 0, nBudget = b.count || 0;
-    if (nContent + nAcc + nBudget > 0) {
-      flash(`Tidak bisa dihapus — masih ada ${nContent} konten, ${nAcc} akun, ${nBudget} budget. Nonaktifkan saja, atau pindahkan/hapus datanya dulu.`);
+    // Hitung data nempel (tahan-error: kalau satu cek gagal, dianggap 0 tapi dicatat)
+    const countIn = async (table: string): Promise<number> => {
+      try {
+        const { count, error } = await supabase
+          .from(table).select('id', { count: 'exact', head: true }).eq('project_id', pr.id);
+        if (error) return -1; // -1 = gagal cek
+        return count || 0;
+      } catch { return -1; }
+    };
+    const nContent = await countIn('contents');
+    const nAcc = await countIn('accounts');
+    const nBudget = await countIn('budget_requests');
+
+    const total = Math.max(nContent, 0) + Math.max(nAcc, 0) + Math.max(nBudget, 0);
+    if (total > 0) {
+      flash(`Tidak bisa dihapus — masih ada ${Math.max(nContent,0)} konten, ${Math.max(nAcc,0)} akun, ${Math.max(nBudget,0)} budget. Nonaktifkan saja, atau pindahkan/hapus datanya dulu.`);
       return;
     }
-    if (!window.confirm(`Hapus permanen project "${pr.name}"? Tindakan ini tidak bisa dibatalkan.`)) return;
+
+    const warnCheck = (nContent < 0 || nAcc < 0 || nBudget < 0)
+      ? '\n\n(Catatan: sebagian pengecekan data gagal — pastikan project benar-benar kosong.)'
+      : '';
+    if (!window.confirm(`Hapus permanen project "${pr.name}"? Tindakan ini tidak bisa dibatalkan.${warnCheck}`)) return;
+
     const { error } = await supabase.from('projects').delete().eq('id', pr.id);
-    if (error) { flash('Gagal menghapus project.'); return; }
+    if (error) { flash('Gagal menghapus project: ' + error.message); return; }
     flash('Project dihapus.');
     load(); onAccountsChanged?.();
   };
