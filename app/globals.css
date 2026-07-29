@@ -829,3 +829,9 @@ label.btn.act input[type='file'] { display: none; }
   background: var(--raised); font-weight: 600; font-size: 13px;
   color: var(--accent); text-align: center;
 }
+
+/* ================= Lembur: deskripsi ringkas di tabel ================= */
+.ot-desc-clip {
+  display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical;
+  overflow: hidden; max-width: 300px; color: var(--text-2);
+}
