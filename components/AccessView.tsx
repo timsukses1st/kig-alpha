@@ -29,6 +29,8 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   const [nu, setNu] = useState({ email: '', full_name: '', password: '', role: 'tim', team: '', vertical: '' });
   const [uBusy, setUBusy] = useState(false);
   const [userModal, setUserModal] = useState(false);
+  const [delProj, setDelProj] = useState<{ pr: Project; counts: string; warn: boolean } | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
 
   const callUserApi = async (payload: Record<string, unknown>) => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -85,34 +87,35 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberTeam, setNewMemberTeam] = useState<Team>('creative');
 
-  const deleteProject = async (pr: Project) => {
-    // Hitung data nempel (tahan-error: kalau satu cek gagal, dianggap 0 tapi dicatat)
+  const askDeleteProject = async (pr: Project) => {
     const countIn = async (table: string): Promise<number> => {
       try {
         const { count, error } = await supabase
           .from(table).select('id', { count: 'exact', head: true }).eq('project_id', pr.id);
-        if (error) return -1; // -1 = gagal cek
+        if (error) return -1;
         return count || 0;
       } catch { return -1; }
     };
     const nContent = await countIn('contents');
     const nAcc = await countIn('accounts');
     const nBudget = await countIn('budget_requests');
-
     const total = Math.max(nContent, 0) + Math.max(nAcc, 0) + Math.max(nBudget, 0);
     if (total > 0) {
-      flash(`Tidak bisa dihapus — masih ada ${Math.max(nContent,0)} konten, ${Math.max(nAcc,0)} akun, ${Math.max(nBudget,0)} budget. Nonaktifkan saja, atau pindahkan/hapus datanya dulu.`);
+      flash(`Tidak bisa dihapus — masih ada ${Math.max(nContent,0)} konten, ${Math.max(nAcc,0)} akun, ${Math.max(nBudget,0)} budget. Nonaktifkan saja.`);
       return;
     }
+    const warn = nContent < 0 || nAcc < 0 || nBudget < 0;
+    setDelProj({ pr, counts: `${Math.max(nContent,0)} konten · ${Math.max(nAcc,0)} akun · ${Math.max(nBudget,0)} budget`, warn });
+  };
 
-    const warnCheck = (nContent < 0 || nAcc < 0 || nBudget < 0)
-      ? '\n\n(Catatan: sebagian pengecekan data gagal — pastikan project benar-benar kosong.)'
-      : '';
-    if (!window.confirm(`Hapus permanen project "${pr.name}"? Tindakan ini tidak bisa dibatalkan.${warnCheck}`)) return;
-
-    const { error } = await supabase.from('projects').delete().eq('id', pr.id);
-    if (error) { flash('Gagal menghapus project: ' + error.message); return; }
+  const confirmDeleteProject = async () => {
+    if (!delProj) return;
+    setDelBusy(true);
+    const { error } = await supabase.from('projects').delete().eq('id', delProj.pr.id);
+    setDelBusy(false);
+    if (error) { flash('Gagal menghapus project: ' + error.message); setDelProj(null); return; }
     flash('Project dihapus.');
+    setDelProj(null);
     load(); onAccountsChanged?.();
   };
 
@@ -432,7 +435,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                         </button>
                       </td>
                       <td>
-                        <button className="icon-del" title="Hapus project" onClick={() => deleteProject(pr)}>
+                        <button className="icon-del" title="Hapus project" onClick={() => askDeleteProject(pr)}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <polyline points="3 6 5 6 21 6" />
@@ -547,6 +550,35 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
         )}
         {msg && <p style={{ marginTop: 12, fontSize: 12.5, color: 'var(--text-2)' }}>{msg}</p>}
       </div>
+
+      {delProj && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setDelProj(null)}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--red)' }} />Hapus Project</div>
+                <div className="modal-title">Hapus &ldquo;{delProj.pr.name}&rdquo;?</div>
+                <div className="modal-sub">Isi project: {delProj.counts}. Tindakan ini permanen dan tidak bisa dibatalkan.</div>
+              </div>
+              <button className="btn ghost modal-close" onClick={() => setDelProj(null)}>✕</button>
+            </div>
+            {delProj.warn && (
+              <div style={{ padding: '0 24px' }}>
+                <p className="error-msg">Sebagian pengecekan data gagal — pastikan project benar-benar kosong sebelum menghapus.</p>
+              </div>
+            )}
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" onClick={() => setDelProj(null)} disabled={delBusy}>Batal</button>
+                <button className="btn" style={{ background: 'var(--red)', color: '#fff', borderColor: 'var(--red)' }}
+                  onClick={confirmDeleteProject} disabled={delBusy}>
+                  {delBusy ? 'Menghapus…' : 'Hapus permanen'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {userModal && (
         <div className="overlay">
