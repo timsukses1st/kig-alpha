@@ -822,3 +822,10 @@ label.btn.act input[type='file'] { display: none; }
   border-radius: 6px; padding: 4px 9px; color: var(--text-2);
 }
 .del-counts-note { color: var(--text-3) !important; border-style: dashed !important; }
+
+/* ================= Lembur: pill durasi ================= */
+.dur-pill {
+  padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--raised); font-weight: 600; font-size: 13px;
+  color: var(--accent); text-align: center;
+}
