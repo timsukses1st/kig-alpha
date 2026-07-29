@@ -251,11 +251,11 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
               <button className="btn ghost modal-close" onClick={() => setOpen(false)}>✕</button>
             </div>
             <div style={{ padding: '18px 24px' }}>
+              <div className="field">
+                <label>Tanggal</label>
+                <input type="date" value={form.work_date} onChange={(e) => setForm({ ...form, work_date: e.target.value })} />
+              </div>
               <div className="field-row">
-                <div className="field">
-                  <label>Tanggal</label>
-                  <input type="date" value={form.work_date} onChange={(e) => setForm({ ...form, work_date: e.target.value })} />
-                </div>
                 <div className="field">
                   <label>Mulai</label>
                   <input type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
@@ -264,9 +264,10 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                   <label>Selesai</label>
                   <input type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
                 </div>
-              </div>
-              <div className="hint" style={{ marginBottom: 10 }}>
-                Durasi: <b>{fmtDur(durationHours(form.start_time, form.end_time))}</b>
+                <div className="field" style={{ justifyContent: 'flex-end' }}>
+                  <label>Durasi</label>
+                  <div className="dur-pill">{fmtDur(durationHours(form.start_time, form.end_time))}</div>
+                </div>
               </div>
               <div className="field">
                 <label>Project terkait</label>
