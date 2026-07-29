@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { initials, VERTICALS, type Account, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
 import { sigma, type SigmaProject } from '@/lib/sigma';
@@ -224,7 +224,12 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
     [accounts, activeProjectId]
   );
 
-  const flash = (m: string) => setMsg(m);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flash = (m: string) => {
+    setMsg(m);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setMsg(''), 4000);
+  };
 
   const updateUser = async (id: string, patch: Partial<Profile>) => {
     setMsg('');
@@ -548,7 +553,12 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
             </>)}
           </>
         )}
-        {msg && <p style={{ marginTop: 12, fontSize: 12.5, color: 'var(--text-2)' }}>{msg}</p>}
+        {msg && (
+          <div className="toast" onClick={() => setMsg('')}>
+            <span className="toast-dot" />
+            {msg}
+          </div>
+        )}
       </div>
 
       {delProj && (
