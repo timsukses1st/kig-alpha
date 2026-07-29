@@ -14,10 +14,11 @@ import ReportView from '@/components/ReportView';
 import RecapView from '@/components/RecapView';
 import BudgetView from '@/components/BudgetView';
 import OvertimeView from '@/components/OvertimeView';
+import SebaranView from '@/components/SebaranView';
 import ComplaintView from '@/components/ComplaintView';
 import TrackerView from '@/components/TrackerView';
 
-type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'laporan' | 'komplain' | 'log' | 'access';
+type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'sebaran' | 'laporan' | 'komplain' | 'log' | 'access';
 
 const NAV: { key: View; label: string }[] = [
   { key: 'board', label: 'Board Pipeline' },
@@ -27,6 +28,7 @@ const NAV: { key: View; label: string }[] = [
   { key: 'recap', label: 'Recap Report' },
   { key: 'budget', label: 'Pengajuan Budget' },
   { key: 'lembur', label: 'Lembur' },
+  { key: 'sebaran', label: 'Sebaran Harian' },
   { key: 'laporan', label: 'Laporan Kerja' },
   { key: 'komplain', label: 'Komplain' },
   { key: 'log', label: 'Log Aktivitas' },
@@ -83,6 +85,14 @@ const ICON_PATHS: Record<View, React.ReactNode> = {
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3 2" />
+    </>
+  ),
+  sebaran: (
+    <>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
     </>
   ),
   laporan: (
@@ -413,6 +423,7 @@ export default function App() {
         )}
         {view === 'budget' && <BudgetView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'lembur' && <OvertimeView profile={profile} projects={projects} projectFilter={activeProject} />}
+        {view === 'sebaran' && <SebaranView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'laporan' && <ReportView projects={projects} projectFilter={activeProject} />}
         {view === 'komplain' && <ComplaintView profile={profile} />}
         {view === 'log' && canSeeLog && <LogView />}

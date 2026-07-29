@@ -176,6 +176,22 @@ export interface OvertimeRequest {
   created_at: string;
 }
 
+export interface DistributionLog {
+  id: string;
+  project_id: string | null;
+  platform: string;
+  group_names: string;
+  group_count: number;
+  content_url: string | null;
+  note: string | null;
+  proof_path: string | null;
+  proof_name: string | null;
+  proof_hash: string | null;
+  reporter_id: string | null;
+  reporter_name: string | null;
+  created_at: string;
+}
+
 export interface ActivityLog {
   id: number;
   actor_email: string | null;
