@@ -811,3 +811,14 @@ label.btn.act input[type='file'] { display: none; }
   from { opacity: 0; transform: translateX(20px); }
   to { opacity: 1; transform: translateX(0); }
 }
+
+/* ================= Hapus project: hitungan isi ================= */
+.del-counts {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;
+}
+.del-counts span {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .04em;
+  background: var(--raised); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 9px; color: var(--text-2);
+}
+.del-counts-note { color: var(--text-3) !important; border-style: dashed !important; }
