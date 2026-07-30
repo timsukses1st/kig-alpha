@@ -80,8 +80,29 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
     } catch { /* hash gagal -> lanjut tanpa cek */ }
   };
 
-  const countGroups = (text: string) =>
-    text.split(/[\n,;]+/).map((s) => s.trim()).filter(Boolean).length || 1;
+  // Pecah daftar grup: pemisah baris/koma/titik-koma/pipe/slash/bullet,
+  // buang penomoran di awal baris (1. 2) - * >), lalu buang duplikat.
+  // Tanda hubung "-" di TENGAH nama sengaja tidak dipakai sebagai pemisah
+  // karena banyak nama grup memuatnya (mis. "Info Film - Jakarta").
+  const parseGroups = (text: string): string[] => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    text
+      .split(/[\n,;|/\u2022\u00b7]+/)
+      .map((s) => s.replace(/^\s*(?:\d+[.)]|[-*+>])\s*/, '').trim())
+      .filter(Boolean)
+      .forEach((s) => {
+        const key = s.toLowerCase().replace(/\s+/g, ' ');
+        if (!seen.has(key)) { seen.add(key); out.push(s); }
+      });
+    return out;
+  };
+
+  const countGroups = (text: string) => parseGroups(text).length || 1;
+
+  // Kunci tanggal versi WIB (UTC+7) — batas hari jam 00.00 WIB, bukan 07.00
+  const wibKey = (iso: string) =>
+    new Date(new Date(iso).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
   const submit = async () => {
     if (!profile) return;
@@ -102,7 +123,7 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
       project_id: form.project_id || null,
       platform: form.platform,
       content_category: form.content_category,
-      group_names: form.group_names.trim(),
+      group_names: parseGroups(form.group_names).join('\n'),
       group_count: countGroups(form.group_names),
       content_url: form.content_url.trim() || null,
       note: form.note.trim() || null,
@@ -147,15 +168,16 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
     [scoped, platFilter, catFilter],
   );
 
-  const todayKey = new Date().toISOString().slice(0, 10);
+  const todayKey = wibKey(new Date().toISOString());
   const stats = useMemo(() => {
-    const today = rows.filter((r) => r.created_at.slice(0, 10) === todayKey);
+    // pakai `scoped` agar konsisten dengan toggle "Sebaran saya / Semua tim"
+    const today = scoped.filter((r) => wibKey(r.created_at) === todayKey);
     return {
       todayCount: today.length,
       todayGroups: today.reduce((a, r) => a + (r.group_count || 0), 0),
       totalGroups: scoped.reduce((a, r) => a + (r.group_count || 0), 0),
     };
-  }, [rows, scoped, todayKey]);
+  }, [scoped, todayKey]);
 
   // rekap per orang
   const rekap = useMemo(() => {
@@ -183,8 +205,8 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
 
       <div className="content-area">
         <div className="kpi-row">
-          <div className="kpi"><div className="kpi-label">Laporan hari ini</div><div className="kpi-value">{stats.todayCount}</div></div>
-          <div className="kpi"><div className="kpi-label">Grup disebar hari ini</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{stats.todayGroups}</div></div>
+          <div className="kpi"><div className="kpi-label">Laporan hari ini ({scope === 'saya' ? 'saya' : 'tim'})</div><div className="kpi-value">{stats.todayCount}</div></div>
+          <div className="kpi"><div className="kpi-label">Grup hari ini ({scope === 'saya' ? 'saya' : 'tim'})</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{stats.todayGroups}</div></div>
           <div className="kpi"><div className="kpi-label">Total grup ({scope === 'saya' ? 'saya' : 'tim'})</div><div className="kpi-value" style={{ fontSize: 20 }}>{stats.totalGroups}</div></div>
         </div>
 
@@ -336,7 +358,25 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
                 <label>Nama grup / komunitas <span style={{ color: 'var(--text-3)' }}>(1 per baris, boleh banyak)</span></label>
                 <textarea value={form.group_names} onChange={(e) => setForm({ ...form, group_names: e.target.value })}
                   placeholder={'Komunitas Film Indonesia\nGrup Pecinta Sinema\nInfo Film Terbaru'} rows={3} />
-                <div className="hint">Terdeteksi: <b>{countGroups(form.group_names)}</b> grup</div>
+                <div className="hint">
+                  Terdeteksi <b>{parseGroups(form.group_names).length}</b> grup
+                  {parseGroups(form.group_names).length > 0 && (
+                    <span style={{ color: 'var(--text-3)' }}>
+                      {' '}— pastikan sesuai sebelum kirim
+                    </span>
+                  )}
+                </div>
+                {parseGroups(form.group_names).length > 0 && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    {parseGroups(form.group_names).map((g, i) => (
+                      <span key={g + i} style={{
+                        fontSize: 11.5, padding: '3px 9px', borderRadius: 20,
+                        background: 'var(--raised, rgba(255,255,255,.06))',
+                        border: '1px solid var(--border, rgba(255,255,255,.08))',
+                      }}>{i + 1}. {g}</span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="field">
                 <label>Link konten yang disebar <span style={{ color: 'var(--text-3)' }}>(opsional)</span></label>
