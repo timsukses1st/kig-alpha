@@ -47,6 +47,24 @@ export interface Project {
   created_at: string;
 }
 
+/**
+ * Palet warna untuk kategori & label. Sengaja mid-tone supaya tetap terbaca
+ * di mode gelap maupun terang.
+ */
+export const TAG_PALETTE = ['#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#06b6d4', '#f97316', '#ef4444', '#6366f1'];
+
+/**
+ * Warna tetap untuk sebuah nama — nama yang sama SELALU dapat warna yang sama,
+ * di mana pun ditampilkan. Dipakai bersama oleh chip kategori di Kelola Akses
+ * dan warna kartu di Board, supaya keduanya tidak pernah berbeda.
+ */
+export function tagColor(s: string): string {
+  const t = (s || '').trim().toLowerCase();
+  let h = 0;
+  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+  return TAG_PALETTE[h % TAG_PALETTE.length];
+}
+
 /** Kategori konten — dikelola per project lewat Kelola Akses. */
 export interface ContentCategory {
   id: string;
