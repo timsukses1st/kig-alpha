@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
-  DIVISIONS, PILLAR_LABEL, STATUSES,
+  DIVISIONS, STATUSES,
   canEditRow, initials, statusDef,
-  type Account, type ContentRow, type ContentStatus, type Division, type Pillar, type Profile, type TeamMember, type ContentNote, type ContentRequest, type Project,
+  type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
 interface Props {
@@ -21,7 +21,7 @@ const EMPTY_FORM = {
   title: '',
   project_id: '',
   account_id: '',
-  pillar: 'lagi_ramai' as Pillar,
+  category_id: '',
   status: 'drafting' as ContentStatus,
   pic_creative: '',
   pic_distribution: '',
@@ -79,7 +79,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [loading, setLoading] = useState(true);
   const [division, setDivision] = useState<Division>('semua');
   const [range, setRange] = useState<Range>('all');
-  const [catFilter, setCatFilter] = useState<'all' | Pillar>('all');
+  const [categories, setCategories] = useState<ContentCategory[]>([]);
+  const [catFilter, setCatFilter] = useState<string>('all');
   const [pickDate, setPickDate] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ContentRow | null>(null);
@@ -97,18 +98,24 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [c, m, rq] = await Promise.all([
+    const [c, m, rq, cc] = await Promise.all([
       supabase.from('contents').select('*').order('updated_at', { ascending: false }),
       supabase.from('team_members').select('*').eq('is_active', true).order('name'),
       supabase.from('content_requests').select('*').eq('status', 'pending').order('requested_date', { ascending: true }),
+      supabase.from('content_categories').select('*').order('name'),
     ]);
     setRows((c.data as ContentRow[]) || []);
     setMembers((m.data as TeamMember[]) || []);
     setRequests((rq.data as ContentRequest[]) || []);
+    setCategories((cc.data as ContentCategory[]) || []);
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Kategori milik project lain tidak berlaku — reset filter tiap ganti project,
+  // supaya papan tidak tampak kosong karena filter yang tertinggal.
+  useEffect(() => { setCatFilter('all'); }, [projectFilter]);
 
   const inRange = useCallback((r: ContentRow) => {
     // Tanggal spesifik menang atas rentang cepat
@@ -131,7 +138,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const filtered = useMemo(
     () => rows.filter((r) =>
       (projectFilter === 'all' || r.project_id === projectFilter)
-      && (catFilter === 'all' || r.pillar === catFilter)
+      && (catFilter === 'all' || r.category_id === catFilter)
       && inRange(r)),
     [rows, projectFilter, catFilter, inRange]
   );
@@ -234,7 +241,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       title: row.title,
       project_id: row.project_id || '',
       account_id: row.account_id || '',
-      pillar: row.pillar,
+      category_id: row.category_id || '',
       status: row.status,
       pic_creative: row.pic_creative || '',
       pic_distribution: row.pic_distribution || '',
@@ -305,7 +312,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       title: form.title.trim(),
       project_id: form.project_id || null,
       account_id: form.account_id || null,
-      pillar: form.pillar,
+      category_id: form.category_id || null,
       pic_creative: form.pic_creative || null,
       pic_distribution: form.pic_distribution || null,
       pic_ads: form.pic_ads || null,
@@ -422,7 +429,6 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
         title: rq.title,
         project_id: rq.project_id,
         account_id: rq.account_id,
-        pillar: 'lagi_ramai',
         status: 'drafting' as ContentStatus,
         publish_date: rq.requested_date,
         created_by: profile.id,
@@ -498,6 +504,19 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   // Konten yang SUDAH ADA juga dikunci project-nya. Dropdown baru muncul
   // setelah menekan "Pindahkan ke project lain" — supaya konten tidak bisa
   // berpindah klien hanya karena dropdown tersenggol.
+  // Kategori untuk FILTER papan — hanya bermakna kalau satu project dipilih,
+  // karena tiap project punya daftar kategorinya sendiri.
+  const boardCategories = projectFilter === 'all'
+    ? []
+    : categories.filter((c) => c.project_id === projectFilter && c.is_active);
+
+  // Kategori untuk DROPDOWN di modal — ikut project konten itu sendiri.
+  // Kategori nonaktif tetap ditampilkan bila konten ini masih memakainya,
+  // supaya tidak diam-diam hilang saat konten disimpan ulang.
+  const modalCategories = categories.filter(
+    (c) => c.project_id === form.project_id && (c.is_active || c.id === form.category_id)
+  );
+
   const currentProject = projects.find((p) => p.id === form.project_id) || null;
   const projectLocked = !!lockedProject || (!!editing && !movingProject);
   const shownProject = lockedProject || currentProject;
@@ -509,7 +528,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     caption: 'Caption',
     hashtags: 'Hashtag',
     account: 'Akun',
-    pillar: 'Category Content',
+    category_id: 'Category Content',
     status: 'Status',
     deadline: 'Deadline',
     publish_date: 'Tanggal tayang',
@@ -616,10 +635,18 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
         <span className="bar" style={{ background: activeDiv.color }} />
         <span className="div-name">{division === 'semua' ? 'Semua Divisi' : `Divisi ${activeDiv.label}`}</span>
         <span>· {activeDiv.desc}</span>
-        <select className="cat-filter" value={catFilter} onChange={(e) => setCatFilter(e.target.value as 'all' | Pillar)}>
-          <option value="all">Semua kategori</option>
-          {(Object.keys(PILLAR_LABEL) as Pillar[]).map((k) => (
-            <option key={k} value={k}>{PILLAR_LABEL[k]}</option>
+        <select
+          className="cat-filter"
+          value={catFilter}
+          disabled={projectFilter === 'all'}
+          title={projectFilter === 'all' ? 'Pilih project di sidebar untuk menyaring kategori' : undefined}
+          onChange={(e) => setCatFilter(e.target.value)}
+        >
+          <option value="all">
+            {projectFilter === 'all' ? 'Kategori — pilih project dulu' : 'Semua kategori'}
+          </option>
+          {boardCategories.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
         <div className="range-tabs">
@@ -1037,7 +1064,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       <select
                         value={form.project_id}
                         disabled={readOnly}
-                        onChange={(e) => setForm({ ...form, project_id: e.target.value, account_id: '' })}
+                        onChange={(e) => setForm({ ...form, project_id: e.target.value, account_id: '', category_id: '' })}
                       >
                         <option value="">— pilih —</option>
                         {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
@@ -1059,10 +1086,24 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     </select>
                   </div>
                   <div className="field">
-                    <label>Category Content{noteBtn('pillar')}</label>
-                    <select value={form.pillar} disabled={readOnly} onChange={(e) => setForm({ ...form, pillar: e.target.value as Pillar })}>
-                      {(Object.keys(PILLAR_LABEL) as Pillar[]).map((p) => <option key={p} value={p}>{PILLAR_LABEL[p]}</option>)}
+                    <label>Category Content{noteBtn('category_id')}</label>
+                    <select
+                      value={form.category_id}
+                      disabled={readOnly || !form.project_id}
+                      onChange={(e) => setForm({ ...form, category_id: e.target.value })}
+                    >
+                      <option value="">— tanpa kategori —</option>
+                      {modalCategories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}{c.is_active ? '' : ' (nonaktif)'}
+                        </option>
+                      ))}
                     </select>
+                    {form.project_id && modalCategories.length === 0 && (
+                      <div className="hint">
+                        Project ini belum punya kategori — tambahkan di <b>Kelola Akses → Kategori Konten</b>.
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="field">
