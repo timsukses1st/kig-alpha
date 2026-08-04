@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { initials, VERTICALS, type Account, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
+import { initials, VERTICALS, type Account, type ContentCategory, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
 import { sigma, type SigmaProject } from '@/lib/sigma';
 
 const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
@@ -274,7 +274,12 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
 
-  const [tab, setTab] = useState<'user' | 'project' | 'akun' | 'tim'>('user');
+  const [tab, setTab] = useState<'user' | 'project' | 'akun' | 'kategori' | 'tim'>('user');
+  const [categories, setCategories] = useState<ContentCategory[]>([]);
+  const [newCatName, setNewCatName] = useState('');
+  const [catBusy, setCatBusy] = useState(false);
+  const [delCat, setDelCat] = useState<{ cat: ContentCategory; nUsed: number } | null>(null);
+  const [delCatBusy, setDelCatBusy] = useState(false);
   const [nu, setNu] = useState({ email: '', full_name: '', password: '', role: 'tim', team: '', vertical: '' });
   const [uBusy, setUBusy] = useState(false);
   const [userModal, setUserModal] = useState(false);
@@ -469,16 +474,18 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [u, a, m, pr] = await Promise.all([
+    const [u, a, m, pr, cc] = await Promise.all([
       supabase.from('profiles').select('*').order('created_at'),
       supabase.from('accounts').select('*').order('handle'),
       supabase.from('team_members').select('*').order('team').order('name'),
       supabase.from('projects').select('*').order('name'),
+      supabase.from('content_categories').select('*').order('name'),
     ]);
     setUsers((u.data as Profile[]) || []);
     setAccounts((a.data as Account[]) || []);
     setMembers((m.data as TeamMember[]) || []);
     setProjects((pr.data as Project[]) || []);
+    setCategories((cc.data as ContentCategory[]) || []);
     setLoading(false);
   }, []);
 
@@ -559,6 +566,67 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
     load(); onAccountsChanged?.();
   };
 
+  // ---------- Kategori konten (per project) ----------
+  const projectPicked = !!activeProjectId && activeProjectId !== 'all';
+
+  const shownCategories = useMemo(
+    () => (projectPicked ? categories.filter((c) => c.project_id === activeProjectId) : []),
+    [categories, activeProjectId, projectPicked]
+  );
+
+  const addCategory = async () => {
+    const name = newCatName.trim();
+    if (!name) return;
+    if (!projectPicked) { flash('Pilih project di sidebar dulu — kategori selalu milik satu project.'); return; }
+    setCatBusy(true);
+    setMsg('');
+    const { error } = await supabase.from('content_categories').insert({
+      project_id: activeProjectId,
+      name,
+    });
+    setCatBusy(false);
+    if (error) {
+      // 23505 = unique violation (indeks unik project_id + lower(trim(name)))
+      flash(error.code === '23505'
+        ? 'Kategori dengan nama itu sudah ada di project ini.'
+        : 'Gagal menambah kategori — hanya superadmin/manager yang bisa.');
+      return;
+    }
+    setNewCatName('');
+    flash('Kategori ditambahkan.');
+    load();
+  };
+
+  const toggleCategory = async (c: ContentCategory) => {
+    setMsg('');
+    const { error } = await supabase
+      .from('content_categories').update({ is_active: !c.is_active }).eq('id', c.id);
+    flash(error ? 'Gagal mengubah status kategori.' : 'Status kategori diubah.');
+    load();
+  };
+
+  // Hitung dulu berapa konten yang memakainya, baru tanya konfirmasi.
+  const askDeleteCategory = async (c: ContentCategory) => {
+    let nUsed = 0;
+    try {
+      const { count } = await supabase
+        .from('contents').select('id', { count: 'exact', head: true }).eq('category_id', c.id);
+      nUsed = count || 0;
+    } catch { nUsed = 0; }
+    setDelCat({ cat: c, nUsed });
+  };
+
+  const confirmDeleteCategory = async () => {
+    if (!delCat) return;
+    setDelCatBusy(true);
+    const { error } = await supabase.from('content_categories').delete().eq('id', delCat.cat.id);
+    setDelCatBusy(false);
+    if (error) { flash('Gagal menghapus kategori.'); return; }
+    setDelCat(null);
+    flash('Kategori dihapus.');
+    load();
+  };
+
   // ---------- Anggota tim (PIC) ----------
   const addMember = async () => {
     const name = newMemberName.trim();
@@ -604,6 +672,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
               <button className={`atab ${tab === 'user' ? 'active' : ''}`} onClick={() => setTab('user')}>User Login</button>
               <button className={`atab ${tab === 'project' ? 'active' : ''}`} onClick={() => setTab('project')}>Project &amp; Vertical</button>
               <button className={`atab ${tab === 'akun' ? 'active' : ''}`} onClick={() => setTab('akun')}>Akun Media</button>
+              <button className={`atab ${tab === 'kategori' ? 'active' : ''}`} onClick={() => setTab('kategori')}>Kategori Konten</button>
               <button className={`atab ${tab === 'tim' ? 'active' : ''}`} onClick={() => setTab('tim')}>Anggota Tim</button>
             </div>
 
@@ -813,6 +882,60 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
 
             </>)}
 
+            {tab === 'kategori' && (<>
+            {/* ================= KATEGORI KONTEN ================= */}
+            <div className="section-title">Kategori Konten</div>
+            <p className="section-hint">
+              {projectPicked
+                ? <>Kategori milik project <b>{activeProjectName}</b> — tiap project punya daftarnya sendiri, tidak saling terlihat. Yang dinonaktifkan tidak muncul lagi di form konten, tapi konten lama tetap memakainya.</>
+                : <>Kategori selalu milik satu project. <b>Pilih project di sidebar</b> untuk mengelolanya.</>}
+            </p>
+            {projectPicked ? (
+              <>
+                <div className="add-row">
+                  <input
+                    placeholder="Nama kategori — mis. Review Film"
+                    value={newCatName}
+                    onChange={(e) => setNewCatName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && addCategory()}
+                  />
+                  <button className="btn primary" onClick={addCategory} disabled={catBusy || !newCatName.trim()}>
+                    {catBusy ? 'Menyimpan…' : '+ Tambah'}
+                  </button>
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr><th>Kategori</th><th>Status</th><th style={{ width: 90 }}></th></tr>
+                    </thead>
+                    <tbody>
+                      {shownCategories.map((c) => (
+                        <tr key={c.id}>
+                          <td><LabelChip text={c.name} /></td>
+                          <td>
+                            <button className="btn ghost" onClick={() => toggleCategory(c)}>
+                              <span className="status-dot" style={{ background: c.is_active ? 'var(--green)' : 'var(--text-3)' }} />
+                              {c.is_active ? 'Aktif' : 'Nonaktif'}
+                            </button>
+                          </td>
+                          <td>
+                            <button className="btn ghost danger-text" onClick={() => askDeleteCategory(c)}>Hapus</button>
+                          </td>
+                        </tr>
+                      ))}
+                      {shownCategories.length === 0 && (
+                        <tr><td colSpan={3} className="empty">Belum ada kategori di project ini — tambahkan lewat kotak di atas.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <div className="table-wrap"><p className="empty">Pilih project di sidebar dulu.</p></div>
+            )}
+
+            </>)}
+
             {tab === 'tim' && (<>
             {/* ================= ANGGOTA TIM (PIC) ================= */}
             <div className="section-title">Anggota Tim (opsi PIC)</div>
@@ -910,6 +1033,49 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
         </div>
         );
       })()}
+
+      {delCat && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !delCatBusy && setDelCat(null)}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--red)' }} />
+                  Hapus kategori
+                </div>
+                <div className="modal-title">Hapus &ldquo;{delCat.cat.name}&rdquo;?</div>
+                <div className="modal-sub">
+                  {delCat.nUsed > 0
+                    ? <>Kategori ini masih dipakai <b>{delCat.nUsed} konten</b>. Kontennya <b>tidak ikut terhapus</b> — kategorinya saja yang jadi kosong.</>
+                    : 'Belum ada konten yang memakai kategori ini.'}
+                </div>
+              </div>
+              <button className="btn ghost modal-close" disabled={delCatBusy} onClick={() => setDelCat(null)}>✕</button>
+            </div>
+            {delCat.nUsed > 0 && (
+              <div style={{ padding: '4px 24px 0' }}>
+                <div className="hint">
+                  Kalau cuma ingin menyembunyikannya dari form konten tanpa kehilangan penanda di konten lama,
+                  pakai <b>Nonaktif</b> saja — bukan Hapus.
+                </div>
+              </div>
+            )}
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={delCatBusy} onClick={() => setDelCat(null)}>Batal</button>
+                <button
+                  className="btn danger"
+                  disabled={delCatBusy}
+                  onClick={confirmDeleteCategory}
+                  style={{ background: 'var(--red)', borderColor: 'var(--red)', color: '#fff' }}
+                >
+                  {delCatBusy ? 'Menghapus…' : 'Hapus permanen'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {userModal && (
         <div className="overlay">
