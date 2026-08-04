@@ -243,6 +243,18 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
     [accounts, activeProjectId]
   );
 
+  // Daftar label yang PERNAH dipakai — jadi isi dropdown Label.
+  // Tumbuh sendiri: begitu ada label baru diketik & tersimpan, dia ikut muncul
+  // di daftar untuk akun berikutnya. Tidak perlu tabel/kolom baru.
+  const labelOptions = useMemo<string[]>(() => {
+    const set = new Set<string>();
+    for (const a of accounts) {
+      const l = (a.label || '').trim();
+      if (l) set.add(l);
+    }
+    return Array.from(set).sort((x: string, y: string) => x.localeCompare(y, 'id'));
+  }, [accounts]);
+
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flash = (m: string) => {
     setMsg(m);
@@ -270,6 +282,15 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
     if (error) { flash('Gagal menambah akun (handle mungkin sudah ada).'); return; }
     setNewHandle(''); setNewLabel('');
     flash('Akun ditambahkan.');
+    load(); onAccountsChanged?.();
+  };
+
+  const updateAccountLabel = async (a: Account, label: string) => {
+    const clean = label.trim();
+    if (clean === (a.label || '').trim()) return; // tidak ada perubahan
+    setMsg('');
+    const { error } = await supabase.from('accounts').update({ label: clean || null }).eq('id', a.id);
+    flash(error ? 'Gagal menyimpan label.' : 'Label tersimpan.');
     load(); onAccountsChanged?.();
   };
 
@@ -486,10 +507,15 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                 ? <>Menampilkan akun project <b>{activeProjectName}</b> — ganti lewat selector Project di sidebar. Akun yang dipakai konten tidak bisa dihapus, nonaktifkan saja.</>
                 : <>Semua akun media. Pilih project di sidebar untuk menyaring. Akun yang dipakai konten tidak bisa dihapus — nonaktifkan saja.</>}
             </p>
+            {/* Daftar pilihan Label — dipakai bersama oleh form tambah & kolom tabel */}
+            <datalist id="acc-label-options">
+              {labelOptions.map((l) => <option key={l} value={l} />)}
+            </datalist>
             <div className="add-row">
               <input placeholder="@handle akun" value={newHandle} onChange={(e) => setNewHandle(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addAccount()} />
-              <input placeholder="Label (opsional) — mis. Media film" value={newLabel} onChange={(e) => setNewLabel(e.target.value)}
+              <input list="acc-label-options" placeholder="Label — pilih atau ketik baru" value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addAccount()} />
               <select value={newAccProject} onChange={(e) => setNewAccProject(e.target.value)}>
                 <option value="">— project —</option>
@@ -515,7 +541,20 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                           {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
                         </select>
                       </td>
-                      <td>{a.label || '—'}</td>
+                      <td>
+                        {/* key ikut nilai label: begitu data server berubah, input
+                            di-remount dengan nilai terbaru (sekaligus rollback
+                            otomatis kalau simpan gagal). */}
+                        <input
+                          key={a.label || ''}
+                          list="acc-label-options"
+                          defaultValue={a.label || ''}
+                          placeholder="— pilih / ketik —"
+                          style={{ width: '100%', minWidth: 110 }}
+                          onBlur={(e) => updateAccountLabel(a, e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                        />
+                      </td>
                       <td>
                         <button className="btn ghost" onClick={() => toggleAccount(a)}>
                           <span className="status-dot" style={{ background: a.is_active ? 'var(--green)' : 'var(--text-3)' }} />
