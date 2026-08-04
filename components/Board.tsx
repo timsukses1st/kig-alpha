@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
-  canEditRow, initials, statusDef,
+  canEditRow, initials, statusDef, tagColor,
   type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
@@ -718,6 +718,31 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                   const editable = canEditRow(profile, row.status);
                   const pic = picForCard(row);
                   const hasAsset = !!row.asset_url;
+
+                  // Warna kartu, urutan prioritas:
+                  //   1. belum ada link drive  -> amber (paling menonjol, perlu tindakan)
+                  //   2. sudah ada & berkategori -> warna kategorinya
+                  //   3. sudah ada, tanpa kategori -> warna status (seperti dulu)
+                  const rowCat = row.category_id
+                    ? (categories.find((c) => c.id === row.category_id) || null)
+                    : null;
+                  const catColor = rowCat ? tagColor(rowCat.name) : null;
+                  const accent = !hasAsset
+                    ? 'var(--amber)'
+                    : (catColor || statusDef(row.status).color);
+                  // Tint kategori sengaja lebih tipis dari amber, supaya kartu
+                  // yang perlu ditindak tetap yang paling menarik mata.
+                  const tint = !hasAsset
+                    ? {
+                        backgroundImage: 'linear-gradient(rgba(245,158,11,.07), rgba(245,158,11,.07))',
+                        borderColor: 'rgba(245,158,11,.32)',
+                      }
+                    : catColor
+                      ? {
+                          backgroundImage: `linear-gradient(${catColor}0d, ${catColor}0d)`,
+                          borderColor: catColor + '42',
+                        }
+                      : null;
                   return (
                     <div
                       key={row.id}
@@ -725,20 +750,12 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       tabIndex={0}
                       className={`card ${editable ? '' : 'locked'}`}
                       style={{
-                        // Kartu yang belum punya link drive diwarnai amber
-                        // seluruhnya supaya langsung terlihat di papan. Warna
-                        // status tidak hilang informasinya — kartu sudah berada
-                        // di kolom statusnya masing-masing.
-                        //
                         // Tint dipasang lewat backgroundImage (bukan background)
                         // agar warna dasar kartu dari globals.css tetap dipakai
-                        // — lapisan amber cuma ditumpuk di atasnya.
-                        ['--card-accent' as never]: hasAsset ? statusDef(row.status).color : 'var(--amber)',
+                        // — lapisan warna cuma ditumpuk di atasnya.
+                        ['--card-accent' as never]: accent,
                         position: 'relative',
-                        ...(hasAsset ? null : {
-                          backgroundImage: 'linear-gradient(rgba(245,158,11,.07), rgba(245,158,11,.07))',
-                          borderColor: 'rgba(245,158,11,.32)',
-                        }),
+                        ...(tint || null),
                       }}
                       onClick={() => openEdit(row)}
                       onKeyDown={(e) => e.key === 'Enter' && openEdit(row)}
