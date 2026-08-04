@@ -4,6 +4,11 @@ export type ContentStatus =
   | 'drafting' | 'review'
   | 'siap_upload' | 'terjadwal'
   | 'published' | 'diiklankan';
+/**
+ * @deprecated Sejak v24 kategori konten pindah ke tabel `content_categories`
+ * (per project). Tipe & label ini dipertahankan hanya karena kolom `pillar`
+ * masih ada di database sebagai warisan — tidak dipakai lagi di UI.
+ */
 export type Pillar = 'lagi_ramai' | 'wajib_tonton' | 'di_balik_layar' | 'panas_timeline';
 export type Division = 'semua' | 'creative' | 'distribution' | 'ads';
 
@@ -42,6 +47,15 @@ export interface Project {
   created_at: string;
 }
 
+/** Kategori konten — dikelola per project lewat Kelola Akses. */
+export interface ContentCategory {
+  id: string;
+  project_id: string;
+  name: string;
+  is_active: boolean;
+  created_at: string;
+}
+
 export interface Account {
   id: string;
   handle: string;
@@ -55,7 +69,10 @@ export interface ContentRow {
   title: string;
   project_id: string | null;
   account_id: string | null;
+  /** @deprecated Warisan — kolom DB masih ada (punya DEFAULT), tapi tidak dipakai UI sejak v24. */
   pillar: Pillar;
+  /** Kategori konten per project. Null = belum dikategorikan. */
+  category_id: string | null;
   status: ContentStatus;
   pic_creative: string | null;
   pic_distribution: string | null;
