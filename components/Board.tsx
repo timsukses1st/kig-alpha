@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, PILLAR_LABEL, STATUSES,
@@ -29,9 +29,9 @@ const EMPTY_FORM = {
   deadline: '',
   publish_date: '',
   caption: '',
+  hashtags: '',
   asset_url: '',
   visual_hook: '',
-  production_note: '',
   potensi_fyp: false,
 };
 
@@ -89,6 +89,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [newNote, setNewNote] = useState('');
   const [noteBusy, setNoteBusy] = useState(false);
   const [openNoteField, setOpenNoteField] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -178,6 +179,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setNotes([]);
     setNewNote('');
     setOpenNoteField(null);
+    setCopied(false);
     setForm({ ...EMPTY_FORM, project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || '') });
     setError('');
     setModalOpen(true);
@@ -217,6 +219,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setNotes([]);
     setNewNote('');
     setOpenNoteField(null);
+    setCopied(false);
     loadNotes(row.id);
     setForm({
       title: row.title,
@@ -230,9 +233,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       deadline: row.deadline || '',
       publish_date: row.publish_date || '',
       caption: row.caption || '',
+      hashtags: row.hashtags || '',
       asset_url: row.asset_url || '',
       visual_hook: row.visual_hook || '',
-      production_note: row.production_note || '',
       potensi_fyp: row.potensi_fyp,
     });
     setError('');
@@ -240,6 +243,47 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   };
 
   const readOnly = editing ? !canEditRow(profile, editing.status) : false;
+
+  // ---- Caption + Hashtag siap salin -------------------------------------
+  // Digabung otomatis: caption dulu, satu baris kosong, lalu hashtag.
+  const combinedCaption = useMemo(() => {
+    const cap = (form.caption || '').trim();
+    const tags = (form.hashtags || '').trim();
+    return [cap, tags].filter(Boolean).join('\n\n');
+  }, [form.caption, form.hashtags]);
+
+  const combinedRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => { growRef(combinedRef.current); }, [combinedCaption, modalOpen]);
+
+  const copyCombined = async () => {
+    if (!combinedCaption) return;
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(combinedCaption);
+      ok = true;
+    } catch {
+      // Fallback untuk browser/konteks yang memblokir Clipboard API
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = combinedCaption;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch { ok = false; }
+    }
+    if (ok) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } else {
+      setError('Browser menolak akses clipboard. Blok teksnya lalu salin manual (Ctrl+C).');
+    }
+  };
+  // ----------------------------------------------------------------------
 
   const save = async () => {
     if (!form.title.trim()) { setError('Hook / brief konten wajib diisi.'); return; }
@@ -255,9 +299,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       deadline: form.deadline || null,
       publish_date: form.publish_date || null,
       caption: form.caption.trim() || null,
+      hashtags: form.hashtags.trim() || null,
       asset_url: form.asset_url.trim() || null,
       visual_hook: form.visual_hook.trim() || null,
-      production_note: form.production_note.trim() || null,
       potensi_fyp: form.potensi_fyp,
     };
     let err = null;
@@ -361,14 +405,29 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
         pillar: 'lagi_ramai',
         status: 'drafting' as ContentStatus,
         publish_date: rq.requested_date,
-        production_note: ['Request oleh ' + (rq.requester_name || 'PM'), rq.note].filter(Boolean).join(' · '),
         created_by: profile.id,
       })
       .select('id')
       .single();
     if (!ins.error && ins.data) {
+      const newId = (ins.data as { id: string }).id;
+      // Asal-usul request dicatat sebagai Catatan umum.
+      // (Sebelumnya ditulis ke production_note — field itu sudah tidak
+      // ditampilkan lagi, jadi infonya dipindah ke sini agar tetap terbaca.)
+      const originNote = ['Request oleh ' + (rq.requester_name || 'PM'), rq.note]
+        .filter(Boolean)
+        .join(' · ');
+      if (originNote) {
+        await supabase.from('content_notes').insert({
+          content_id: newId,
+          author_id: profile.id,
+          author_name: profile.full_name || profile.email,
+          field: 'umum',
+          note: originNote,
+        });
+      }
       await supabase.from('content_requests')
-        .update({ status: 'diangkat', created_content_id: (ins.data as { id: string }).id })
+        .update({ status: 'diangkat', created_content_id: newId })
         .eq('id', rq.id);
     }
     setReqBusy(null);
@@ -404,8 +463,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const NOTE_FIELD_LABELS: Record<string, string> = {
     title: 'Hook / Brief',
     visual_hook: 'Visual Hook',
-    production_note: 'Catatan produksi',
+    production_note: 'Catatan produksi (arsip)',
     caption: 'Caption',
+    hashtags: 'Hashtag',
     account: 'Akun',
     pillar: 'Category Content',
     status: 'Status',
@@ -781,17 +841,6 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                   />
                 </div>
                 <div className="field">
-                  <label>Catatan produksi{noteBtn('production_note')}</label>
-                  <textarea
-                    ref={growRef}
-                    value={form.production_note}
-                    disabled={readOnly}
-                    onInput={autoGrow}
-                    onChange={(e) => setForm({ ...form, production_note: e.target.value })}
-                    placeholder="mis. Ambil 3 detik pertama · gaya cepat"
-                  />
-                </div>
-                <div className="field">
                   <label>Caption (diisi Distribution){noteBtn('caption')}</label>
                   <textarea
                     ref={growRef}
@@ -801,6 +850,52 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     onChange={(e) => setForm({ ...form, caption: e.target.value })}
                     placeholder="Caption final untuk upload"
                   />
+                </div>
+                <div className="field">
+                  <label>Hashtag{noteBtn('hashtags')}</label>
+                  <textarea
+                    ref={growRef}
+                    value={form.hashtags}
+                    disabled={readOnly}
+                    onInput={autoGrow}
+                    onChange={(e) => setForm({ ...form, hashtags: e.target.value })}
+                    placeholder="#filmindonesia #rekomendasifilm #fyp"
+                  />
+                  <div className="hint">Pisahkan dengan spasi. Otomatis ikut tersalin bersama caption di bawah.</div>
+                </div>
+                <div className="field">
+                  <label>
+                    Caption + Hashtag (siap salin)
+                    <button
+                      type="button"
+                      className="open-link"
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        font: 'inherit',
+                        cursor: combinedCaption ? 'pointer' : 'not-allowed',
+                        opacity: combinedCaption ? 1 : 0.45,
+                        color: copied ? 'var(--green)' : undefined,
+                      }}
+                      onClick={copyCombined}
+                      disabled={!combinedCaption}
+                      title={combinedCaption ? 'Salin ke clipboard' : 'Isi caption / hashtag dulu'}
+                    >
+                      {copied ? '✓ Tersalin' : 'Copy ⧉'}
+                    </button>
+                  </label>
+                  <textarea
+                    ref={(el) => { combinedRef.current = el; growRef(el); }}
+                    value={combinedCaption}
+                    readOnly
+                    onFocus={(e) => e.currentTarget.select()}
+                    placeholder="Otomatis terisi dari Caption + Hashtag di atas"
+                    style={{ background: 'var(--raised)', cursor: 'text' }}
+                  />
+                  <div className="hint">
+                    Terisi otomatis — tidak perlu diketik. Klik <b>Copy</b> lalu tempel langsung ke TikTok/Instagram.
+                  </div>
                 </div>
               </div>
               <div>

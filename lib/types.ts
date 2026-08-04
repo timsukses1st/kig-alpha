@@ -63,8 +63,10 @@ export interface ContentRow {
   deadline: string | null;
   publish_date: string | null;
   caption: string | null;
+  hashtags: string | null;
   asset_url: string | null;
   visual_hook: string | null;
+  /** @deprecated Disembunyikan dari Board sejak v21. Kolom DB sengaja dipertahankan agar data lama tidak hilang. */
   production_note: string | null;
   potensi_fyp: boolean;
   created_by: string | null;
