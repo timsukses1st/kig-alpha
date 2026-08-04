@@ -16,6 +16,201 @@ interface Props {
   activeProjectName?: string | null;
 }
 
+/* ============================================================
+   Combobox Label — tampil sebagai teks bersih di tabel, berubah
+   jadi input + panel pilihan saat diklik. Panel pakai position
+   fixed supaya tidak terpotong oleh scroll tabel.
+   ============================================================ */
+
+function PopItem({ label, onPick, active, accent, muted }: {
+  label: string;
+  onPick: () => void;
+  active?: boolean;
+  accent?: boolean;
+  muted?: boolean;
+}) {
+  const [hv, setHv] = useState(false);
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => { e.preventDefault(); onPick(); }}
+      onMouseEnter={() => setHv(true)}
+      onMouseLeave={() => setHv(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        width: '100%',
+        textAlign: 'left',
+        background: hv ? 'rgba(255,255,255,.06)' : 'transparent',
+        border: 'none',
+        borderRadius: 7,
+        padding: '7px 10px',
+        font: 'inherit',
+        fontSize: 13,
+        cursor: 'pointer',
+        color: accent ? 'var(--accent)' : muted ? 'var(--text-3)' : 'var(--text)',
+        transition: 'background .12s',
+      }}
+    >
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      {active && <span style={{ color: 'var(--accent)', fontSize: 12 }}>✓</span>}
+    </button>
+  );
+}
+
+function LabelCell({ value, options, onSave }: {
+  value: string;
+  options: string[];
+  onSave: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => { setDraft(value); }, [value]);
+
+  const close = useCallback(() => { setOpen(false); setDraft(value); }, [value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (boxRef.current && boxRef.current.contains(t)) return;
+      const panel = document.getElementById('label-pop');
+      if (panel && panel.contains(t)) return;
+      close();
+    };
+    const bail = () => close();
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('scroll', bail, true);
+    window.addEventListener('resize', bail);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('scroll', bail, true);
+      window.removeEventListener('resize', bail);
+    };
+  }, [open, close]);
+
+  const openPanel = () => {
+    const r = boxRef.current ? boxRef.current.getBoundingClientRect() : null;
+    if (r) setPos({ top: r.bottom + 6, left: r.left, width: Math.max(r.width, 210) });
+    setDraft(value);
+    setOpen(true);
+    window.setTimeout(() => { if (inputRef.current) inputRef.current.select(); }, 0);
+  };
+
+  const commit = (v: string) => {
+    const clean = v.trim();
+    setOpen(false);
+    setDraft(clean);
+    if (clean !== value.trim()) onSave(clean);
+  };
+
+  const q = draft.trim().toLowerCase();
+  const filtered = q ? options.filter((o) => o.toLowerCase().includes(q)) : options;
+  const canCreate = !!draft.trim() && !options.some((o) => o.toLowerCase() === q);
+
+  return (
+    <div ref={boxRef} style={{ width: 190, maxWidth: '100%' }}>
+      {open ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          autoFocus
+          placeholder="Ketik label baru…"
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(draft); }
+            else if (e.key === 'Escape') { e.preventDefault(); close(); }
+          }}
+          style={{
+            width: '100%',
+            background: 'var(--raised)',
+            border: '1px solid var(--accent)',
+            borderRadius: 8,
+            padding: '6px 10px',
+            font: 'inherit',
+            fontSize: 13,
+            color: 'var(--text)',
+            outline: 'none',
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={openPanel}
+          onMouseEnter={() => setHover(true)}
+          onMouseLeave={() => setHover(false)}
+          title={value ? 'Ubah label' : 'Beri label'}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: hover ? 'var(--raised)' : 'transparent',
+            border: '1px solid',
+            borderColor: hover ? 'var(--border)' : 'transparent',
+            borderRadius: 8,
+            padding: '6px 10px',
+            font: 'inherit',
+            fontSize: 13,
+            textAlign: 'left',
+            cursor: 'pointer',
+            color: value ? 'var(--text)' : 'var(--text-3)',
+            transition: 'background .15s, border-color .15s',
+          }}
+        >
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {value || '—'}
+          </span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+            style={{ opacity: hover ? 0.75 : 0.3, flexShrink: 0 }}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      )}
+
+      {open && pos && (
+        <div
+          id="label-pop"
+          style={{
+            position: 'fixed',
+            top: pos.top,
+            left: pos.left,
+            width: pos.width,
+            maxHeight: 244,
+            overflowY: 'auto',
+            zIndex: 60,
+            background: 'var(--raised)',
+            border: '1px solid var(--border)',
+            borderRadius: 10,
+            padding: 5,
+            boxShadow: '0 14px 36px rgba(0,0,0,.55)',
+          }}
+        >
+          {filtered.map((o) => (
+            <PopItem key={o} label={o} active={o === value} onPick={() => commit(o)} />
+          ))}
+          {canCreate && (
+            <PopItem label={`+ Buat "${draft.trim()}"`} accent onPick={() => commit(draft)} />
+          )}
+          {!!value && <PopItem label="Kosongkan label" muted onPick={() => commit('')} />}
+          {filtered.length === 0 && !canCreate && (
+            <div style={{ padding: '8px 10px', color: 'var(--text-3)', fontSize: 13 }}>
+              Ketik untuk membuat label baru.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AccessView({ selfId, onAccountsChanged, activeProjectId = 'all', activeProjectName = null }: Props) {
   const [users, setUsers] = useState<Profile[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -542,17 +737,10 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                         </select>
                       </td>
                       <td>
-                        {/* key ikut nilai label: begitu data server berubah, input
-                            di-remount dengan nilai terbaru (sekaligus rollback
-                            otomatis kalau simpan gagal). */}
-                        <input
-                          key={a.label || ''}
-                          list="acc-label-options"
-                          defaultValue={a.label || ''}
-                          placeholder="— pilih / ketik —"
-                          style={{ width: '100%', minWidth: 110 }}
-                          onBlur={(e) => updateAccountLabel(a, e.target.value)}
-                          onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                        <LabelCell
+                          value={a.label || ''}
+                          options={labelOptions}
+                          onSave={(v) => updateAccountLabel(a, v)}
                         />
                       </td>
                       <td>
