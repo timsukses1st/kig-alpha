@@ -685,7 +685,14 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       role="button"
                       tabIndex={0}
                       className={`card ${editable ? '' : 'locked'}`}
-                      style={{ ['--card-accent' as never]: statusDef(row.status).color, position: 'relative' }}
+                      style={{
+                        // Kartu yang belum punya link drive diberi aksen amber
+                        // supaya langsung terlihat di papan. Warna status tidak
+                        // hilang informasinya — kartu sudah berada di kolom
+                        // statusnya masing-masing.
+                        ['--card-accent' as never]: hasAsset ? statusDef(row.status).color : 'var(--amber)',
+                        position: 'relative',
+                      }}
                       onClick={() => openEdit(row)}
                       onKeyDown={(e) => e.key === 'Enter' && openEdit(row)}
                       onMouseEnter={() => setHoverCard(row.id)}
