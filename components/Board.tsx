@@ -686,12 +686,20 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       tabIndex={0}
                       className={`card ${editable ? '' : 'locked'}`}
                       style={{
-                        // Kartu yang belum punya link drive diberi aksen amber
-                        // supaya langsung terlihat di papan. Warna status tidak
-                        // hilang informasinya — kartu sudah berada di kolom
-                        // statusnya masing-masing.
+                        // Kartu yang belum punya link drive diwarnai amber
+                        // seluruhnya supaya langsung terlihat di papan. Warna
+                        // status tidak hilang informasinya — kartu sudah berada
+                        // di kolom statusnya masing-masing.
+                        //
+                        // Tint dipasang lewat backgroundImage (bukan background)
+                        // agar warna dasar kartu dari globals.css tetap dipakai
+                        // — lapisan amber cuma ditumpuk di atasnya.
                         ['--card-accent' as never]: hasAsset ? statusDef(row.status).color : 'var(--amber)',
                         position: 'relative',
+                        ...(hasAsset ? null : {
+                          backgroundImage: 'linear-gradient(rgba(245,158,11,.07), rgba(245,158,11,.07))',
+                          borderColor: 'rgba(245,158,11,.32)',
+                        }),
                       }}
                       onClick={() => openEdit(row)}
                       onKeyDown={(e) => e.key === 'Enter' && openEdit(row)}
