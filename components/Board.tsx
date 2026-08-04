@@ -458,14 +458,21 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     load();
   };
 
-  const remove = async () => {
-    if (!editing) return;
-    if (!window.confirm(`Hapus konten "${editing.title}"?`)) return;
-    setSaving(true);
-    const { error: err } = await supabase.from('contents').delete().eq('id', editing.id);
-    setSaving(false);
-    if (err) { setError('Gagal menghapus. Hanya superadmin/manager yang bisa menghapus.'); return; }
-    setModalOpen(false);
+  // ---- Hapus konten lewat ikon di kartu Board ----
+  // Konfirmasi pakai modal in-app, bukan window.confirm (diblokir di environment ini).
+  const [delRow, setDelRow] = useState<ContentRow | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+  const [delErr, setDelErr] = useState('');
+  const [hoverCard, setHoverCard] = useState<string | null>(null);
+
+  const confirmDeleteRow = async () => {
+    if (!delRow) return;
+    setDelBusy(true);
+    setDelErr('');
+    const { error: err } = await supabase.from('contents').delete().eq('id', delRow.id);
+    setDelBusy(false);
+    if (err) { setDelErr('Gagal menghapus. Hanya superadmin/manager yang bisa menghapus.'); return; }
+    setDelRow(null);
     load();
   };
 
@@ -678,12 +685,49 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       role="button"
                       tabIndex={0}
                       className={`card ${editable ? '' : 'locked'}`}
-                      style={{ ['--card-accent' as never]: statusDef(row.status).color }}
+                      style={{ ['--card-accent' as never]: statusDef(row.status).color, position: 'relative' }}
                       onClick={() => openEdit(row)}
                       onKeyDown={(e) => e.key === 'Enter' && openEdit(row)}
+                      onMouseEnter={() => setHoverCard(row.id)}
+                      onMouseLeave={() => setHoverCard((c) => (c === row.id ? null : c))}
                       title={editable ? 'Klik untuk edit' : 'Lihat detail (tahap ini dikelola tim lain)'}
                     >
-                      <div className="card-title" dangerouslySetInnerHTML={{ __html: mdToHtml(row.title) }} />
+                      {canDelete && (
+                        <button
+                          type="button"
+                          title="Hapus konten"
+                          onClick={(e) => { e.stopPropagation(); setDelErr(''); setDelRow(row); }}
+                          style={{
+                            position: 'absolute',
+                            top: 7,
+                            right: 7,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 24,
+                            height: 24,
+                            padding: 0,
+                            background: 'transparent',
+                            border: 'none',
+                            borderRadius: 6,
+                            color: 'var(--red)',
+                            cursor: 'pointer',
+                            opacity: hoverCard === row.id ? 0.9 : 0,
+                            pointerEvents: hoverCard === row.id ? 'auto' : 'none',
+                            transition: 'opacity .15s',
+                          }}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                            <path d="M10 11v6M14 11v6" />
+                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                          </svg>
+                        </button>
+                      )}
+                      <div className="card-title" style={{ paddingRight: canDelete ? 22 : undefined }}
+                        dangerouslySetInnerHTML={{ __html: mdToHtml(row.title) }} />
                       <div className="card-acc">
                         <span className="sq" />
                         {accName(row.account_id)}
@@ -810,8 +854,23 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     {fieldNotes('umum').length > 0 && <span className="umum-count">{fieldNotes('umum').length}</span>}
                   </button>
                 )}
+                {error && <p className="error-msg" style={{ margin: '8px 0 0' }}>{error}</p>}
               </div>
-              <button className="btn ghost modal-close" onClick={() => setModalOpen(false)}>✕</button>
+              {/* Aksi utama ditaruh di atas — tidak perlu scroll ke bawah dulu
+                  untuk menyimpan. marginLeft auto menjaga posisinya tetap di
+                  kanan, baik saat .modal-close melayang maupun ikut alur. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto', flexShrink: 0 }}>
+                {!readOnly && (
+                  <button className="btn primary" onClick={save} disabled={saving}>
+                    {saving ? 'Menyimpan…' : 'Simpan'}
+                  </button>
+                )}
+              </div>
+              <button
+                className="btn ghost modal-close"
+                title={readOnly ? 'Tutup' : 'Batal — tutup tanpa menyimpan'}
+                onClick={() => setModalOpen(false)}
+              >✕</button>
             </div>
             <div className="modal-body">
               <div>
@@ -1053,23 +1112,68 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                 </label>
               </div>
             </div>
+            {/* Footer tinggal keterangan singkat — tombolnya sudah pindah ke
+                header supaya tidak perlu scroll. */}
             <div className="modal-foot">
               <span className="foot-note">
-                {error ? <span className="error-msg" style={{ margin: 0 }}>{error}</span> :
-                  editing ? 'Perubahan tersimpan setelah klik Simpan.' : <>Konten akan masuk kolom <b>{editingDef.label}</b>.</>}
+                {readOnly
+                  ? 'Mode lihat — tahap ini dikelola tim lain.'
+                  : editing
+                    ? 'Perubahan tersimpan setelah klik Simpan di atas. Tutup dengan ✕ untuk membatalkan.'
+                    : <>Konten akan masuk kolom <b>{editingDef.label}</b>.</>}
               </span>
-              <div className="right">
-                {editing && canDelete && <button className="btn danger" onClick={remove} disabled={saving}>Hapus</button>}
-                <button className="btn" onClick={() => setModalOpen(false)} disabled={saving}>{readOnly ? 'Tutup' : 'Batal'}</button>
-                {!readOnly && (
-                  <button className="btn primary" onClick={save} disabled={saving}>
-                    {saving ? 'Menyimpan…' : 'Simpan'}
-                  </button>
-                )}
-              </div>
             </div>
           </div>
           {noteSidePanel()}
+          </div>
+        </div>
+      )}
+
+      {/* Konfirmasi hapus konten — dipicu dari ikon sampah di kartu Board */}
+      {delRow && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !delBusy && setDelRow(null)}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--red)' }} />
+                  Hapus konten
+                </div>
+                <div className="modal-title">Hapus konten ini?</div>
+                <div className="modal-sub">
+                  Tindakan ini permanen — catatan &amp; riwayat konten ikut terhapus dan tidak bisa dikembalikan.
+                </div>
+              </div>
+              <button className="btn ghost modal-close" disabled={delBusy} onClick={() => setDelRow(null)}>✕</button>
+            </div>
+            <div style={{ padding: '4px 24px 0' }}>
+              <div
+                className="status-chip"
+                style={{ ['--sc' as never]: statusDef(delRow.status).color, maxWidth: '100%' }}
+              >
+                <span className="sq" style={{ background: statusDef(delRow.status).color }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {delRow.title.replace(/\*\*/g, '').split('\n')[0] || '(tanpa judul)'}
+                </span>
+              </div>
+              <div className="hint" style={{ marginTop: 8 }}>
+                {accName(delRow.account_id)} · {statusDef(delRow.status).label}
+              </div>
+              {delErr && <p className="error-msg" style={{ marginTop: 10 }}>{delErr}</p>}
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={delBusy} onClick={() => setDelRow(null)}>Batal</button>
+                <button
+                  className="btn danger"
+                  disabled={delBusy}
+                  onClick={confirmDeleteRow}
+                  style={{ background: 'var(--red)', borderColor: 'var(--red)', color: '#fff' }}
+                >
+                  {delBusy ? 'Menghapus…' : 'Hapus permanen'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
