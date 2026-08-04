@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { initials, VERTICALS, type Account, type ContentCategory, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
+import { initials, tagColor, VERTICALS, type Account, type ContentCategory, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
 import { sigma, type SigmaProject } from '@/lib/sigma';
 
 const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
@@ -22,21 +22,10 @@ interface Props {
    fixed supaya tidak terpotong oleh scroll tabel.
    ============================================================ */
 
-/* Warna label dipilih otomatis dari nama labelnya (hash), jadi:
-   - label yang sama SELALU dapat warna yang sama, di mana pun tampil
-   - tidak perlu disetel manual, tidak perlu kolom warna di database
-   Palet sengaja mid-tone supaya tetap terbaca di mode gelap & terang. */
-const LABEL_PALETTE = ['#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#06b6d4', '#f97316', '#ef4444', '#6366f1'];
-
-function labelColor(s: string): string {
-  const t = s.trim().toLowerCase();
-  let h = 0;
-  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
-  return LABEL_PALETTE[h % LABEL_PALETTE.length];
-}
-
+/* Warna diambil dari tagColor() di lib/types.ts — dipakai bersama dengan
+   Board, supaya warna kategori di sini dan warna kartu di papan selalu sama. */
 function LabelChip({ text }: { text: string }) {
-  const c = labelColor(text);
+  const c = tagColor(text);
   return (
     <span
       style={{
