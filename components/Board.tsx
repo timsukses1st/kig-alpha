@@ -746,7 +746,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       )}
                       <div className="card-foot">
                         <span className="flag-dot" style={{ background: hasAsset ? 'var(--green)' : 'var(--amber)' }} />
-                        {hasAsset ? 'Aset siap' : 'Perlu link drive'}
+                        {hasAsset
+                          ? 'Aset siap'
+                          : <span style={{ color: 'var(--amber)', fontWeight: 600 }}>Perlu link drive</span>}
                         {row.potensi_fyp && <span style={{ color: 'var(--st-review)' }}>· FYP</span>}
                         <span className="pic-avatar" title={pic || 'PIC belum di-assign'}>{initials(pic)}</span>
                       </div>
