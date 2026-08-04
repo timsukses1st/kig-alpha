@@ -181,7 +181,10 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setNewNote('');
     setOpenNoteField(null);
     setCopied(false);
-    setForm({ ...EMPTY_FORM, project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || '') });
+    // Ikut project yang aktif di sidebar. Kalau sidebar 'Semua project',
+    // JANGAN diisi otomatis — dulu jatuh ke projects[0] (project pertama
+    // menurut abjad), yang diam-diam bisa memasukkan konten ke klien salah.
+    setForm({ ...EMPTY_FORM, project_id: projectFilter !== 'all' ? projectFilter : '' });
     setError('');
     setModalOpen(true);
   };
@@ -289,6 +292,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   const save = async () => {
     if (!form.title.trim()) { setError('Hook / brief konten wajib diisi.'); return; }
+    // Project wajib: konten tanpa project lolos tembok unit (can_see_project
+    // meloloskan project_id NULL), jadi bisa terbaca lintas unit bisnis.
+    if (!form.project_id) { setError('Pilih project dulu — konten tanpa project bisa terbaca lintas unit.'); return; }
     setSaving(true); setError('');
     const payload = {
       title: form.title.trim(),
@@ -378,11 +384,17 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   const submitRequest = async () => {
     if (!reqForm.title.trim() || !profile) { setReqError('Judul/brief request wajib diisi.'); return; }
+    // Masalah yang sama seperti di openCreate: dulu jatuh ke projects[0] kalau
+    // sidebar 'Semua project' — request bisa nyasar ke klien lain diam-diam.
+    if (projectFilter === 'all') {
+      setReqError('Pilih project di sidebar dulu — request harus jelas untuk project mana.');
+      return;
+    }
     setReqBusy('submit');
     setReqError('');
     const { error: err } = await supabase.from('content_requests').insert({
       title: reqForm.title.trim(),
-      project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || null),
+      project_id: projectFilter,
       account_id: reqForm.account_id || null,
       requested_date: reqForm.requested_date || null,
       note: reqForm.note.trim() || null,
@@ -462,6 +474,14 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const prevIdx = editing ? ORDER.indexOf(editing.status) : -1;
   const prevStep = editing && prevIdx > 0 ? ORDER[prevIdx - 1] : null;
   const editingDef = statusDef(form.status);
+
+  // Konten BARU + sidebar sudah menunjuk satu project → project sudah pasti,
+  // jadi tidak perlu ditanya ulang; cukup ditampilkan sebagai penanda.
+  // Kalau sidebar 'Semua project' atau sedang mengedit konten lama, dropdown
+  // tetap muncul (perlu untuk memilih / memindahkan project).
+  const lockedProject = !editing && projectFilter !== 'all'
+    ? (projects.find((p) => p.id === projectFilter) || null)
+    : null;
 
   const NOTE_FIELD_LABELS: Record<string, string> = {
     title: 'Hook / Brief',
@@ -906,14 +926,25 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                 <div className="modal-col-label">Detail &amp; aset</div>
                 <div className="field">
                   <label>Project</label>
-                  <select
-                    value={form.project_id}
-                    disabled={readOnly}
-                    onChange={(e) => setForm({ ...form, project_id: e.target.value, account_id: '' })}
-                  >
-                    <option value="">— pilih —</option>
-                    {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
-                  </select>
+                  {lockedProject ? (
+                    <>
+                      <div className="status-chip" style={{ ['--sc' as never]: 'var(--accent)' }}>
+                        <span className="sq" style={{ background: 'var(--accent)' }} />
+                        {lockedProject.name}
+                        {lockedProject.vertical ? ' · ' + lockedProject.vertical : ''}
+                      </div>
+                      <div className="hint">Ikut project aktif di sidebar — ganti lewat selector Project di kiri.</div>
+                    </>
+                  ) : (
+                    <select
+                      value={form.project_id}
+                      disabled={readOnly}
+                      onChange={(e) => setForm({ ...form, project_id: e.target.value, account_id: '' })}
+                    >
+                      <option value="">— pilih —</option>
+                      {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+                    </select>
+                  )}
                 </div>
                 <div className="field-row">
                   <div className="field">
