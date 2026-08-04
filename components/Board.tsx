@@ -31,6 +31,7 @@ const EMPTY_FORM = {
   caption: '',
   hashtags: '',
   asset_url: '',
+  post_url: '',
   visual_hook: '',
   potensi_fyp: false,
 };
@@ -235,6 +236,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       caption: row.caption || '',
       hashtags: row.hashtags || '',
       asset_url: row.asset_url || '',
+      post_url: row.post_url || '',
       visual_hook: row.visual_hook || '',
       potensi_fyp: row.potensi_fyp,
     });
@@ -301,6 +303,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       caption: form.caption.trim() || null,
       hashtags: form.hashtags.trim() || null,
       asset_url: form.asset_url.trim() || null,
+      post_url: form.post_url.trim() || null,
       visual_hook: form.visual_hook.trim() || null,
       potensi_fyp: form.potensi_fyp,
     };
@@ -473,6 +476,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     publish_date: 'Tanggal tayang',
     pic: 'PIC',
     asset_url: 'Link Drive',
+    post_url: 'Link Post',
     umum: 'Catatan umum',
   };
 
@@ -996,6 +1000,21 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     placeholder="mis. [05] FILM_2607.mov / link Drive"
                   />
                   <div className="hint">Tempel link/nama file final dari Drive. Distribution memakainya untuk upload.</div>
+                </div>
+                <div className="field">
+                  <label>
+                    Link Post{noteBtn('post_url')}
+                    {isUrl(form.post_url) && (
+                      <a className="open-link" href={form.post_url.trim()} target="_blank" rel="noopener noreferrer">Buka ↗</a>
+                    )}
+                  </label>
+                  <input
+                    value={form.post_url}
+                    disabled={readOnly}
+                    onChange={(e) => setForm({ ...form, post_url: e.target.value })}
+                    placeholder="https://www.tiktok.com/@akun/video/…"
+                  />
+                  <div className="hint">Diisi Distribution setelah konten benar-benar tayang. Dipakai sebagai bukti tayang &amp; penghubung ke data SIGMA.</div>
                 </div>
                 <label className="check-row">
                   <input type="checkbox" checked={form.potensi_fyp} disabled={readOnly} onChange={(e) => setForm({ ...form, potensi_fyp: e.target.checked })} />
