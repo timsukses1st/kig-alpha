@@ -22,12 +22,52 @@ interface Props {
    fixed supaya tidak terpotong oleh scroll tabel.
    ============================================================ */
 
-function PopItem({ label, onPick, active, accent, muted }: {
+/* Warna label dipilih otomatis dari nama labelnya (hash), jadi:
+   - label yang sama SELALU dapat warna yang sama, di mana pun tampil
+   - tidak perlu disetel manual, tidak perlu kolom warna di database
+   Palet sengaja mid-tone supaya tetap terbaca di mode gelap & terang. */
+const LABEL_PALETTE = ['#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#06b6d4', '#f97316', '#ef4444', '#6366f1'];
+
+function labelColor(s: string): string {
+  const t = s.trim().toLowerCase();
+  let h = 0;
+  for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+  return LABEL_PALETTE[h % LABEL_PALETTE.length];
+}
+
+function LabelChip({ text }: { text: string }) {
+  const c = labelColor(text);
+  return (
+    <span
+      style={{
+        display: 'inline-block',
+        maxWidth: '100%',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        background: c + '1f',
+        color: c,
+        border: '1px solid ' + c + '3d',
+        borderRadius: 999,
+        padding: '3px 10px',
+        fontSize: 12,
+        fontWeight: 600,
+        lineHeight: 1.5,
+        verticalAlign: 'middle',
+      }}
+    >
+      {text}
+    </span>
+  );
+}
+
+function PopItem({ label, onPick, active, accent, muted, chip }: {
   label: string;
   onPick: () => void;
   active?: boolean;
   accent?: boolean;
   muted?: boolean;
+  chip?: boolean;
 }) {
   const [hv, setHv] = useState(false);
   return (
@@ -53,7 +93,9 @@ function PopItem({ label, onPick, active, accent, muted }: {
         transition: 'background .12s',
       }}
     >
-      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {chip ? <LabelChip text={label} /> : label}
+      </span>
       {active && <span style={{ color: 'var(--accent)', fontSize: 12 }}>✓</span>}
     </button>
   );
@@ -160,12 +202,12 @@ function LabelCell({ value, options, onSave }: {
             fontSize: 13,
             textAlign: 'left',
             cursor: 'pointer',
-            color: value ? 'var(--text)' : 'var(--text-3)',
+            color: 'var(--text-3)',
             transition: 'background .15s, border-color .15s',
           }}
         >
-          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {value || '—'}
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {value ? <LabelChip text={value} /> : '—'}
           </span>
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
@@ -194,10 +236,22 @@ function LabelCell({ value, options, onSave }: {
           }}
         >
           {filtered.map((o) => (
-            <PopItem key={o} label={o} active={o === value} onPick={() => commit(o)} />
+            <PopItem key={o} label={o} chip active={o === value} onPick={() => commit(o)} />
           ))}
           {canCreate && (
-            <PopItem label={`+ Buat "${draft.trim()}"`} accent onPick={() => commit(draft)} />
+            <button
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); commit(draft); }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                textAlign: 'left', background: 'transparent', border: 'none',
+                borderRadius: 7, padding: '7px 10px', font: 'inherit', fontSize: 13,
+                cursor: 'pointer', color: 'var(--text-3)',
+              }}
+            >
+              <span style={{ flexShrink: 0 }}>+ Buat</span>
+              <LabelChip text={draft.trim()} />
+            </button>
           )}
           {!!value && <PopItem label="Kosongkan label" muted onPick={() => commit('')} />}
           {filtered.length === 0 && !canCreate && (
