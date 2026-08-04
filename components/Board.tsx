@@ -91,6 +91,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [noteBusy, setNoteBusy] = useState(false);
   const [openNoteField, setOpenNoteField] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // Project konten yang sudah ada dikunci. Memindahkannya harus disengaja
+  // (klik tombol dulu), supaya tidak bisa berpindah klien karena salah klik.
+  const [movingProject, setMovingProject] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -181,6 +184,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setNewNote('');
     setOpenNoteField(null);
     setCopied(false);
+    setMovingProject(false);
     // Ikut project yang aktif di sidebar. Kalau sidebar 'Semua project',
     // JANGAN diisi otomatis — dulu jatuh ke projects[0] (project pertama
     // menurut abjad), yang diam-diam bisa memasukkan konten ke klien salah.
@@ -224,6 +228,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setNewNote('');
     setOpenNoteField(null);
     setCopied(false);
+    setMovingProject(false);
     loadNotes(row.id);
     setForm({
       title: row.title,
@@ -489,6 +494,13 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const lockedProject = !editing && projectFilter !== 'all'
     ? (projects.find((p) => p.id === projectFilter) || null)
     : null;
+
+  // Konten yang SUDAH ADA juga dikunci project-nya. Dropdown baru muncul
+  // setelah menekan "Pindahkan ke project lain" — supaya konten tidak bisa
+  // berpindah klien hanya karena dropdown tersenggol.
+  const currentProject = projects.find((p) => p.id === form.project_id) || null;
+  const projectLocked = !!lockedProject || (!!editing && !movingProject);
+  const shownProject = lockedProject || currentProject;
 
   const NOTE_FIELD_LABELS: Record<string, string> = {
     title: 'Hook / Brief',
@@ -1002,24 +1014,40 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                 <div className="modal-col-label">Detail &amp; aset</div>
                 <div className="field">
                   <label>Project</label>
-                  {lockedProject ? (
+                  {projectLocked ? (
                     <>
                       <div className="status-chip" style={{ ['--sc' as never]: 'var(--accent)' }}>
                         <span className="sq" style={{ background: 'var(--accent)' }} />
-                        {lockedProject.name}
-                        {lockedProject.vertical ? ' · ' + lockedProject.vertical : ''}
+                        {shownProject
+                          ? shownProject.name + (shownProject.vertical ? ' · ' + shownProject.vertical : '')
+                          : '— belum ada project —'}
                       </div>
-                      <div className="hint">Ikut project aktif di sidebar — ganti lewat selector Project di kiri.</div>
+                      {lockedProject ? (
+                        <div className="hint">Ikut project aktif di sidebar — ganti lewat selector Project di kiri.</div>
+                      ) : canAcc && !readOnly ? (
+                        <button className="btn ghost flow-back" onClick={() => setMovingProject(true)}>
+                          ⇄ Pindahkan ke project lain
+                        </button>
+                      ) : (
+                        <div className="hint">Project konten tidak bisa diubah — hubungi lead kalau salah project.</div>
+                      )}
                     </>
                   ) : (
-                    <select
-                      value={form.project_id}
-                      disabled={readOnly}
-                      onChange={(e) => setForm({ ...form, project_id: e.target.value, account_id: '' })}
-                    >
-                      <option value="">— pilih —</option>
-                      {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
-                    </select>
+                    <>
+                      <select
+                        value={form.project_id}
+                        disabled={readOnly}
+                        onChange={(e) => setForm({ ...form, project_id: e.target.value, account_id: '' })}
+                      >
+                        <option value="">— pilih —</option>
+                        {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
+                      </select>
+                      {editing && (
+                        <div className="hint" style={{ color: 'var(--amber)' }}>
+                          Memindahkan project juga memindahkan konten ini dari papan klien lama. Pilihan akun ikut direset.
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
                 <div className="field-row">
