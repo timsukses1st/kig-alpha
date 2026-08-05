@@ -187,6 +187,15 @@ const CollapseIcon = ({ collapsed }: { collapsed: boolean }) => (
   </svg>
 );
 
+/** Dipakai menggantikan CollapseIcon di layar HP — drawer ditutup, bukan diciutkan. */
+const CloseIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+    <line x1="6" y1="6" x2="18" y2="18" />
+    <line x1="18" y1="6" x2="6" y2="18" />
+  </svg>
+);
+
 function Placeholder({ title, desc }: { title: string; desc: string }) {
   return (
     <div className="content-area">
@@ -214,6 +223,7 @@ export default function App() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const [booting, setBooting] = useState(true);
 
   useEffect(() => {
@@ -221,6 +231,27 @@ export default function App() {
     if (savedTheme === 'light' || savedTheme === 'dark') setTheme(savedTheme);
     if (window.localStorage?.getItem('alpha-sidebar') === 'collapsed') setCollapsed(true);
   }, []);
+
+  /**
+   * Di layar HP sidebar tampil sebagai drawer penuh — mode "collapsed" (ikon saja)
+   * tidak berlaku, kalau dipaksa label menu hilang semua. Breakpoint ini WAJIB
+   * sama dengan @media (max-width: 820px) di globals.css.
+   */
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 820px)');
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+
+  /** Sidebar ramping (ikon saja) hanya boleh terjadi di desktop. */
+  const slim = collapsed && !isMobile;
+
+  /** Tutup drawer otomatis kalau layar melebar (mis. HP diputar ke landscape). */
+  useEffect(() => {
+    if (!isMobile && mobileNav) setMobileNav(false);
+  }, [isMobile, mobileNav]);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -314,10 +345,10 @@ export default function App() {
       </button>
       {mobileNav && <div className="nav-backdrop" onClick={() => setMobileNav(false)} />}
 
-      <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileNav ? 'mobile-open' : ''}`}>
+      <aside className={`sidebar ${slim ? 'collapsed' : ''} ${mobileNav ? 'mobile-open' : ''}`}>
         <div className="brand">
           <AlphaBadge size={30} />
-          {!collapsed && (
+          {!slim && (
             <div>
               <h1>Alpha</h1>
               <div className="brand-sub">CONTENT LAUNCH</div>
@@ -325,14 +356,19 @@ export default function App() {
           )}
           <button
             className="icon-btn collapse-btn"
-            title={collapsed ? 'Buka sidebar' : 'Tutup sidebar'}
-            onClick={() => { setCollapsed(!collapsed); setAccMenuOpen(false); }}
+            title={isMobile ? 'Tutup menu' : slim ? 'Buka sidebar' : 'Tutup sidebar'}
+            onClick={() => {
+              setAccMenuOpen(false);
+              // Di HP tombol ini menutup drawer, bukan menciutkan sidebar.
+              if (isMobile) setMobileNav(false);
+              else setCollapsed(!collapsed);
+            }}
           >
-            <CollapseIcon collapsed={collapsed} />
+            {isMobile ? <CloseIcon /> : <CollapseIcon collapsed={slim} />}
           </button>
         </div>
 
-        {!collapsed && (
+        {!slim && (
           <>
             <div className="section-label">Project</div>
             <button className="account-picker" onClick={() => setAccMenuOpen(!accMenuOpen)}>
@@ -399,24 +435,24 @@ export default function App() {
           <button
             key={n.key}
             className={`nav-item ${view === n.key ? 'active' : ''}`}
-            title={collapsed ? n.label : undefined}
+            title={slim ? n.label : undefined}
             onClick={() => { setView(n.key); setMobileNav(false); }}
           >
             <NavIcon view={n.key} />
-            {!collapsed && n.label}
+            {!slim && n.label}
           </button>
         ))}
 
         <div className="sidebar-footer">
           <button
-            className={collapsed ? 'icon-btn footer-icon' : 'btn ghost theme-btn'}
+            className={slim ? 'icon-btn footer-icon' : 'btn ghost theme-btn'}
             title={theme === 'dark' ? 'Mode terang' : 'Mode gelap'}
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           >
             {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-            {!collapsed && <span style={{ marginLeft: 8 }}>{theme === 'dark' ? 'Mode terang' : 'Mode gelap'}</span>}
+            {!slim && <span style={{ marginLeft: 8 }}>{theme === 'dark' ? 'Mode terang' : 'Mode gelap'}</span>}
           </button>
-          {collapsed ? (
+          {slim ? (
             <>
               <div className="user-avatar" title={`${displayName} · ${profile?.role || ''}`}>{initials(displayName)}</div>
               <button className="icon-btn footer-icon" title="Keluar" onClick={logout}><LogoutIcon /></button>
