@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
-  canEditRow, initials, statusDef, tagColor, targetableStatuses,
+  PLATFORMS, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses,
   type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
@@ -28,6 +28,7 @@ const EMPTY_FORM = {
   pic_ads: '',
   deadline: '',
   publish_date: '',
+  platform: '',
   caption: '',
   hashtags: '',
   asset_url: '',
@@ -72,12 +73,13 @@ const htmlToMd = (node: Node): string => {
   return out;
 };
 
-type ColKey = 'akun' | 'kategori' | 'status' | 'caption' | 'drive' | 'post' | 'ads' | 'pic' | 'tayang';
+type ColKey = 'akun' | 'platform' | 'kategori' | 'status' | 'caption' | 'drive' | 'post' | 'ads' | 'pic' | 'tayang';
 
 const TITLE_COL_W = 300;
 
 const COLUMNS: { key: ColKey; label: string; width: number }[] = [
   { key: 'akun', label: 'Akun', width: 175 },
+  { key: 'platform', label: 'Platform', width: 140 },
   { key: 'kategori', label: 'Kategori', width: 155 },
   { key: 'status', label: 'Status', width: 160 },
   { key: 'caption', label: 'Caption', width: 100 },
@@ -187,6 +189,11 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [hiddenCols, setHiddenCols] = useState<ColKey[]>([]);
   const [colMenu, setColMenu] = useState(false);
   const [searchFocus, setSearchFocus] = useState(false);
+  // ---- duplikat ke platform lain ----
+  const [dupRow, setDupRow] = useState<ContentRow | null>(null);
+  const [dupTargets, setDupTargets] = useState<string[]>([]);
+  const [dupBusy, setDupBusy] = useState(false);
+  const [dupErr, setDupErr] = useState('');
   const [copiedRow, setCopiedRow] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   // Project konten yang sudah ada dikunci. Memindahkannya harus disengaja
@@ -356,6 +363,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       deadline: row.deadline || '',
       publish_date: row.publish_date || '',
       caption: row.caption || '',
+      platform: row.platform || '',
       hashtags: row.hashtags || '',
       asset_url: row.asset_url || '',
       post_url: row.post_url || '',
@@ -417,6 +425,69 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     } else {
       flashToast('Browser menolak akses clipboard — buka kartunya lalu salin manual.');
     }
+  };
+
+  const newGroupId = () => {
+    try {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    } catch { /* lanjut ke cadangan */ }
+    // Cadangan untuk browser/konteks tanpa crypto.randomUUID
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+      const r = Math.floor(Math.random() * 16);
+      const v = ch === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  };
+
+  const openDup = (row: ContentRow) => {
+    setDupErr('');
+    setDupTargets([]);
+    setDupRow(row);
+  };
+
+  const runDuplicate = async () => {
+    if (!dupRow || !profile || dupTargets.length === 0) return;
+    setDupBusy(true);
+    setDupErr('');
+
+    // Konten asal & semua salinannya berbagi satu group_id.
+    const gid = dupRow.group_id || newGroupId();
+
+    const payloads = dupTargets.map((pf) => ({
+      title: dupRow.title,
+      project_id: dupRow.project_id,
+      account_id: dupRow.account_id,
+      category_id: dupRow.category_id,
+      status: dupRow.status,
+      publish_date: dupRow.publish_date,
+      caption: dupRow.caption,
+      hashtags: dupRow.hashtags,
+      visual_hook: dupRow.visual_hook,
+      asset_url: dupRow.asset_url,
+      pic_creative: dupRow.pic_creative,
+      pic_distribution: dupRow.pic_distribution,
+      pic_ads: dupRow.pic_ads,
+      potensi_fyp: dupRow.potensi_fyp,
+      platform: pf,
+      group_id: gid,
+      created_by: profile.id,
+      // post_url & ads_code SENGAJA tidak disalin — keduanya khas per tayangan.
+    }));
+
+    const { error: insErr } = await supabase.from('contents').insert(payloads);
+    if (insErr) {
+      setDupBusy(false);
+      setDupErr('Gagal menduplikat — cek wewenang tim kamu untuk tahap ini.');
+      return;
+    }
+    // Tandai konten asal ikut serumpun (kalau belum).
+    if (!dupRow.group_id) {
+      await supabase.from('contents').update({ group_id: gid }).eq('id', dupRow.id);
+    }
+    setDupBusy(false);
+    setDupRow(null);
+    flashToast(`${payloads.length} salinan dibuat.`);
+    load();
   };
 
   const shownCols = COLUMNS.filter((c) => !hiddenCols.includes(c.key));
@@ -500,6 +571,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       deadline: form.deadline || null,
       publish_date: form.publish_date || null,
       caption: form.caption.trim() || null,
+      platform: form.platform || null,
       hashtags: form.hashtags.trim() || null,
       asset_url: form.asset_url.trim() || null,
       post_url: form.post_url.trim() || null,
@@ -704,6 +776,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     deadline: 'Deadline',
     publish_date: 'Tanggal tayang',
     pic: 'PIC',
+    platform: 'Platform',
     asset_url: 'Link Drive',
     post_url: 'Link Post',
     umum: 'Catatan umum',
@@ -995,6 +1068,23 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                           >
                             {plainTitle(row.title) || '(tanpa judul)'}
                           </button>
+                          <button
+                            type="button"
+                            title="Duplikat ke platform lain"
+                            onClick={() => openDup(row)}
+                            style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              width: 22, height: 22, padding: 0, flexShrink: 0,
+                              background: 'transparent', border: 'none', borderRadius: 6,
+                              color: 'var(--text-3)', cursor: 'pointer',
+                            }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <rect x="9" y="9" width="12" height="12" rx="2" />
+                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                            </svg>
+                          </button>
                           {canDelete && (
                             <button
                               type="button"
@@ -1022,6 +1112,27 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                         if (c.key === 'akun') {
                           const h = accName(row.account_id);
                           return <td key={c.key} className="sub" style={CLIP} title={h}>{h}</td>;
+                        }
+
+                        if (c.key === 'platform') {
+                          const pf = platformDef(row.platform);
+                          return (
+                            <td key={c.key}>
+                              <select
+                                value={row.platform || ''}
+                                disabled={!editable}
+                                onChange={(e) => patchRow(row, { platform: e.target.value || null }, 'Platform')}
+                                style={{
+                                  width: '100%', minWidth: 0,
+                                  color: pf ? pf.color : undefined,
+                                  fontWeight: pf ? 600 : undefined,
+                                }}
+                              >
+                                <option value="">— pilih —</option>
+                                {PLATFORMS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+                              </select>
+                            </td>
+                          );
                         }
 
                         if (c.key === 'kategori') {
@@ -1439,6 +1550,18 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     </select>
                   </div>
                   <div className="field">
+                    <label>Platform{noteBtn('platform')}</label>
+                    <select
+                      value={form.platform}
+                      disabled={readOnly}
+                      onChange={(e) => setForm({ ...form, platform: e.target.value })}
+                      style={{ color: platformDef(form.platform)?.color, fontWeight: form.platform ? 600 : undefined }}
+                    >
+                      <option value="">— pilih —</option>
+                      {PLATFORMS.map((pf) => <option key={pf.key} value={pf.key}>{pf.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="field">
                     <label>Category Content{noteBtn('category_id')}</label>
                     <select
                       value={form.category_id}
@@ -1558,6 +1681,102 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
             </div>
           </div>
           {noteSidePanel()}
+          </div>
+        </div>
+      )}
+
+      {/* Duplikat konten ke platform lain */}
+      {dupRow && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !dupBusy && setDupRow(null)}>
+          <div className="modal" style={{ maxWidth: 460 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--accent)' }} />
+                  Duplikat konten
+                </div>
+                <div className="modal-title">Tayangkan juga di platform lain</div>
+                <div className="modal-sub">
+                  Tiap platform jadi barisnya sendiri, jadi caption &amp; jadwalnya tetap bisa dibedakan.
+                </div>
+              </div>
+              <button className="btn ghost modal-close" disabled={dupBusy} onClick={() => setDupRow(null)}>✕</button>
+            </div>
+
+            <div style={{ padding: '4px 24px 0' }}>
+              <div className="field">
+                <label>Konten yang disalin</label>
+                <div className="status-chip" style={{ ['--sc' as never]: 'var(--accent)', maxWidth: '100%' }}>
+                  <span className="sq" style={{ background: 'var(--accent)' }} />
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {plainTitle(dupRow.title) || '(tanpa judul)'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="field">
+                <label>Pilih platform tujuan</label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                  {PLATFORMS.map((pf) => {
+                    const already = dupRow.platform === pf.key;
+                    const picked = dupTargets.includes(pf.key);
+                    return (
+                      <button
+                        key={pf.key}
+                        type="button"
+                        disabled={already || dupBusy}
+                        title={already ? 'Konten ini sudah di platform tersebut' : undefined}
+                        onClick={() => setDupTargets((t) =>
+                          t.includes(pf.key) ? t.filter((x) => x !== pf.key) : [...t, pf.key])}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 7,
+                          padding: '6px 12px',
+                          borderRadius: 999,
+                          border: '1px solid ' + (picked ? pf.color : 'var(--border)'),
+                          background: picked ? pf.color + '1f' : 'transparent',
+                          color: already ? 'var(--text-3)' : picked ? pf.color : 'var(--text)',
+                          fontWeight: picked ? 600 : 400,
+                          fontSize: 13,
+                          cursor: already ? 'not-allowed' : 'pointer',
+                          opacity: already ? 0.45 : 1,
+                        }}
+                      >
+                        <span style={{
+                          width: 8, height: 8, borderRadius: 999,
+                          background: pf.color, flexShrink: 0, opacity: already ? 0.5 : 1,
+                        }} />
+                        {pf.label}{already ? ' (sudah)' : ''}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="hint" style={{ marginTop: 10 }}>
+                <b>Ikut disalin:</b> brief, caption, hashtag, kategori, link drive, PIC, tanggal tayang.<br />
+                <b>Tidak disalin:</b> Link Post &amp; Kode Ads — keduanya selalu beda per platform.
+              </div>
+
+              {dupErr && <p className="error-msg" style={{ marginTop: 10 }}>{dupErr}</p>}
+            </div>
+
+            <div className="modal-foot">
+              <span className="foot-note">
+                {dupTargets.length > 0
+                  ? `${dupTargets.length} baris baru akan dibuat.`
+                  : 'Pilih minimal satu platform.'}
+              </span>
+              <div className="right">
+                <button className="btn" disabled={dupBusy} onClick={() => setDupRow(null)}>Batal</button>
+                <button
+                  className="btn primary"
+                  disabled={dupBusy || dupTargets.length === 0}
+                  onClick={runDuplicate}
+                >
+                  {dupBusy ? 'Menduplikat…' : 'Duplikat'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
