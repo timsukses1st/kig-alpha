@@ -163,6 +163,39 @@ function CellInput({
   );
 }
 
+function CtxItem({ label, icon, onPick, danger, disabled }: {
+  label: string;
+  icon: React.ReactNode;
+  onPick: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+}) {
+  const [hv, setHv] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onMouseEnter={() => setHv(true)}
+      onMouseLeave={() => setHv(false)}
+      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
+      onClick={(e) => { e.stopPropagation(); onPick(); }}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 9, width: '100%',
+        textAlign: 'left', border: 'none', borderRadius: 7,
+        padding: '8px 10px', font: 'inherit', fontSize: 13,
+        background: hv && !disabled ? 'rgba(255,255,255,.06)' : 'transparent',
+        color: disabled ? 'var(--text-3)' : danger ? 'var(--red)' : 'var(--text)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        transition: 'background .12s',
+      }}
+    >
+      <span style={{ display: 'flex', flexShrink: 0, opacity: 0.8 }}>{icon}</span>
+      {label}
+    </button>
+  );
+}
+
 export default function Board({ profile, accounts, projects, projectFilter }: Props) {
   const [rows, setRows] = useState<ContentRow[]>([]);
   const [requests, setRequests] = useState<ContentRequest[]>([]);
@@ -194,6 +227,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [dupTargets, setDupTargets] = useState<string[]>([]);
   const [dupBusy, setDupBusy] = useState(false);
   const [dupErr, setDupErr] = useState('');
+  // ---- menu klik-kanan / tekan-tahan pada baris ----
+  const [ctxMenu, setCtxMenu] = useState<{ row: ContentRow; x: number; y: number } | null>(null);
+  const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [copiedRow, setCopiedRow] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   // Project konten yang sudah ada dikunci. Memindahkannya harus disengaja
@@ -425,6 +461,46 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     } else {
       flashToast('Browser menolak akses clipboard — buka kartunya lalu salin manual.');
     }
+  };
+
+  // Menu konteks ditutup oleh klik di luar, scroll, resize, atau Escape.
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('touchstart', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('touchstart', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [ctxMenu]);
+
+  const openCtx = (row: ContentRow, x: number, y: number) => {
+    // Jaga supaya menu tidak terpotong tepi layar
+    const w = 232;
+    const h = 244;
+    const left = Math.min(x, Math.max(8, window.innerWidth - w - 8));
+    const top = Math.min(y, Math.max(8, window.innerHeight - h - 8));
+    setCtxMenu({ row, x: left, y: top });
+  };
+
+  const startLongPress = (row: ContentRow, e: React.TouchEvent) => {
+    const t = e.touches[0];
+    if (!t) return;
+    const { clientX, clientY } = t;
+    if (longPress.current) clearTimeout(longPress.current);
+    longPress.current = setTimeout(() => openCtx(row, clientX, clientY), 500);
+  };
+
+  const cancelLongPress = () => {
+    if (longPress.current) { clearTimeout(longPress.current); longPress.current = null; }
   };
 
   const newGroupId = () => {
@@ -1046,7 +1122,14 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     ? (categories.find((c) => c.id === row.category_id) || null)
                     : null;
                   return (
-                    <tr key={row.id}>
+                    <tr
+                      key={row.id}
+                      onContextMenu={(e) => { e.preventDefault(); openCtx(row, e.clientX, e.clientY); }}
+                      onTouchStart={(e) => startLongPress(row, e)}
+                      onTouchEnd={cancelLongPress}
+                      onTouchMove={cancelLongPress}
+                      onTouchCancel={cancelLongPress}
+                    >
                       <td style={{ maxWidth: TITLE_COL_W }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                           <span
@@ -1056,8 +1139,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                           />
                           <button
                             type="button"
-                            onClick={() => openEdit(row)}
-                            title="Buka detail konten"
+                            onClick={() => { if (!ctxMenu) openEdit(row); }}
+                            title="Buka detail konten — klik kanan untuk aksi lain"
                             style={{
                               flex: 1, minWidth: 0, textAlign: 'left',
                               background: 'none', border: 'none', padding: 0,
@@ -1068,43 +1151,6 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                           >
                             {plainTitle(row.title) || '(tanpa judul)'}
                           </button>
-                          <button
-                            type="button"
-                            title="Duplikat ke platform lain"
-                            onClick={() => openDup(row)}
-                            style={{
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              width: 22, height: 22, padding: 0, flexShrink: 0,
-                              background: 'transparent', border: 'none', borderRadius: 6,
-                              color: 'var(--text-3)', cursor: 'pointer',
-                            }}
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                              <rect x="9" y="9" width="12" height="12" rx="2" />
-                              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                            </svg>
-                          </button>
-                          {canDelete && (
-                            <button
-                              type="button"
-                              title="Hapus konten"
-                              onClick={() => { setDelErr(''); setDelRow(row); }}
-                              style={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                width: 22, height: 22, padding: 0, flexShrink: 0,
-                                background: 'transparent', border: 'none', borderRadius: 6,
-                                color: 'var(--red)', cursor: 'pointer', opacity: 0.55,
-                              }}
-                            >
-                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                <polyline points="3 6 5 6 21 6" />
-                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                                <path d="M10 11v6M14 11v6" />
-                              </svg>
-                            </button>
-                          )}
                         </div>
                       </td>
 
@@ -1269,7 +1315,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
           <p className="cal-legend">
             Ketik langsung di kolomnya — tersimpan otomatis saat pindah kolom atau tekan Enter, Esc untuk batal.
-            Klik judul konten untuk membuka brief lengkapnya. Kolom yang tidak bisa diketik berarti tahapnya sedang dikelola tim lain.
+            Klik judul konten untuk membuka brief lengkapnya, atau klik kanan pada baris (tekan-tahan di HP) untuk duplikat, salin caption, dan hapus. Kolom yang tidak bisa diketik berarti tahapnya sedang dikelola tim lain.
           </p>
 
           {toast && (
@@ -1684,6 +1730,83 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
           </div>
         </div>
       )}
+
+      {/* Menu klik-kanan / tekan-tahan pada baris */}
+      {ctxMenu && (() => {
+        const row = ctxMenu.row;
+        const hasCaption = !!(row.caption || row.hashtags);
+        const ic = (d: string) => (
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d={d} />
+          </svg>
+        );
+        return (
+          <div
+            style={{
+              position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, width: 232, zIndex: 80,
+              background: 'var(--raised)', border: '1px solid var(--border)',
+              borderRadius: 10, padding: 5,
+              boxShadow: '0 14px 36px rgba(0,0,0,.55)',
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '5px 10px 7px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {plainTitle(row.title) || '(tanpa judul)'}
+              </div>
+              <div className="sub" style={{ fontSize: 11 }}>{accName(row.account_id)}</div>
+            </div>
+
+            <CtxItem
+              label="Buka detail"
+              icon={ic('M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z')}
+              onPick={() => { setCtxMenu(null); openEdit(row); }}
+            />
+            <CtxItem
+              label={hasCaption ? 'Salin caption + hashtag' : 'Caption masih kosong'}
+              disabled={!hasCaption}
+              icon={ic('M9 9h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1')}
+              onPick={() => { setCtxMenu(null); copyRowCaption(row); }}
+            />
+            <CtxItem
+              label="Duplikat ke platform lain"
+              icon={ic('M9 9h12v12H9zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1')}
+              onPick={() => { setCtxMenu(null); openDup(row); }}
+            />
+            <CtxItem
+              label="Buka Link Post"
+              disabled={!isUrl(row.post_url)}
+              icon={ic('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3')}
+              onPick={() => {
+                setCtxMenu(null);
+                if (row.post_url) window.open(row.post_url.trim(), '_blank', 'noopener');
+              }}
+            />
+            <CtxItem
+              label="Buka Link Drive"
+              disabled={!isUrl(row.asset_url)}
+              icon={ic('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3')}
+              onPick={() => {
+                setCtxMenu(null);
+                if (row.asset_url) window.open(row.asset_url.trim(), '_blank', 'noopener');
+              }}
+            />
+            {canDelete && (
+              <>
+                <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+                <CtxItem
+                  label="Hapus konten"
+                  danger
+                  icon={ic('M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m5 5v6m4-6v6')}
+                  onPick={() => { setCtxMenu(null); setDelErr(''); setDelRow(row); }}
+                />
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Duplikat konten ke platform lain */}
       {dupRow && (
