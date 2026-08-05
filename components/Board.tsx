@@ -23,6 +23,7 @@ const EMPTY_FORM = {
   account_id: '',
   category_id: '',
   status: 'drafting' as ContentStatus,
+  pic_copywriter: '',
   pic_creative: '',
   pic_distribution: '',
   pic_ads: '',
@@ -88,6 +89,15 @@ const COLUMNS: { key: ColKey; label: string; width: number }[] = [
   { key: 'ads', label: 'Kode Ads', width: 170 },
   { key: 'pic', label: 'PIC', width: 130 },
   { key: 'tayang', label: 'Tayang', width: 105 },
+];
+
+/** Empat peran PIC dalam satu tempat. Tim 'copywriter' belum ada di daftar
+ *  anggota, jadi pilihannya diambil dari tim Creative (+ Delta) seperti PIC Content. */
+const PIC_SLOTS: { field: 'pic_copywriter' | 'pic_creative' | 'pic_distribution' | 'pic_ads'; label: string; team: 'creative' | 'distribution' | 'ads' }[] = [
+  { field: 'pic_copywriter', label: 'PIC Copywriter', team: 'creative' },
+  { field: 'pic_creative', label: 'PIC Content', team: 'creative' },
+  { field: 'pic_distribution', label: 'PIC Distribution', team: 'distribution' },
+  { field: 'pic_ads', label: 'PIC Ads', team: 'ads' },
 ];
 
 /** Sel teks: satu baris, dipotong dengan elipsis — jangan pernah pecah per huruf. */
@@ -223,6 +233,131 @@ function SuggestChip({ label, color, onPick, active }: {
       {label}
       {active && <span style={{ fontSize: 11, opacity: 0.8 }}>✕</span>}
     </button>
+  );
+}
+
+function PicCell({ row, members, disabled, onSave }: {
+  row: ContentRow;
+  members: TeamMember[];
+  disabled: boolean;
+  onSave: (field: string, val: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  const nameOf = (id: string | null) => members.find((m) => m.id === id)?.name || null;
+  const optionsFor = (team: string) => members.filter((m) => m.team === team || m.team === 'delta');
+  const filled = PIC_SLOTS.map((sl) => ({ sl, name: nameOf(row[sl.field]) })).filter((x) => x.name);
+
+  const openPanel = () => {
+    const r = boxRef.current ? boxRef.current.getBoundingClientRect() : null;
+    if (r) {
+      setPos({
+        top: Math.min(r.bottom + 6, Math.max(8, window.innerHeight - 250)),
+        left: Math.min(r.left, Math.max(8, window.innerWidth - 268)),
+      });
+    }
+    setOpen(true);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={boxRef}>
+      <button
+        type="button"
+        onClick={openPanel}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        title={filled.length ? filled.map((x) => `${x.sl.label}: ${x.name}`).join('\n') : 'Belum ada PIC'}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 4,
+          background: hover ? 'var(--raised)' : 'transparent',
+          border: '1px solid ' + (hover ? 'var(--border)' : 'transparent'),
+          borderRadius: 8, padding: '4px 8px',
+          font: 'inherit', fontSize: 12.5, textAlign: 'left',
+          color: 'var(--text-3)', cursor: 'pointer',
+          transition: 'background .15s, border-color .15s',
+        }}
+      >
+        {filled.length === 0 ? (
+          <span style={{ flex: 1 }}>—</span>
+        ) : (
+          <span style={{ flex: 1, display: 'flex', gap: 3 }}>
+            {filled.map((x) => (
+              <span
+                key={x.sl.field}
+                style={{
+                  width: 21, height: 21, borderRadius: 999,
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'var(--raised)', border: '1px solid var(--border)',
+                  color: 'var(--text)', fontSize: 10.5, fontWeight: 700,
+                }}
+              >
+                {initials(x.name)}
+              </span>
+            ))}
+          </span>
+        )}
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+          style={{ opacity: hover ? 0.7 : 0.3, flexShrink: 0 }}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {open && pos && (
+        <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 64 }}
+            onMouseDown={() => setOpen(false)}
+            onTouchStart={() => setOpen(false)}
+          />
+          <div
+            style={{
+              position: 'fixed', top: pos.top, left: pos.left, width: 260, zIndex: 65,
+              background: 'var(--raised)', border: '1px solid var(--border)',
+              borderRadius: 10, padding: '10px 12px',
+              boxShadow: '0 14px 36px rgba(0,0,0,.55)',
+            }}
+          >
+            {PIC_SLOTS.map((sl) => (
+              <div key={sl.field} style={{ marginBottom: 8 }}>
+                <div className="modal-col-label" style={{ marginBottom: 3 }}>{sl.label}</div>
+                <select
+                  value={row[sl.field] || ''}
+                  disabled={disabled}
+                  onChange={(e) => onSave(sl.field, e.target.value || null)}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">—</option>
+                  {optionsFor(sl.team).map((m) => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+            {disabled && (
+              <div className="hint" style={{ margin: 0 }}>Tahap ini dikelola tim lain.</div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -404,7 +539,6 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const accName = (id: string | null) => accounts.find((a) => a.id === id)?.handle || 'Akun belum ditentukan';
   const accountsOfProject = (projId: string) =>
     projId ? accounts.filter((a) => a.project_id === projId || !a.project_id) : accounts;
-  const personName = (id: string | null) => members.find((m) => m.id === id)?.name || null;
   const membersOf = (team: 'creative' | 'distribution' | 'ads') =>
     members.filter((m) => m.team === team || m.team === 'delta');
   const canCreate =
@@ -470,6 +604,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       account_id: row.account_id || '',
       category_id: row.category_id || '',
       status: row.status,
+      pic_copywriter: row.pic_copywriter || '',
       pic_creative: row.pic_creative || '',
       pic_distribution: row.pic_distribution || '',
       pic_ads: row.pic_ads || '',
@@ -642,7 +777,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
           hashtags: row.hashtags,
           visual_hook: row.visual_hook,
           asset_url: row.asset_url,
-          pic_creative: row.pic_creative,
+          pic_copywriter: row.pic_copywriter,
+      pic_creative: row.pic_creative,
           pic_distribution: row.pic_distribution,
           pic_ads: row.pic_ads,
           potensi_fyp: row.potensi_fyp,
@@ -761,6 +897,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       project_id: form.project_id || null,
       account_id: form.account_id || null,
       category_id: form.category_id || null,
+      pic_copywriter: form.pic_copywriter || null,
       pic_creative: form.pic_creative || null,
       pic_distribution: form.pic_distribution || null,
       pic_ads: form.pic_ads || null,
@@ -1487,10 +1624,16 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                         }
 
                         if (c.key === 'pic') {
-                          const team = def.ownerTeam;
-                          const id = team === 'creative' ? row.pic_creative
-                            : team === 'distribution' ? row.pic_distribution : row.pic_ads;
-                          return <td key={c.key} className="sub" style={CLIP}>{personName(id) || '—'}</td>;
+                          return (
+                            <td key={c.key}>
+                              <PicCell
+                                row={row}
+                                members={members}
+                                disabled={!editable}
+                                onSave={(field, val) => patchRow(row, { [field]: val }, 'PIC')}
+                              />
+                            </td>
+                          );
                         }
 
                         return <td key={c.key} className="sub" style={CLIP}>{fmtDate(row.publish_date)}</td>;
@@ -1888,12 +2031,21 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                   <label>Tanggal tayang{noteBtn('publish_date')}</label>
                   <input type="date" value={form.publish_date} disabled={readOnly} onChange={(e) => setForm({ ...form, publish_date: e.target.value })} />
                 </div>
-                <div className="field">
-                  <label>PIC Creative{noteBtn('pic')}</label>
-                  <select value={form.pic_creative} disabled={readOnly} onChange={(e) => setForm({ ...form, pic_creative: e.target.value })}>
-                    <option value="">—</option>
-                    {membersOf('creative').map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                  </select>
+                <div className="field-row">
+                  <div className="field">
+                    <label>PIC Copywriter{noteBtn('pic')}</label>
+                    <select value={form.pic_copywriter} disabled={readOnly} onChange={(e) => setForm({ ...form, pic_copywriter: e.target.value })}>
+                      <option value="">—</option>
+                      {membersOf('creative').map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label>PIC Content</label>
+                    <select value={form.pic_creative} disabled={readOnly} onChange={(e) => setForm({ ...form, pic_creative: e.target.value })}>
+                      <option value="">—</option>
+                      {membersOf('creative').map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  </div>
                 </div>
                 <div className="field-row">
                   <div className="field">
