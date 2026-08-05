@@ -65,6 +65,17 @@ export function tagColor(s: string): string {
   return TAG_PALETTE[h % TAG_PALETTE.length];
 }
 
+/** Platform tayang. Daftar tetap supaya tidak muncul "TikTok" / "tiktok" / "Tik Tok". */
+export const PLATFORMS: { key: string; label: string; color: string }[] = [
+  { key: 'instagram', label: 'Instagram', color: '#e0338a' },
+  { key: 'tiktok', label: 'TikTok', color: '#38bdf8' },
+  { key: 'youtube', label: 'YouTube', color: '#f87171' },
+  { key: 'threads', label: 'Threads', color: '#a78bfa' },
+  { key: 'facebook', label: 'Facebook', color: '#60a5fa' },
+];
+
+export const platformDef = (k: string | null) => PLATFORMS.find((p) => p.key === k) || null;
+
 /** Kategori konten — dikelola per project lewat Kelola Akses. */
 export interface ContentCategory {
   id: string;
@@ -104,6 +115,10 @@ export interface ContentRow {
   post_url: string | null;
   /** Kode ads yang diinput tim Ads. */
   ads_code: string | null;
+  /** Platform tayang: instagram / tiktok / youtube / threads / facebook. */
+  platform: string | null;
+  /** Penanda serumpun — konten hasil duplikat berbagi nilai yang sama. */
+  group_id: string | null;
   visual_hook: string | null;
   /** @deprecated Disembunyikan dari Board sejak v21. Kolom DB sengaja dipertahankan agar data lama tidak hilang. */
   production_note: string | null;
