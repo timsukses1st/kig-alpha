@@ -195,28 +195,34 @@ function CtxItem({ label, icon, onPick, danger, disabled }: {
   );
 }
 
-function SuggestChip({ label, color, onPick }: { label: string; color: string; onPick: () => void }) {
+function SuggestChip({ label, color, onPick, active }: {
+  label: string; color: string; onPick: () => void; active?: boolean;
+}) {
   const [hv, setHv] = useState(false);
+  const lit = active || hv;
   return (
     <button
       type="button"
       onMouseEnter={() => setHv(true)}
       onMouseLeave={() => setHv(false)}
       onClick={onPick}
+      title={active ? 'Klik lagi untuk membatalkan' : undefined}
       style={{
         display: 'flex', alignItems: 'center', gap: 6,
         padding: '4px 10px',
         borderRadius: 999,
-        border: '1px solid ' + (hv ? color : 'var(--border)'),
-        background: hv ? color + '1f' : 'transparent',
-        color: hv ? color : 'var(--text)',
+        border: '1px solid ' + (lit ? color : 'var(--border)'),
+        background: active ? color + '2e' : hv ? color + '1f' : 'transparent',
+        color: lit ? color : 'var(--text)',
         font: 'inherit', fontSize: 12,
+        fontWeight: active ? 600 : 400,
         cursor: 'pointer',
         transition: 'background .12s, border-color .12s, color .12s',
       }}
     >
       <span style={{ width: 7, height: 7, borderRadius: 999, background: color, flexShrink: 0 }} />
       {label}
+      {active && <span style={{ fontSize: 11, opacity: 0.8 }}>✕</span>}
     </button>
   );
 }
@@ -306,21 +312,50 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   const activeDiv = DIVISIONS.find((d) => d.key === division)!;
 
-  const catNameOf = useCallback(
-    (id: string | null) => (id ? categories.find((c) => c.id === id)?.name || '' : ''),
-    [categories]
-  );
-
   const accHandle = useCallback(
     (id: string | null) => accounts.find((a) => a.id === id)?.handle || '',
     [accounts]
   );
 
+  /**
+   * Membaca isi kotak cari jadi beberapa kelompok.
+   *
+   * Aturannya mengikuti kebiasaan orang, bukan logika mentah:
+   *   - dalam satu kelompok  = ATAU  → "instagram tiktok" = IG atau TikTok
+   *   - antar kelompok       = DAN   → "tiktok berita"    = TikTok dan Berita
+   *
+   * Sisanya (bukan nama platform/status/kategori) dicari sebagai teks bebas
+   * di judul, akun, dan kode ads.
+   */
+  const query = useMemo(() => {
+    const q = search.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (!q) return null;
+    let rest = ' ' + q + ' ';
+    const pf: string[] = [];
+    const st: string[] = [];
+    const ct: string[] = [];
+
+    const known = [
+      ...PLATFORMS.map((p) => ({ label: p.label, bucket: pf, val: p.key })),
+      ...STATUSES.map((x) => ({ label: x.label, bucket: st, val: x.key as string })),
+      ...categories.map((c) => ({ label: c.name, bucket: ct, val: c.id })),
+    ].sort((a, b) => b.label.length - a.label.length); // frasa terpanjang diambil dulu
+
+    for (const item of known) {
+      const needle = ' ' + item.label.toLowerCase() + ' ';
+      while (rest.includes(needle)) {
+        rest = rest.replace(needle, ' ');
+        item.bucket.push(item.val);
+      }
+    }
+
+    return { pf, st, ct, free: rest.trim().split(/\s+/).filter(Boolean) };
+  }, [search, categories]);
+
   // Basis SEBELUM filter divisi — dipakai untuk menghitung angka di tiap tab.
   // Kalau dihitung dari hasil akhir, membuka tab Creative bikin semua tab lain
   // ikut menampilkan angka yang sama.
   const baseRows = useMemo(() => {
-    const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return rows.filter((r) => {
       if (projectFilter !== 'all' && r.project_id !== projectFilter) return false;
       if (!inRange(r)) return false;
@@ -330,22 +365,19 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
         const needsPost = (r.status === 'published' || r.status === 'diiklankan') && !r.post_url;
         if (!needsAsset && !needsPost) return false;
       }
-      if (tokens.length) {
-        // Satu kotak untuk semuanya: judul, akun, kode ads, platform, kategori, status.
-        // Tiap kata dipisah spasi harus cocok — jadi "tiktok berita" menyaring dua-duanya.
-        const hay = [
-          plainTitle(r.title),
-          accHandle(r.account_id),
-          r.ads_code || '',
-          platformDef(r.platform)?.label || '',
-          catNameOf(r.category_id),
-          statusDef(r.status).label,
-        ].join(' ').toLowerCase();
-        if (!tokens.every((t) => hay.includes(t))) return false;
+      if (query) {
+        if (query.pf.length && !query.pf.includes(r.platform || '')) return false;
+        if (query.st.length && !query.st.includes(r.status)) return false;
+        if (query.ct.length && !query.ct.includes(r.category_id || '')) return false;
+        if (query.free.length) {
+          const hay = [plainTitle(r.title), accHandle(r.account_id), r.ads_code || '']
+            .join(' ').toLowerCase();
+          if (!query.free.every((t) => hay.includes(t))) return false;
+        }
       }
       return true;
     });
-  }, [rows, projectFilter, inRange, onlyTodo, search, accHandle, catNameOf]);
+  }, [rows, projectFilter, inRange, onlyTodo, query, accHandle]);
 
   // Tab divisi dulu dikerjakan oleh kolom kanban — sekarang jadi filter baris.
   const filtered = useMemo(
@@ -547,12 +579,20 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     if (longPress.current) { clearTimeout(longPress.current); longPress.current = null; }
   };
 
-  // Tambahkan satu kata ke kotak cari (tanpa menimpa yang sudah diketik).
-  const addTerm = (term: string) => {
+  // Chip berlaku sebagai saklar: klik = tambah, klik lagi = hapus.
+  const termActive = (term: string) => {
+    const cur = ' ' + search.trim().toLowerCase().replace(/\s+/g, ' ') + ' ';
+    return cur.includes(' ' + term.trim().toLowerCase() + ' ');
+  };
+
+  const toggleTerm = (term: string) => {
     const t = term.trim().toLowerCase();
-    const cur = search.trim();
-    if (cur.toLowerCase().split(/\s+/).includes(t)) return;
-    setSearch(cur ? cur + ' ' + t : t);
+    const cur = ' ' + search.trim().toLowerCase().replace(/\s+/g, ' ') + ' ';
+    if (cur.includes(' ' + t + ' ')) {
+      setSearch(cur.replace(' ' + t + ' ', ' ').trim());
+    } else {
+      setSearch((search.trim() + ' ' + t).trim());
+    }
   };
 
   const newGroupId = () => {
@@ -1062,7 +1102,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
               <div className="modal-col-label" style={{ marginBottom: 6 }}>Platform</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                 {PLATFORMS.map((pf) => (
-                  <SuggestChip key={pf.key} label={pf.label} color={pf.color} onPick={() => addTerm(pf.label)} />
+                  <SuggestChip key={pf.key} label={pf.label} color={pf.color}
+                    active={termActive(pf.label)} onPick={() => toggleTerm(pf.label)} />
                 ))}
               </div>
 
@@ -1071,7 +1112,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                   <div className="modal-col-label" style={{ marginBottom: 6 }}>Kategori</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                     {boardCategories.map((c) => (
-                      <SuggestChip key={c.id} label={c.name} color={tagColor(c.name)} onPick={() => addTerm(c.name)} />
+                      <SuggestChip key={c.id} label={c.name} color={tagColor(c.name)}
+                        active={termActive(c.name)} onPick={() => toggleTerm(c.name)} />
                     ))}
                   </div>
                 </>
@@ -1080,13 +1122,14 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
               <div className="modal-col-label" style={{ marginBottom: 6 }}>Status</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {STATUSES.map((st) => (
-                  <SuggestChip key={st.key} label={st.label} color={st.color} onPick={() => addTerm(st.label)} />
+                  <SuggestChip key={st.key} label={st.label} color={st.color}
+                    active={termActive(st.label)} onPick={() => toggleTerm(st.label)} />
                 ))}
               </div>
 
               <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
-                Bisa juga langsung diketik. Beberapa kata sekaligus berarti semuanya harus cocok —
-                mis. <b>tiktok berita</b>.
+                Pilih beberapa platform sekaligus untuk melihat semuanya (<b>Instagram + TikTok</b>).
+                Beda jenis akan disaring bersamaan — <b>TikTok + Berita</b> = konten TikTok yang kategorinya Berita.
               </div>
             </div>
           )}
