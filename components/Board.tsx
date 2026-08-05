@@ -97,6 +97,12 @@ const CLIP: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
+/** Pilihan filter platform, plus satu entri untuk konten yang belum diisi. */
+const PLAT_CHIPS: { key: string; title: string; color: string }[] = [
+  ...PLATFORMS.map((p) => ({ key: p.key, title: p.label, color: p.color })),
+  { key: '', title: 'Belum diisi platformnya', color: '#94a3b8' },
+];
+
 /** Judul disimpan dengan penanda **bold** — dibersihkan untuk tampilan tabel. */
 const plainTitle = (s: string) => (s || '').replace(/\*\*/g, '').split('\n')[0].trim();
 
@@ -221,6 +227,10 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [hiddenCols, setHiddenCols] = useState<ColKey[]>([]);
   const [colMenu, setColMenu] = useState(false);
   const [searchFocus, setSearchFocus] = useState(false);
+  const [platFilter, setPlatFilter] = useState<string[]>([]);
+  const [platMenu, setPlatMenu] = useState(false);
+  const [platMenuPos, setPlatMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const platBtnRef = useRef<HTMLDivElement | null>(null);
   // ---- duplikat ke platform lain ----
   const [dupRow, setDupRow] = useState<ContentRow | null>(null);
   const [dupTargets, setDupTargets] = useState<string[]>([]);
@@ -293,6 +303,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     return rows.filter((r) => {
       if (projectFilter !== 'all' && r.project_id !== projectFilter) return false;
       if (catFilter !== 'all' && r.category_id !== catFilter) return false;
+      // Daftar kosong = semua platform. '' mewakili konten yang platformnya belum diisi.
+      if (platFilter.length && !platFilter.includes(r.platform || '')) return false;
       if (!inRange(r)) return false;
       // "Perlu ditindak" = aset belum ada, atau sudah tayang tapi link post kosong
       if (onlyTodo) {
@@ -306,7 +318,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       }
       return true;
     });
-  }, [rows, projectFilter, catFilter, inRange, onlyTodo, search, accHandle]);
+  }, [rows, projectFilter, catFilter, platFilter, inRange, onlyTodo, search, accHandle]);
 
   // Tab divisi dulu dikerjakan oleh kolom kanban — sekarang jadi filter baris.
   const filtered = useMemo(
@@ -471,6 +483,20 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   // Menu konteks ditutup oleh klik di luar, scroll, resize, atau Escape.
   useEffect(() => {
+    if (!platMenu) return;
+    const close = () => setPlatMenu(false);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [platMenu]);
+
+  useEffect(() => {
     if (!ctxMenu) return;
     const close = () => setCtxMenu(null);
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
@@ -506,6 +532,17 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   const cancelLongPress = () => {
     if (longPress.current) { clearTimeout(longPress.current); longPress.current = null; }
+  };
+
+  const openPlatMenu = () => {
+    const r = platBtnRef.current ? platBtnRef.current.getBoundingClientRect() : null;
+    if (r) {
+      setPlatMenuPos({
+        top: r.bottom + 6,
+        left: Math.min(r.left, Math.max(8, window.innerWidth - 218)),
+      });
+    }
+    setPlatMenu((v) => !v);
   };
 
   const newGroupId = () => {
@@ -960,9 +997,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       </div>
 
       <div className="div-desc">
-        <span className="bar" style={{ background: activeDiv.color }} />
-        <span className="div-name">{division === 'semua' ? 'Semua Divisi' : `Divisi ${activeDiv.label}`}</span>
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: 250 }}>
+        {/* Nama divisi dihapus dari sini — sudah terbaca dari tab di atas.
+            Ruangnya dipakai untuk filter yang benar-benar dipakai sehari-hari. */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: 235 }}>
           <svg
             width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"
@@ -1020,6 +1057,92 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
         >
           ⚑ Perlu ditindak
         </button>
+
+        {/* Filter platform — satu tombol + panel centang, hemat lebar header */}
+        <div ref={platBtnRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            className="btn"
+            onClick={openPlatMenu}
+            style={{
+              whiteSpace: 'nowrap',
+              borderColor: platFilter.length ? 'var(--accent)' : undefined,
+              color: platFilter.length ? 'var(--accent)' : undefined,
+              fontWeight: platFilter.length ? 600 : undefined,
+            }}
+          >
+            Platform{platFilter.length ? ` (${platFilter.length})` : ''} ▾
+          </button>
+
+          {platMenu && platMenuPos && (
+            <>
+              <div
+                style={{ position: 'fixed', inset: 0, zIndex: 49 }}
+                onMouseDown={() => setPlatMenu(false)}
+                onTouchStart={() => setPlatMenu(false)}
+              />
+              <div
+                style={{
+                  position: 'fixed',
+                  top: platMenuPos.top,
+                  left: platMenuPos.left,
+                  width: 210,
+                  zIndex: 50,
+                  background: 'var(--raised)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 10,
+                  padding: 5,
+                  boxShadow: '0 14px 36px rgba(0,0,0,.55)',
+                }}
+              >
+                {PLAT_CHIPS.map((pf) => {
+                  const on = platFilter.includes(pf.key);
+                  return (
+                    <label
+                      key={pf.key || 'none'}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 9,
+                        padding: '7px 10px', borderRadius: 7,
+                        fontSize: 13, cursor: 'pointer',
+                        color: on ? pf.color : 'var(--text)',
+                        fontWeight: on ? 600 : 400,
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => setPlatFilter((f) =>
+                          f.includes(pf.key) ? f.filter((x) => x !== pf.key) : [...f, pf.key])}
+                      />
+                      <span style={{
+                        width: 8, height: 8, borderRadius: 999,
+                        background: pf.color, flexShrink: 0,
+                      }} />
+                      {pf.title}
+                    </label>
+                  );
+                })}
+                {platFilter.length > 0 && (
+                  <>
+                    <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
+                    <button
+                      type="button"
+                      onClick={() => setPlatFilter([])}
+                      style={{
+                        width: '100%', textAlign: 'left',
+                        background: 'transparent', border: 'none', borderRadius: 7,
+                        padding: '7px 10px', font: 'inherit', fontSize: 13,
+                        color: 'var(--text-3)', cursor: 'pointer',
+                      }}
+                    >
+                      Bersihkan pilihan
+                    </button>
+                  </>
+                )}
+              </div>
+            </>
+          )}
+        </div>
         <select
           className="cat-filter"
           value={catFilter}
