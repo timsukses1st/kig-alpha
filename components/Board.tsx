@@ -177,7 +177,6 @@ function CtxItem({ label, icon, onPick, danger, disabled }: {
       disabled={disabled}
       onMouseEnter={() => setHv(true)}
       onMouseLeave={() => setHv(false)}
-      onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); }}
       onClick={(e) => { e.stopPropagation(); onPick(); }}
       style={{
         display: 'flex', alignItems: 'center', gap: 9, width: '100%',
@@ -286,12 +285,13 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     [accounts]
   );
 
-  const filtered = useMemo(() => {
+  // Basis SEBELUM filter divisi — dipakai untuk menghitung angka di tiap tab.
+  // Kalau dihitung dari hasil akhir, membuka tab Creative bikin semua tab lain
+  // ikut menampilkan angka yang sama.
+  const baseRows = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
       if (projectFilter !== 'all' && r.project_id !== projectFilter) return false;
-      // Tab divisi dulu dikerjakan oleh kolom kanban — sekarang jadi filter baris.
-      if (!activeDiv.statuses.includes(r.status)) return false;
       if (catFilter !== 'all' && r.category_id !== catFilter) return false;
       if (!inRange(r)) return false;
       // "Perlu ditindak" = aset belum ada, atau sudah tayang tapi link post kosong
@@ -306,7 +306,13 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       }
       return true;
     });
-  }, [rows, projectFilter, activeDiv, catFilter, inRange, onlyTodo, search, accHandle]);
+  }, [rows, projectFilter, catFilter, inRange, onlyTodo, search, accHandle]);
+
+  // Tab divisi dulu dikerjakan oleh kolom kanban — sekarang jadi filter baris.
+  const filtered = useMemo(
+    () => baseRows.filter((r) => activeDiv.statuses.includes(r.status)),
+    [baseRows, activeDiv]
+  );
 
   const visibleRequests = useMemo(
     () => requests.filter((rq) => projectFilter === 'all' || rq.project_id === projectFilter),
@@ -314,15 +320,15 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   );
 
   const divCounts = useMemo(() => {
-    const m: Record<Division, number> = { semua: filtered.length, creative: 0, distribution: 0, ads: 0 };
-    for (const r of filtered) {
+    const m: Record<Division, number> = { semua: baseRows.length, creative: 0, distribution: 0, ads: 0 };
+    for (const r of baseRows) {
       const t = statusDef(r.status).ownerTeam;
       if (t === 'creative') m.creative++;
       else if (t === 'distribution') m.distribution++;
       else if (t === 'ads') m.ads++;
     }
     return m;
-  }, [filtered]);
+  }, [baseRows]);
 
   const accName = (id: string | null) => accounts.find((a) => a.id === id)?.handle || 'Akun belum ditentukan';
   const accountsOfProject = (projId: string) =>
@@ -468,14 +474,13 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     if (!ctxMenu) return;
     const close = () => setCtxMenu(null);
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('touchstart', close);
+    // Penutupan lewat klik ditangani oleh lapisan backdrop, BUKAN listener
+    // document: listener mousedown menutup menu sebelum event 'click' sempat
+    // terpicu, sehingga tombolnya hilang dari DOM dan aksinya tidak pernah jalan.
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     document.addEventListener('keydown', onKey);
     return () => {
-      document.removeEventListener('mousedown', close);
-      document.removeEventListener('touchstart', close);
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
       document.removeEventListener('keydown', onKey);
@@ -1742,6 +1747,13 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
           </svg>
         );
         return (
+          <>
+          <div
+            style={{ position: 'fixed', inset: 0, zIndex: 79 }}
+            onMouseDown={() => setCtxMenu(null)}
+            onTouchStart={() => setCtxMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
+          />
           <div
             style={{
               position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, width: 232, zIndex: 80,
@@ -1749,8 +1761,6 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
               borderRadius: 10, padding: 5,
               boxShadow: '0 14px 36px rgba(0,0,0,.55)',
             }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
           >
             <div style={{ padding: '5px 10px 7px', borderBottom: '1px solid var(--border)', marginBottom: 4 }}>
               <div style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1805,6 +1815,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
               </>
             )}
           </div>
+          </>
         );
       })()}
 
