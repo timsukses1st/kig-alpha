@@ -19,13 +19,11 @@ import ComplaintView from '@/components/ComplaintView';
 import ComplaintWidget from '@/components/ComplaintWidget';
 import ChatView from '@/components/ChatView';
 import TrackerView from '@/components/TrackerView';
-import TableView from '@/components/TableView';
 
-type View = 'board' | 'tabel' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'sebaran' | 'chat' | 'laporan' | 'komplain' | 'log' | 'access';
+type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'sebaran' | 'chat' | 'laporan' | 'komplain' | 'log' | 'access';
 
 const NAV: { key: View; label: string }[] = [
   { key: 'board', label: 'Board Pipeline' },
-  { key: 'tabel', label: 'Tabel Kerja' },
   { key: 'kalender', label: 'Kalender Tayang' },
   { key: 'tracker', label: 'Tracker' },
   { key: 'ads', label: 'Ads Tracker' },
@@ -42,13 +40,6 @@ const NAV: { key: View; label: string }[] = [
 
 const ICON_PATHS: Record<View, React.ReactNode> = {
   board: (
-    <>
-      <rect x="4" y="4" width="4.5" height="16" rx="1" />
-      <rect x="10" y="4" width="4.5" height="11" rx="1" />
-      <rect x="16" y="4" width="4.5" height="7" rx="1" />
-    </>
-  ),
-  tabel: (
     <>
       <rect x="3" y="4" width="18" height="16" rx="2" />
       <line x1="3" y1="9.5" x2="21" y2="9.5" />
@@ -430,9 +421,6 @@ export default function App() {
       <main className="main">
         {view === 'board' && (
           <Board profile={profile} accounts={accounts} projects={projects} projectFilter={activeProject} />
-        )}
-        {view === 'tabel' && (
-          <TableView profile={profile} accounts={accounts} projects={projects} projectFilter={activeProject} />
         )}
         {view === 'kalender' && <CalendarView accounts={accounts} projectFilter={activeProject} />}
         {view === 'tracker' && <TrackerView activeProjectName={activeProj ? activeProj.name : null} profile={profile} />}
