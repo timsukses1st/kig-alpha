@@ -97,12 +97,6 @@ const CLIP: React.CSSProperties = {
   whiteSpace: 'nowrap',
 };
 
-/** Pilihan filter platform, plus satu entri untuk konten yang belum diisi. */
-const PLAT_CHIPS: { key: string; title: string; color: string }[] = [
-  ...PLATFORMS.map((p) => ({ key: p.key, title: p.label, color: p.color })),
-  { key: '', title: 'Belum diisi platformnya', color: '#94a3b8' },
-];
-
 /** Judul disimpan dengan penanda **bold** — dibersihkan untuk tampilan tabel. */
 const plainTitle = (s: string) => (s || '').replace(/\*\*/g, '').split('\n')[0].trim();
 
@@ -201,6 +195,32 @@ function CtxItem({ label, icon, onPick, danger, disabled }: {
   );
 }
 
+function SuggestChip({ label, color, onPick }: { label: string; color: string; onPick: () => void }) {
+  const [hv, setHv] = useState(false);
+  return (
+    <button
+      type="button"
+      onMouseEnter={() => setHv(true)}
+      onMouseLeave={() => setHv(false)}
+      onClick={onPick}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '4px 10px',
+        borderRadius: 999,
+        border: '1px solid ' + (hv ? color : 'var(--border)'),
+        background: hv ? color + '1f' : 'transparent',
+        color: hv ? color : 'var(--text)',
+        font: 'inherit', fontSize: 12,
+        cursor: 'pointer',
+        transition: 'background .12s, border-color .12s, color .12s',
+      }}
+    >
+      <span style={{ width: 7, height: 7, borderRadius: 999, background: color, flexShrink: 0 }} />
+      {label}
+    </button>
+  );
+}
+
 export default function Board({ profile, accounts, projects, projectFilter }: Props) {
   const [rows, setRows] = useState<ContentRow[]>([]);
   const [requests, setRequests] = useState<ContentRequest[]>([]);
@@ -209,7 +229,6 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [division, setDivision] = useState<Division>('semua');
   const [range, setRange] = useState<Range>('all');
   const [categories, setCategories] = useState<ContentCategory[]>([]);
-  const [catFilter, setCatFilter] = useState<string>('all');
   const [pickDate, setPickDate] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ContentRow | null>(null);
@@ -227,10 +246,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [hiddenCols, setHiddenCols] = useState<ColKey[]>([]);
   const [colMenu, setColMenu] = useState(false);
   const [searchFocus, setSearchFocus] = useState(false);
-  const [platFilter, setPlatFilter] = useState<string[]>([]);
-  const [platMenu, setPlatMenu] = useState(false);
-  const [platMenuPos, setPlatMenuPos] = useState<{ top: number; left: number } | null>(null);
-  const platBtnRef = useRef<HTMLDivElement | null>(null);
+  const [searchPos, setSearchPos] = useState<{ top: number; left: number } | null>(null);
+  const searchBoxRef = useRef<HTMLDivElement | null>(null);
   // ---- duplikat ke platform lain ----
   const [dupRow, setDupRow] = useState<ContentRow | null>(null);
   const [dupTargets, setDupTargets] = useState<string[]>([]);
@@ -266,7 +283,6 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   // Kategori milik project lain tidak berlaku — reset filter tiap ganti project,
   // supaya papan tidak tampak kosong karena filter yang tertinggal.
-  useEffect(() => { setCatFilter('all'); }, [projectFilter]);
 
   const inRange = useCallback((r: ContentRow) => {
     // Dasar penyaringan = TANGGAL DIBUAT, bukan tanggal terakhir diubah.
@@ -290,6 +306,11 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   const activeDiv = DIVISIONS.find((d) => d.key === division)!;
 
+  const catNameOf = useCallback(
+    (id: string | null) => (id ? categories.find((c) => c.id === id)?.name || '' : ''),
+    [categories]
+  );
+
   const accHandle = useCallback(
     (id: string | null) => accounts.find((a) => a.id === id)?.handle || '',
     [accounts]
@@ -299,12 +320,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   // Kalau dihitung dari hasil akhir, membuka tab Creative bikin semua tab lain
   // ikut menampilkan angka yang sama.
   const baseRows = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return rows.filter((r) => {
       if (projectFilter !== 'all' && r.project_id !== projectFilter) return false;
-      if (catFilter !== 'all' && r.category_id !== catFilter) return false;
-      // Daftar kosong = semua platform. '' mewakili konten yang platformnya belum diisi.
-      if (platFilter.length && !platFilter.includes(r.platform || '')) return false;
       if (!inRange(r)) return false;
       // "Perlu ditindak" = aset belum ada, atau sudah tayang tapi link post kosong
       if (onlyTodo) {
@@ -312,13 +330,22 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
         const needsPost = (r.status === 'published' || r.status === 'diiklankan') && !r.post_url;
         if (!needsAsset && !needsPost) return false;
       }
-      if (q) {
-        const hay = [plainTitle(r.title), accHandle(r.account_id), r.ads_code || ''].join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
+      if (tokens.length) {
+        // Satu kotak untuk semuanya: judul, akun, kode ads, platform, kategori, status.
+        // Tiap kata dipisah spasi harus cocok — jadi "tiktok berita" menyaring dua-duanya.
+        const hay = [
+          plainTitle(r.title),
+          accHandle(r.account_id),
+          r.ads_code || '',
+          platformDef(r.platform)?.label || '',
+          catNameOf(r.category_id),
+          statusDef(r.status).label,
+        ].join(' ').toLowerCase();
+        if (!tokens.every((t) => hay.includes(t))) return false;
       }
       return true;
     });
-  }, [rows, projectFilter, catFilter, platFilter, inRange, onlyTodo, search, accHandle]);
+  }, [rows, projectFilter, inRange, onlyTodo, search, accHandle, catNameOf]);
 
   // Tab divisi dulu dikerjakan oleh kolom kanban — sekarang jadi filter baris.
   const filtered = useMemo(
@@ -483,20 +510,6 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   // Menu konteks ditutup oleh klik di luar, scroll, resize, atau Escape.
   useEffect(() => {
-    if (!platMenu) return;
-    const close = () => setPlatMenu(false);
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [platMenu]);
-
-  useEffect(() => {
     if (!ctxMenu) return;
     const close = () => setCtxMenu(null);
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
@@ -534,15 +547,12 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     if (longPress.current) { clearTimeout(longPress.current); longPress.current = null; }
   };
 
-  const openPlatMenu = () => {
-    const r = platBtnRef.current ? platBtnRef.current.getBoundingClientRect() : null;
-    if (r) {
-      setPlatMenuPos({
-        top: r.bottom + 6,
-        left: Math.min(r.left, Math.max(8, window.innerWidth - 218)),
-      });
-    }
-    setPlatMenu((v) => !v);
+  // Tambahkan satu kata ke kotak cari (tanpa menimpa yang sudah diketik).
+  const addTerm = (term: string) => {
+    const t = term.trim().toLowerCase();
+    const cur = search.trim();
+    if (cur.toLowerCase().split(/\s+/).includes(t)) return;
+    setSearch(cur ? cur + ' ' + t : t);
   };
 
   const newGroupId = () => {
@@ -865,8 +875,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   // Konten yang SUDAH ADA juga dikunci project-nya. Dropdown baru muncul
   // setelah menekan "Pindahkan ke project lain" — supaya konten tidak bisa
   // berpindah klien hanya karena dropdown tersenggol.
-  // Kategori untuk FILTER papan — hanya bermakna kalau satu project dipilih,
-  // karena tiap project punya daftar kategorinya sendiri.
+  // Bahan saran pencarian: kategori milik project yang sedang dipilih.
   const boardCategories = projectFilter === 'all'
     ? []
     : categories.filter((c) => c.project_id === projectFilter && c.is_active);
@@ -999,7 +1008,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       <div className="div-desc">
         {/* Nama divisi dihapus dari sini — sudah terbaca dari tab di atas.
             Ruangnya dipakai untuk filter yang benar-benar dipakai sehari-hari. */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: 235 }}>
+        <div ref={searchBoxRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: 280 }}>
           <svg
             width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"
@@ -1011,9 +1020,13 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            onFocus={() => setSearchFocus(true)}
+            onFocus={() => {
+              const r = searchBoxRef.current ? searchBoxRef.current.getBoundingClientRect() : null;
+              if (r) setSearchPos({ top: r.bottom + 6, left: Math.min(r.left, Math.max(8, window.innerWidth - 308)) });
+              setSearchFocus(true);
+            }}
             onBlur={() => setSearchFocus(false)}
-            placeholder="Cari judul, akun, kode ads…"
+            placeholder="Cari apa saja — judul, akun, platform, kategori…"
             style={{
               width: '100%',
               padding: '7px 30px 7px 33px',
@@ -1027,6 +1040,56 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
               transition: 'border-color .15s',
             }}
           />
+          {searchFocus && searchPos && (
+            <div
+              style={{
+                position: 'fixed',
+                top: searchPos.top,
+                left: searchPos.left,
+                width: 300,
+                maxHeight: 300,
+                overflowY: 'auto',
+                zIndex: 60,
+                background: 'var(--raised)',
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                padding: '10px 12px',
+                boxShadow: '0 14px 36px rgba(0,0,0,.55)',
+              }}
+              // preventDefault supaya kotak cari tidak kehilangan fokus saat diklik
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              <div className="modal-col-label" style={{ marginBottom: 6 }}>Platform</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {PLATFORMS.map((pf) => (
+                  <SuggestChip key={pf.key} label={pf.label} color={pf.color} onPick={() => addTerm(pf.label)} />
+                ))}
+              </div>
+
+              {boardCategories.length > 0 && (
+                <>
+                  <div className="modal-col-label" style={{ marginBottom: 6 }}>Kategori</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                    {boardCategories.map((c) => (
+                      <SuggestChip key={c.id} label={c.name} color={tagColor(c.name)} onPick={() => addTerm(c.name)} />
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <div className="modal-col-label" style={{ marginBottom: 6 }}>Status</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {STATUSES.map((st) => (
+                  <SuggestChip key={st.key} label={st.label} color={st.color} onPick={() => addTerm(st.label)} />
+                ))}
+              </div>
+
+              <div className="hint" style={{ marginTop: 10, marginBottom: 0 }}>
+                Bisa juga langsung diketik. Beberapa kata sekaligus berarti semuanya harus cocok —
+                mis. <b>tiktok berita</b>.
+              </div>
+            </div>
+          )}
           {search && (
             <button
               type="button"
@@ -1058,105 +1121,6 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
           ⚑ Perlu ditindak
         </button>
 
-        {/* Filter platform — satu tombol + panel centang, hemat lebar header */}
-        <div ref={platBtnRef} style={{ position: 'relative' }}>
-          <button
-            type="button"
-            className="btn"
-            onClick={openPlatMenu}
-            style={{
-              whiteSpace: 'nowrap',
-              borderColor: platFilter.length ? 'var(--accent)' : undefined,
-              color: platFilter.length ? 'var(--accent)' : undefined,
-              fontWeight: platFilter.length ? 600 : undefined,
-            }}
-          >
-            Platform{platFilter.length ? ` (${platFilter.length})` : ''} ▾
-          </button>
-
-          {platMenu && platMenuPos && (
-            <>
-              <div
-                style={{ position: 'fixed', inset: 0, zIndex: 49 }}
-                onMouseDown={() => setPlatMenu(false)}
-                onTouchStart={() => setPlatMenu(false)}
-              />
-              <div
-                style={{
-                  position: 'fixed',
-                  top: platMenuPos.top,
-                  left: platMenuPos.left,
-                  width: 210,
-                  zIndex: 50,
-                  background: 'var(--raised)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 10,
-                  padding: 5,
-                  boxShadow: '0 14px 36px rgba(0,0,0,.55)',
-                }}
-              >
-                {PLAT_CHIPS.map((pf) => {
-                  const on = platFilter.includes(pf.key);
-                  return (
-                    <label
-                      key={pf.key || 'none'}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 9,
-                        padding: '7px 10px', borderRadius: 7,
-                        fontSize: 13, cursor: 'pointer',
-                        color: on ? pf.color : 'var(--text)',
-                        fontWeight: on ? 600 : 400,
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        onChange={() => setPlatFilter((f) =>
-                          f.includes(pf.key) ? f.filter((x) => x !== pf.key) : [...f, pf.key])}
-                      />
-                      <span style={{
-                        width: 8, height: 8, borderRadius: 999,
-                        background: pf.color, flexShrink: 0,
-                      }} />
-                      {pf.title}
-                    </label>
-                  );
-                })}
-                {platFilter.length > 0 && (
-                  <>
-                    <div style={{ height: 1, background: 'var(--border)', margin: '4px 0' }} />
-                    <button
-                      type="button"
-                      onClick={() => setPlatFilter([])}
-                      style={{
-                        width: '100%', textAlign: 'left',
-                        background: 'transparent', border: 'none', borderRadius: 7,
-                        padding: '7px 10px', font: 'inherit', fontSize: 13,
-                        color: 'var(--text-3)', cursor: 'pointer',
-                      }}
-                    >
-                      Bersihkan pilihan
-                    </button>
-                  </>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-        <select
-          className="cat-filter"
-          value={catFilter}
-          disabled={projectFilter === 'all'}
-          title={projectFilter === 'all' ? 'Pilih project di sidebar untuk menyaring kategori' : undefined}
-          onChange={(e) => setCatFilter(e.target.value)}
-        >
-          <option value="all">
-            {projectFilter === 'all' ? 'Kategori — pilih project dulu' : 'Semua kategori'}
-          </option>
-          {boardCategories.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
         <div className="range-tabs">
           {([['today', 'Hari ini'], ['yesterday', 'Kemarin'], ['week', '7 Hari'], ['all', 'Semua']] as [Range, string][]).map(([k, label]) => (
             <button key={k} className={`range-tab ${range === k ? 'active' : ''}`} disabled={!!pickDate} onClick={() => setRange(k)}>{label}</button>
