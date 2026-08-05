@@ -102,6 +102,8 @@ export interface ContentRow {
   asset_url: string | null;
   /** Link konten yang sudah tayang (TikTok/IG). Jembatan ke kolom url di SIGMA. */
   post_url: string | null;
+  /** Kode ads yang diinput tim Ads. */
+  ads_code: string | null;
   visual_hook: string | null;
   /** @deprecated Disembunyikan dari Board sejak v21. Kolom DB sengaja dipertahankan agar data lama tidak hilang. */
   production_note: string | null;
