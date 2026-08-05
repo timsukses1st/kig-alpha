@@ -74,17 +74,26 @@ const htmlToMd = (node: Node): string => {
 
 type ColKey = 'akun' | 'kategori' | 'status' | 'caption' | 'drive' | 'post' | 'ads' | 'pic' | 'tayang';
 
-const COLUMNS: { key: ColKey; label: string; width?: number }[] = [
-  { key: 'akun', label: 'Akun', width: 150 },
-  { key: 'kategori', label: 'Kategori', width: 140 },
-  { key: 'status', label: 'Status', width: 150 },
-  { key: 'caption', label: 'Caption', width: 90 },
-  { key: 'drive', label: 'Link Drive', width: 185 },
-  { key: 'post', label: 'Link Post', width: 205 },
-  { key: 'ads', label: 'Kode Ads', width: 145 },
-  { key: 'pic', label: 'PIC', width: 115 },
+const TITLE_COL_W = 300;
+
+const COLUMNS: { key: ColKey; label: string; width: number }[] = [
+  { key: 'akun', label: 'Akun', width: 175 },
+  { key: 'kategori', label: 'Kategori', width: 155 },
+  { key: 'status', label: 'Status', width: 160 },
+  { key: 'caption', label: 'Caption', width: 100 },
+  { key: 'drive', label: 'Link Drive', width: 210 },
+  { key: 'post', label: 'Link Post', width: 230 },
+  { key: 'ads', label: 'Kode Ads', width: 170 },
+  { key: 'pic', label: 'PIC', width: 130 },
   { key: 'tayang', label: 'Tayang', width: 105 },
 ];
+
+/** Sel teks: satu baris, dipotong dengan elipsis — jangan pernah pecah per huruf. */
+const CLIP: React.CSSProperties = {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
+};
 
 /** Judul disimpan dengan penanda **bold** — dibersihkan untuk tampilan tabel. */
 const plainTitle = (s: string) => (s || '').replace(/\*\*/g, '').split('\n')[0].trim();
@@ -394,6 +403,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   };
 
   const shownCols = COLUMNS.filter((c) => !hiddenCols.includes(c.key));
+  // Dengan tableLayout 'fixed', lebar total harus dihitung sendiri supaya
+  // scroll mendatarnya pas — tidak ada kolom yang terhimpit.
+  const tableWidth = TITLE_COL_W + shownCols.reduce((a, c) => a + c.width, 0);
   const toggleCol = (k: ColKey) =>
     setHiddenCols((h) => (h.includes(k) ? h.filter((x) => x !== k) : [...h, k]));
 
@@ -401,7 +413,14 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     categories.filter((c) => c.project_id === row.project_id && (c.is_active || c.id === row.category_id));
 
   const th = (label: string, width?: number) => (
-    <th key={label} style={{ width, position: 'sticky', top: 0, background: 'var(--raised)', zIndex: 2 }}>
+    <th
+      key={label}
+      style={{
+        width, minWidth: width, maxWidth: width,
+        position: 'sticky', top: 0, background: 'var(--raised)', zIndex: 2,
+        whiteSpace: 'nowrap',
+      }}
+    >
       {label}
     </th>
   );
@@ -873,10 +892,10 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
           )}
 
           <div className="table-wrap" style={{ maxHeight: '68vh', overflow: 'auto' }}>
-            <table>
+            <table style={{ tableLayout: 'fixed', width: tableWidth, minWidth: '100%' }}>
               <thead>
                 <tr>
-                  {th('Konten', 250)}
+                  {th('Konten', TITLE_COL_W)}
                   {shownCols.map((c) => th(c.label, c.width))}
                 </tr>
               </thead>
@@ -890,8 +909,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     : null;
                   return (
                     <tr key={row.id}>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <td style={{ maxWidth: TITLE_COL_W }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                           <span
                             className="flag-dot"
                             title={row.asset_url ? 'Aset siap' : 'Perlu link drive'}
@@ -935,7 +954,10 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       </td>
 
                       {shownCols.map((c) => {
-                        if (c.key === 'akun') return <td key={c.key} className="sub">{accName(row.account_id)}</td>;
+                        if (c.key === 'akun') {
+                          const h = accName(row.account_id);
+                          return <td key={c.key} className="sub" style={CLIP} title={h}>{h}</td>;
+                        }
 
                         if (c.key === 'kategori') {
                           const list = catsForRow(row);
@@ -950,6 +972,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                                   onChange={(e) => patchRow(row, { category_id: e.target.value || null }, 'Kategori')}
                                   style={{
                                     width: '100%',
+                                    minWidth: 0,
                                     color: rowCat ? tagColor(rowCat.name) : undefined,
                                     fontWeight: rowCat ? 600 : undefined,
                                   }}
@@ -973,7 +996,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                                 disabled={!canMove}
                                 title={canMove ? undefined : 'Tahap ini dikelola tim lain'}
                                 onChange={(e) => moveStatusInline(row, e.target.value as ContentStatus)}
-                                style={{ width: '100%', color: def.color, fontWeight: 600 }}
+                                style={{ width: '100%', minWidth: 0, color: def.color, fontWeight: 600 }}
                               >
                                 {STATUSES.filter((s) => targets.includes(s.key) || s.key === row.status).map((s) => (
                                   <option key={s.key} value={s.key}>{s.label}</option>
@@ -1049,10 +1072,10 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                           const team = def.ownerTeam;
                           const id = team === 'creative' ? row.pic_creative
                             : team === 'distribution' ? row.pic_distribution : row.pic_ads;
-                          return <td key={c.key} className="sub">{personName(id) || '—'}</td>;
+                          return <td key={c.key} className="sub" style={CLIP}>{personName(id) || '—'}</td>;
                         }
 
-                        return <td key={c.key} className="sub">{fmtDate(row.publish_date)}</td>;
+                        return <td key={c.key} className="sub" style={CLIP}>{fmtDate(row.publish_date)}</td>;
                       })}
                     </tr>
                   );
