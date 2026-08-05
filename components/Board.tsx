@@ -98,6 +98,18 @@ const CLIP: React.CSSProperties = {
 /** Judul disimpan dengan penanda **bold** — dibersihkan untuk tampilan tabel. */
 const plainTitle = (s: string) => (s || '').replace(/\*\*/g, '').split('\n')[0].trim();
 
+/**
+ * Tanggal dalam zona waktu pengguna. Jangan pakai toISOString() untuk ini —
+ * dia mengubah ke UTC, sehingga konten yang dibuat lewat tengah malam WIB
+ * terbaca sebagai hari sebelumnya.
+ */
+const localDay = (iso: string) => {
+  const d = new Date(iso);
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+};
+
 const fmtDate = (iso: string | null) => {
   if (!iso) return '—';
   return new Date(iso + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
@@ -184,7 +196,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const load = useCallback(async () => {
     setLoading(true);
     const [c, m, rq, cc] = await Promise.all([
-      supabase.from('contents').select('*').order('updated_at', { ascending: false }),
+      // Urut created_at, BUKAN updated_at: kalau pakai updated_at, baris yang
+      // baru diketik langsung melompat ke atas dan bikin kacau saat input massal.
+      supabase.from('contents').select('*').order('created_at', { ascending: false }),
       supabase.from('team_members').select('*').eq('is_active', true).order('name'),
       supabase.from('content_requests').select('*').eq('status', 'pending').order('requested_date', { ascending: true }),
       supabase.from('content_categories').select('*').order('name'),
@@ -203,12 +217,14 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   useEffect(() => { setCatFilter('all'); }, [projectFilter]);
 
   const inRange = useCallback((r: ContentRow) => {
-    // Tanggal spesifik menang atas rentang cepat
+    // Dasar penyaringan = TANGGAL DIBUAT, bukan tanggal terakhir diubah.
+    // Dengan created_at, konten tetap berada di tanggal aslinya walau nanti
+    // berpindah status berkali-kali.
     if (pickDate) {
-      return new Date(r.updated_at).toISOString().slice(0, 10) === pickDate;
+      return localDay(r.created_at) === pickDate;
     }
     if (range === 'all') return true;
-    const d = new Date(r.updated_at);
+    const d = new Date(r.created_at);
     const now = new Date();
     const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     if (range === 'today') return d >= startToday;
