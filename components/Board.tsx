@@ -105,8 +105,7 @@ const plainTitle = (s: string) => (s || '').replace(/\*\*/g, '').split('\n')[0].
  * dia mengubah ke UTC, sehingga konten yang dibuat lewat tengah malam WIB
  * terbaca sebagai hari sebelumnya.
  */
-const localDay = (iso: string) => {
-  const d = new Date(iso);
+const dayStr = (d: Date) => {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${m}-${day}`;
@@ -291,23 +290,23 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   // supaya papan tidak tampak kosong karena filter yang tertinggal.
 
   const inRange = useCallback((r: ContentRow) => {
-    // Dasar penyaringan = TANGGAL DIBUAT, bukan tanggal terakhir diubah.
-    // Dengan created_at, konten tetap berada di tanggal aslinya walau nanti
-    // berpindah status berkali-kali.
-    if (pickDate) {
-      return localDay(r.created_at) === pickDate;
-    }
+    // Dasar penyaringan = TANGGAL TAYANG yang diisi manual (publish_date).
+    // Nilainya sudah berupa 'YYYY-MM-DD', jadi cukup dibandingkan apa adanya —
+    // tidak perlu konversi waktu yang rawan geser sehari.
+    const d = r.publish_date;
+    if (pickDate) return d === pickDate;
     if (range === 'all') return true;
-    const d = new Date(r.created_at);
-    const now = new Date();
-    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    if (range === 'today') return d >= startToday;
+    // Belum diisi tanggal tayangnya → tidak masuk rentang mana pun.
+    if (!d) return false;
+    const today = dayStr(new Date());
+    if (range === 'today') return d === today;
     if (range === 'yesterday') {
-      const startYest = new Date(startToday); startYest.setDate(startYest.getDate() - 1);
-      return d >= startYest && d < startToday;
+      const y = new Date(); y.setDate(y.getDate() - 1);
+      return d === dayStr(y);
     }
-    const start7 = new Date(startToday); start7.setDate(start7.getDate() - 6);
-    return d >= start7;
+    // 7 Hari = seminggu terakhir sampai hari ini (belum termasuk jadwal ke depan).
+    const s7 = new Date(); s7.setDate(s7.getDate() - 6);
+    return d >= dayStr(s7) && d <= today;
   }, [range, pickDate]);
 
   const activeDiv = DIVISIONS.find((d) => d.key === division)!;
@@ -1166,11 +1165,22 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
         <div className="range-tabs">
           {([['today', 'Hari ini'], ['yesterday', 'Kemarin'], ['week', '7 Hari'], ['all', 'Semua']] as [Range, string][]).map(([k, label]) => (
-            <button key={k} className={`range-tab ${range === k ? 'active' : ''}`} disabled={!!pickDate} onClick={() => setRange(k)}>{label}</button>
+            <button
+              key={k}
+              className={`range-tab ${range === k ? 'active' : ''}`}
+              disabled={!!pickDate}
+              title="Berdasarkan Tanggal tayang"
+              onClick={() => setRange(k)}
+            >{label}</button>
           ))}
         </div>
         <div className="date-pick">
-          <input type="date" value={pickDate} onChange={(e) => setPickDate(e.target.value)} title="Pilih tanggal spesifik" />
+          <input
+            type="date"
+            value={pickDate}
+            onChange={(e) => setPickDate(e.target.value)}
+            title="Pilih tanggal tayang tertentu"
+          />
           {pickDate && <button className="date-clear" onClick={() => setPickDate('')} title="Hapus filter tanggal">✕</button>}
         </div>
       </div>
@@ -1450,7 +1460,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
           <p className="cal-legend">
             Ketik langsung di kolomnya — tersimpan otomatis saat pindah kolom atau tekan Enter, Esc untuk batal.
-            Klik judul konten untuk membuka brief lengkapnya, atau klik kanan pada baris (tekan-tahan di HP) untuk duplikat, salin caption, dan hapus. Kolom yang tidak bisa diketik berarti tahapnya sedang dikelola tim lain.
+            Klik judul konten untuk membuka brief lengkapnya, atau klik kanan pada baris (tekan-tahan di HP) untuk duplikat, salin caption, dan hapus.
+            Filter tanggal mengikuti <b>Tanggal tayang</b> — konten yang belum dijadwalkan hanya muncul di rentang <b>Semua</b>. Kolom yang tidak bisa diketik berarti tahapnya sedang dikelola tim lain.
           </p>
 
           {toast && (
