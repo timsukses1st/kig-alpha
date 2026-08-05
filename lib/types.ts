@@ -103,6 +103,7 @@ export interface ContentRow {
   /** Kategori konten per project. Null = belum dikategorikan. */
   category_id: string | null;
   status: ContentStatus;
+  pic_copywriter: string | null;
   pic_creative: string | null;
   pic_distribution: string | null;
   pic_ads: string | null;
