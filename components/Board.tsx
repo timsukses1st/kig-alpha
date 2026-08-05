@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
-  canEditRow, initials, statusDef, tagColor,
+  canEditRow, initials, statusDef, tagColor, targetableStatuses,
   type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
@@ -72,6 +72,74 @@ const htmlToMd = (node: Node): string => {
   return out;
 };
 
+type ColKey = 'akun' | 'kategori' | 'status' | 'caption' | 'drive' | 'post' | 'ads' | 'pic' | 'tayang';
+
+const COLUMNS: { key: ColKey; label: string; width?: number }[] = [
+  { key: 'akun', label: 'Akun', width: 150 },
+  { key: 'kategori', label: 'Kategori', width: 140 },
+  { key: 'status', label: 'Status', width: 150 },
+  { key: 'caption', label: 'Caption', width: 90 },
+  { key: 'drive', label: 'Link Drive', width: 185 },
+  { key: 'post', label: 'Link Post', width: 205 },
+  { key: 'ads', label: 'Kode Ads', width: 145 },
+  { key: 'pic', label: 'PIC', width: 115 },
+  { key: 'tayang', label: 'Tayang', width: 105 },
+];
+
+/** Judul disimpan dengan penanda **bold** — dibersihkan untuk tampilan tabel. */
+const plainTitle = (s: string) => (s || '').replace(/\*\*/g, '').split('\n')[0].trim();
+
+const fmtDate = (iso: string | null) => {
+  if (!iso) return '—';
+  return new Date(iso + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+};
+
+/**
+ * Sel yang bisa diketik langsung. Uncontrolled + key mengikuti nilai server:
+ * begitu data server berubah, sel di-remount dengan nilai terbaru — sekaligus
+ * mengembalikan nilai lama otomatis kalau simpan gagal.
+ */
+function CellInput({
+  value, disabled, placeholder, onSave, mono,
+}: {
+  value: string;
+  disabled?: boolean;
+  placeholder?: string;
+  onSave: (v: string) => void;
+  mono?: boolean;
+}) {
+  return (
+    <input
+      key={value}
+      defaultValue={value}
+      disabled={disabled}
+      placeholder={disabled ? '—' : placeholder}
+      title={disabled ? 'Tahap ini dikelola tim lain' : undefined}
+      onBlur={(e) => {
+        const v = e.target.value.trim();
+        if (v !== value.trim()) onSave(v);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        else if (e.key === 'Escape') { e.currentTarget.value = value; e.currentTarget.blur(); }
+      }}
+      style={{
+        width: '100%',
+        minWidth: 0,
+        background: disabled ? 'transparent' : 'var(--raised)',
+        border: '1px solid ' + (disabled ? 'transparent' : 'var(--border)'),
+        borderRadius: 7,
+        padding: '5px 8px',
+        font: 'inherit',
+        fontSize: 12.5,
+        fontFamily: mono ? 'ui-monospace, SFMono-Regular, Menlo, monospace' : undefined,
+        color: 'var(--text)',
+        outline: 'none',
+      }}
+    />
+  );
+}
+
 export default function Board({ profile, accounts, projects, projectFilter }: Props) {
   const [rows, setRows] = useState<ContentRow[]>([]);
   const [requests, setRequests] = useState<ContentRequest[]>([]);
@@ -92,6 +160,13 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [noteBusy, setNoteBusy] = useState(false);
   const [openNoteField, setOpenNoteField] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  // ---- tampilan tabel ----
+  const [search, setSearch] = useState('');
+  const [onlyTodo, setOnlyTodo] = useState(false);
+  const [hiddenCols, setHiddenCols] = useState<ColKey[]>([]);
+  const [colMenu, setColMenu] = useState(false);
+  const [copiedRow, setCopiedRow] = useState<string | null>(null);
+  const [toast, setToast] = useState('');
   // Project konten yang sudah ada dikunci. Memindahkannya harus disengaja
   // (klik tombol dulu), supaya tidak bisa berpindah klien karena salah klik.
   const [movingProject, setMovingProject] = useState(false);
@@ -135,13 +210,34 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     return d >= start7;
   }, [range, pickDate]);
 
-  const filtered = useMemo(
-    () => rows.filter((r) =>
-      (projectFilter === 'all' || r.project_id === projectFilter)
-      && (catFilter === 'all' || r.category_id === catFilter)
-      && inRange(r)),
-    [rows, projectFilter, catFilter, inRange]
+  const activeDiv = DIVISIONS.find((d) => d.key === division)!;
+
+  const accHandle = useCallback(
+    (id: string | null) => accounts.find((a) => a.id === id)?.handle || '',
+    [accounts]
   );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return rows.filter((r) => {
+      if (projectFilter !== 'all' && r.project_id !== projectFilter) return false;
+      // Tab divisi dulu dikerjakan oleh kolom kanban — sekarang jadi filter baris.
+      if (!activeDiv.statuses.includes(r.status)) return false;
+      if (catFilter !== 'all' && r.category_id !== catFilter) return false;
+      if (!inRange(r)) return false;
+      // "Perlu ditindak" = aset belum ada, atau sudah tayang tapi link post kosong
+      if (onlyTodo) {
+        const needsAsset = !r.asset_url;
+        const needsPost = (r.status === 'published' || r.status === 'diiklankan') && !r.post_url;
+        if (!needsAsset && !needsPost) return false;
+      }
+      if (q) {
+        const hay = [plainTitle(r.title), accHandle(r.account_id), r.ads_code || ''].join(' ').toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [rows, projectFilter, activeDiv, catFilter, inRange, onlyTodo, search, accHandle]);
 
   const visibleRequests = useMemo(
     () => requests.filter((rq) => projectFilter === 'all' || rq.project_id === projectFilter),
@@ -159,27 +255,12 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     return m;
   }, [filtered]);
 
-  const activeDiv = DIVISIONS.find((d) => d.key === division)!;
-  const columns = activeDiv.statuses.map((k) => statusDef(k));
-  const byStatus = useMemo(() => {
-    const m: Record<string, ContentRow[]> = {};
-    for (const s of STATUSES) m[s.key] = [];
-    for (const r of filtered) (m[r.status] || (m[r.status] = [])).push(r);
-    return m;
-  }, [filtered]);
-
   const accName = (id: string | null) => accounts.find((a) => a.id === id)?.handle || 'Akun belum ditentukan';
   const accountsOfProject = (projId: string) =>
     projId ? accounts.filter((a) => a.project_id === projId || !a.project_id) : accounts;
   const personName = (id: string | null) => members.find((m) => m.id === id)?.name || null;
   const membersOf = (team: 'creative' | 'distribution' | 'ads') =>
     members.filter((m) => m.team === team || m.team === 'delta');
-  const picForCard = (r: ContentRow) => {
-    const team = statusDef(r.status).ownerTeam;
-    const id = team === 'creative' ? r.pic_creative : team === 'distribution' ? r.pic_distribution : r.pic_ads;
-    return personName(id);
-  };
-
   const canCreate =
     !!profile &&
     (profile.role === 'superadmin' || profile.role === 'manager' ||
@@ -261,6 +342,70 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   const readOnly = editing ? !canEditRow(profile, editing.status) : false;
 
+  // ---- simpan satu sel di tabel ----
+  const flashToast = (m: string) => {
+    setToast(m);
+    window.setTimeout(() => setToast(''), 2600);
+  };
+
+  const patchRow = async (row: ContentRow, patch: Record<string, unknown>, label: string) => {
+    const { error: err } = await supabase.from('contents').update(patch).eq('id', row.id);
+    flashToast(err ? `Gagal menyimpan ${label} — cek wewenang tim kamu untuk tahap ini.` : `${label} tersimpan.`);
+    load();
+  };
+
+  const moveStatusInline = async (row: ContentRow, target: ContentStatus) => {
+    if (target === row.status) return;
+    if (target === 'terjadwal' && !row.publish_date) {
+      flashToast('Isi Tanggal tayang dulu sebelum menjadwalkan.');
+      load();
+      return;
+    }
+    await patchRow(row, { status: target }, 'Status');
+  };
+
+  const copyRowCaption = async (row: ContentRow) => {
+    const text = [(row.caption || '').trim(), (row.hashtags || '').trim()].filter(Boolean).join('\n\n');
+    if (!text) { flashToast('Caption & hashtag masih kosong.'); return; }
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch { ok = false; }
+    }
+    if (ok) {
+      setCopiedRow(row.id);
+      window.setTimeout(() => setCopiedRow((c) => (c === row.id ? null : c)), 1600);
+    } else {
+      flashToast('Browser menolak akses clipboard — buka kartunya lalu salin manual.');
+    }
+  };
+
+  const shownCols = COLUMNS.filter((c) => !hiddenCols.includes(c.key));
+  const toggleCol = (k: ColKey) =>
+    setHiddenCols((h) => (h.includes(k) ? h.filter((x) => x !== k) : [...h, k]));
+
+  const catsForRow = (row: ContentRow) =>
+    categories.filter((c) => c.project_id === row.project_id && (c.is_active || c.id === row.category_id));
+
+  const th = (label: string, width?: number) => (
+    <th key={label} style={{ width, position: 'sticky', top: 0, background: 'var(--raised)', zIndex: 2 }}>
+      {label}
+    </th>
+  );
+
   // ---- Caption + Hashtag siap salin -------------------------------------
   // Digabung otomatis: caption dulu, satu baris kosong, lalu hashtag.
   const combinedCaption = useMemo(() => {
@@ -339,16 +484,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     load();
   };
 
-  const [accBusy, setAccBusy] = useState<string | null>(null);
   const canAcc = profile?.role === 'superadmin' || profile?.role === 'manager';
-
-  const accRow = async (row: ContentRow) => {
-    setAccBusy(row.id);
-    const { error: err } = await supabase.from('contents').update({ status: 'siap_upload' }).eq('id', row.id);
-    setAccBusy(null);
-    if (err) window.alert('Gagal ACC — cek hak akses.');
-    load();
-  };
 
   const ORDER: ContentStatus[] = ['drafting', 'review', 'siap_upload', 'terjadwal', 'published', 'diiklankan'];
   const [flowBusy, setFlowBusy] = useState(false);
@@ -474,7 +610,6 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [delRow, setDelRow] = useState<ContentRow | null>(null);
   const [delBusy, setDelBusy] = useState(false);
   const [delErr, setDelErr] = useState('');
-  const [hoverCard, setHoverCard] = useState<string | null>(null);
 
   const confirmDeleteRow = async () => {
     if (!delRow) return;
@@ -612,6 +747,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
           <span className="top-note">{filtered.length} konten</span>
         </div>
         <div className="top-actions">
+          <button className="btn" onClick={() => setColMenu(!colMenu)}>
+            ☰ Kolom{hiddenCols.length ? ` (${hiddenCols.length})` : ''}
+          </button>
           {canRequest && (
             <button className="btn" onClick={() => { setReqModalOpen(true); setReqError(''); }}>
               ✦ Request konten{visibleRequests.length > 0 ? ` (${visibleRequests.length})` : ''}
@@ -634,7 +772,16 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       <div className="div-desc">
         <span className="bar" style={{ background: activeDiv.color }} />
         <span className="div-name">{division === 'semua' ? 'Semua Divisi' : `Divisi ${activeDiv.label}`}</span>
-        <span>· {activeDiv.desc}</span>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Cari judul / akun / kode ads…"
+          style={{ minWidth: 190, maxWidth: 240 }}
+        />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <input type="checkbox" checked={onlyTodo} onChange={(e) => setOnlyTodo(e.target.checked)} />
+          Perlu ditindak
+        </label>
         <select
           className="cat-filter"
           value={catFilter}
@@ -661,178 +808,279 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       </div>
 
       {loading ? (
-        <p className="empty">Memuat board…</p>
+        <p className="empty">Memuat…</p>
       ) : (
-        <div className="board">
-          {(division === 'semua' || division === 'creative') && visibleRequests.length > 0 && (
-            <div className="column">
-              <div className="column-head">
-                <span className="st-square" style={{ background: 'var(--req)' }} />
-                <h3 style={{ color: 'var(--req)' }}>Request</h3>
-                <span className="count">{visibleRequests.length}</span>
-                <span className="owner-chip">pm</span>
-              </div>
-              <div className="col-body">
-                {visibleRequests.map((rq) => (
-                  <div className="card" key={rq.id} style={{ ['--card-accent' as never]: 'var(--req)' }}>
-                    <div className="card-title">{rq.title}</div>
-                    <div className="card-acc">
-                      <span className="sq" />
-                      {accName(rq.account_id)}
-                    </div>
-                    {rq.note && <div className="req-note">{rq.note}</div>}
-                    {canLift && (
-                      <button className="acc-btn lift-btn" disabled={reqBusy === rq.id}
-                        onClick={(e) => { e.stopPropagation(); liftRequest(rq); }}>
-                        {reqBusy === rq.id ? 'Memproses…' : '↑ Angkat → Drafting'}
-                      </button>
-                    )}
-                    {canAcc && (
-                      <button className="btn ghost req-reject" disabled={reqBusy === rq.id}
-                        onClick={(e) => { e.stopPropagation(); rejectRequest(rq); }}>
-                        Tolak
-                      </button>
-                    )}
-                    <div className="card-foot">
-                      <span className="flag-dot" style={{ background: 'var(--req)' }} />
-                      {rq.requested_date
-                        ? 'Butuh ' + new Date(rq.requested_date + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
-                        : 'Tanpa target tanggal'}
-                      <span className="pic-avatar" title={rq.requester_name || 'PM'}>{initials(rq.requester_name)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
+        <div className="content-area" style={{ paddingTop: 4 }}>
+          {colMenu && (
+            <div
+              style={{
+                display: 'flex', flexWrap: 'wrap', gap: 12,
+                background: 'var(--raised)', border: '1px solid var(--border)',
+                borderRadius: 10, padding: '12px 14px', marginBottom: 12,
+              }}
+            >
+              {COLUMNS.map((c) => (
+                <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!hiddenCols.includes(c.key)} onChange={() => toggleCol(c.key)} />
+                  {c.label}
+                </label>
+              ))}
             </div>
           )}
-          {columns.map((s) => (
-            <div className="column" key={s.key}>
-              <div className="column-head">
-                <span className="st-square" style={{ background: s.color }} />
-                <h3 style={{ color: s.color }}>{s.label}</h3>
-                <span className="count">{byStatus[s.key].length}</span>
-                {division === 'semua' && <span className="owner-chip">{s.ownerTeam}</span>}
-              </div>
-              <div className="col-body">
-                {byStatus[s.key].map((row) => {
-                  const editable = canEditRow(profile, row.status);
-                  const pic = picForCard(row);
-                  const hasAsset = !!row.asset_url;
 
-                  // Warna kartu, urutan prioritas:
-                  //   1. belum ada link drive  -> amber (paling menonjol, perlu tindakan)
-                  //   2. sudah ada & berkategori -> warna kategorinya
-                  //   3. sudah ada, tanpa kategori -> warna status (seperti dulu)
+          {visibleRequests.length > 0 && (
+            <div
+              style={{
+                background: 'var(--raised)', border: '1px solid var(--border)',
+                borderRadius: 10, padding: '10px 14px', marginBottom: 12,
+              }}
+            >
+              <div className="modal-col-label" style={{ marginBottom: 8 }}>
+                Request dari PM ({visibleRequests.length})
+              </div>
+              {visibleRequests.map((rq) => (
+                <div
+                  key={rq.id}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '7px 0', borderTop: '1px solid var(--border)',
+                  }}
+                >
+                  <span className="flag-dot" style={{ background: 'var(--req)', flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {rq.title}
+                    </div>
+                    <div className="sub" style={{ fontSize: 12 }}>
+                      {accName(rq.account_id)}
+                      {rq.requested_date ? ' · butuh ' + fmtDate(rq.requested_date) : ''}
+                      {rq.note ? ' · ' + rq.note : ''}
+                    </div>
+                  </div>
+                  {canLift && (
+                    <button className="btn" disabled={reqBusy === rq.id} onClick={() => liftRequest(rq)}>
+                      {reqBusy === rq.id ? 'Memproses…' : '↑ Angkat'}
+                    </button>
+                  )}
+                  {canAcc && (
+                    <button className="btn ghost danger-text" disabled={reqBusy === rq.id} onClick={() => rejectRequest(rq)}>
+                      Tolak
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="table-wrap" style={{ maxHeight: '68vh', overflow: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  {th('Konten', 250)}
+                  {shownCols.map((c) => th(c.label, c.width))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((row) => {
+                  const editable = canEditRow(profile, row.status);
+                  const def = statusDef(row.status);
+                  const targets = targetableStatuses(profile, row.status);
                   const rowCat = row.category_id
                     ? (categories.find((c) => c.id === row.category_id) || null)
                     : null;
-                  const catColor = rowCat ? tagColor(rowCat.name) : null;
-                  const accent = !hasAsset
-                    ? 'var(--amber)'
-                    : (catColor || statusDef(row.status).color);
-                  // Tint kategori sengaja lebih tipis dari amber, supaya kartu
-                  // yang perlu ditindak tetap yang paling menarik mata.
-                  const tint = !hasAsset
-                    ? {
-                        backgroundImage: 'linear-gradient(rgba(245,158,11,.07), rgba(245,158,11,.07))',
-                        borderColor: 'rgba(245,158,11,.32)',
-                      }
-                    : catColor
-                      ? {
-                          backgroundImage: `linear-gradient(${catColor}0d, ${catColor}0d)`,
-                          borderColor: catColor + '42',
-                        }
-                      : null;
                   return (
-                    <div
-                      key={row.id}
-                      role="button"
-                      tabIndex={0}
-                      className={`card ${editable ? '' : 'locked'}`}
-                      style={{
-                        // Tint dipasang lewat backgroundImage (bukan background)
-                        // agar warna dasar kartu dari globals.css tetap dipakai
-                        // — lapisan warna cuma ditumpuk di atasnya.
-                        ['--card-accent' as never]: accent,
-                        position: 'relative',
-                        ...(tint || null),
-                      }}
-                      onClick={() => openEdit(row)}
-                      onKeyDown={(e) => e.key === 'Enter' && openEdit(row)}
-                      onMouseEnter={() => setHoverCard(row.id)}
-                      onMouseLeave={() => setHoverCard((c) => (c === row.id ? null : c))}
-                      title={editable ? 'Klik untuk edit' : 'Lihat detail (tahap ini dikelola tim lain)'}
-                    >
-                      {canDelete && (
-                        <button
-                          type="button"
-                          title="Hapus konten"
-                          onClick={(e) => { e.stopPropagation(); setDelErr(''); setDelRow(row); }}
-                          style={{
-                            position: 'absolute',
-                            top: 7,
-                            right: 7,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 24,
-                            height: 24,
-                            padding: 0,
-                            background: 'transparent',
-                            border: 'none',
-                            borderRadius: 6,
-                            color: 'var(--red)',
-                            cursor: 'pointer',
-                            opacity: hoverCard === row.id ? 0.9 : 0,
-                            pointerEvents: hoverCard === row.id ? 'auto' : 'none',
-                            transition: 'opacity .15s',
-                          }}
-                        >
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                            <path d="M10 11v6M14 11v6" />
-                            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                          </svg>
-                        </button>
-                      )}
-                      <div className="card-title" style={{ paddingRight: canDelete ? 22 : undefined }}
-                        dangerouslySetInnerHTML={{ __html: mdToHtml(row.title) }} />
-                      <div className="card-acc">
-                        <span className="sq" />
-                        {accName(row.account_id)}
-                      </div>
-                      {row.status === 'review' && canAcc && (
-                        <button
-                          className="acc-btn"
-                          disabled={accBusy === row.id}
-                          onClick={(e) => { e.stopPropagation(); accRow(row); }}
-                        >
-                          {accBusy === row.id ? 'Memproses…' : '✓ ACC → Siap Upload'}
-                        </button>
-                      )}
-                      {row.status === 'review' && !canAcc && (
-                        <div className="acc-wait">Menunggu ACC lead</div>
-                      )}
-                      <div className="card-foot">
-                        <span className="flag-dot" style={{ background: hasAsset ? 'var(--green)' : 'var(--amber)' }} />
-                        {hasAsset
-                          ? 'Aset siap'
-                          : <span style={{ color: 'var(--amber)', fontWeight: 600 }}>Perlu link drive</span>}
-                        {row.potensi_fyp && <span style={{ color: 'var(--st-review)' }}>· FYP</span>}
-                        <span className="pic-avatar" title={pic || 'PIC belum di-assign'}>{initials(pic)}</span>
-                      </div>
-                    </div>
+                    <tr key={row.id}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                          <span
+                            className="flag-dot"
+                            title={row.asset_url ? 'Aset siap' : 'Perlu link drive'}
+                            style={{ background: row.asset_url ? 'var(--green)' : 'var(--amber)', flexShrink: 0 }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => openEdit(row)}
+                            title="Buka detail konten"
+                            style={{
+                              flex: 1, minWidth: 0, textAlign: 'left',
+                              background: 'none', border: 'none', padding: 0,
+                              font: 'inherit', fontSize: 13, fontWeight: 600,
+                              color: 'var(--text)', cursor: 'pointer',
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {plainTitle(row.title) || '(tanpa judul)'}
+                          </button>
+                          {canDelete && (
+                            <button
+                              type="button"
+                              title="Hapus konten"
+                              onClick={() => { setDelErr(''); setDelRow(row); }}
+                              style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                width: 22, height: 22, padding: 0, flexShrink: 0,
+                                background: 'transparent', border: 'none', borderRadius: 6,
+                                color: 'var(--red)', cursor: 'pointer', opacity: 0.55,
+                              }}
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                                <path d="M10 11v6M14 11v6" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+
+                      {shownCols.map((c) => {
+                        if (c.key === 'akun') return <td key={c.key} className="sub">{accName(row.account_id)}</td>;
+
+                        if (c.key === 'kategori') {
+                          const list = catsForRow(row);
+                          return (
+                            <td key={c.key}>
+                              {list.length === 0 ? (
+                                <span className="sub">—</span>
+                              ) : (
+                                <select
+                                  value={row.category_id || ''}
+                                  disabled={!editable}
+                                  onChange={(e) => patchRow(row, { category_id: e.target.value || null }, 'Kategori')}
+                                  style={{
+                                    width: '100%',
+                                    color: rowCat ? tagColor(rowCat.name) : undefined,
+                                    fontWeight: rowCat ? 600 : undefined,
+                                  }}
+                                >
+                                  <option value="">— tanpa kategori —</option>
+                                  {list.map((x) => (
+                                    <option key={x.id} value={x.id}>{x.name}{x.is_active ? '' : ' (nonaktif)'}</option>
+                                  ))}
+                                </select>
+                              )}
+                            </td>
+                          );
+                        }
+
+                        if (c.key === 'status') {
+                          const canMove = targets.length > 1;
+                          return (
+                            <td key={c.key}>
+                              <select
+                                value={row.status}
+                                disabled={!canMove}
+                                title={canMove ? undefined : 'Tahap ini dikelola tim lain'}
+                                onChange={(e) => moveStatusInline(row, e.target.value as ContentStatus)}
+                                style={{ width: '100%', color: def.color, fontWeight: 600 }}
+                              >
+                                {STATUSES.filter((s) => targets.includes(s.key) || s.key === row.status).map((s) => (
+                                  <option key={s.key} value={s.key}>{s.label}</option>
+                                ))}
+                              </select>
+                            </td>
+                          );
+                        }
+
+                        if (c.key === 'caption') {
+                          const has = !!(row.caption || row.hashtags);
+                          return (
+                            <td key={c.key}>
+                              <button
+                                className="btn"
+                                disabled={!has}
+                                onClick={() => copyRowCaption(row)}
+                                title={has ? 'Salin caption + hashtag' : 'Caption & hashtag masih kosong'}
+                                style={{
+                                  fontSize: 12, padding: '4px 10px',
+                                  color: copiedRow === row.id ? 'var(--green)' : undefined,
+                                  opacity: has ? 1 : 0.4,
+                                }}
+                              >
+                                {copiedRow === row.id ? '✓ Tersalin' : 'Copy ⧉'}
+                              </button>
+                            </td>
+                          );
+                        }
+
+                        if (c.key === 'drive' || c.key === 'post') {
+                          const field = c.key === 'drive' ? 'asset_url' : 'post_url';
+                          const val = (c.key === 'drive' ? row.asset_url : row.post_url) || '';
+                          return (
+                            <td key={c.key}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <CellInput
+                                  value={val}
+                                  disabled={!editable}
+                                  placeholder={c.key === 'drive' ? 'link / nama file' : 'https://…'}
+                                  onSave={(v) => patchRow(row, { [field]: v || null }, c.label)}
+                                />
+                                {isUrl(val) && (
+                                  <a
+                                    className="open-link"
+                                    href={val.trim()}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Buka di tab baru"
+                                    style={{ flexShrink: 0 }}
+                                  >↗</a>
+                                )}
+                              </div>
+                            </td>
+                          );
+                        }
+
+                        if (c.key === 'ads') {
+                          return (
+                            <td key={c.key}>
+                              <CellInput
+                                value={row.ads_code || ''}
+                                disabled={!editable}
+                                placeholder="kode ads"
+                                mono
+                                onSave={(v) => patchRow(row, { ads_code: v || null }, 'Kode Ads')}
+                              />
+                            </td>
+                          );
+                        }
+
+                        if (c.key === 'pic') {
+                          const team = def.ownerTeam;
+                          const id = team === 'creative' ? row.pic_creative
+                            : team === 'distribution' ? row.pic_distribution : row.pic_ads;
+                          return <td key={c.key} className="sub">{personName(id) || '—'}</td>;
+                        }
+
+                        return <td key={c.key} className="sub">{fmtDate(row.publish_date)}</td>;
+                      })}
+                    </tr>
                   );
                 })}
-                {byStatus[s.key].length === 0 && <div className="col-empty">Tak ada konten pada rentang ini</div>}
-              </div>
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={shownCols.length + 1} className="empty">
+                      Tidak ada konten yang cocok dengan filter ini.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <p className="cal-legend">
+            Ketik langsung di kolomnya — tersimpan otomatis saat pindah kolom atau tekan Enter, Esc untuk batal.
+            Klik judul konten untuk membuka brief lengkapnya. Kolom yang tidak bisa diketik berarti tahapnya sedang dikelola tim lain.
+          </p>
+
+          {toast && (
+            <div className="toast" onClick={() => setToast('')}>
+              <span className="toast-dot" />
+              {toast}
             </div>
-          ))}
+          )}
         </div>
       )}
-
       {reqModalOpen && (
         <div className="overlay">
           <div className="modal" style={{ maxWidth: 440 }}>
@@ -1146,15 +1394,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                   )}
                   {!editing && <div className="hint">Konten baru otomatis masuk Drafting — perpindahan tahap lewat tombol, diatur sistem.</div>}
                 </div>
-                <div className="field-row">
-                  <div className="field">
-                    <label>Deadline{noteBtn('deadline')}</label>
-                    <input type="date" value={form.deadline} disabled={readOnly} onChange={(e) => setForm({ ...form, deadline: e.target.value })} />
-                  </div>
-                  <div className="field">
-                    <label>Tanggal tayang{noteBtn('publish_date')}</label>
-                    <input type="date" value={form.publish_date} disabled={readOnly} onChange={(e) => setForm({ ...form, publish_date: e.target.value })} />
-                  </div>
+                <div className="field">
+                  <label>Tanggal tayang{noteBtn('publish_date')}</label>
+                  <input type="date" value={form.publish_date} disabled={readOnly} onChange={(e) => setForm({ ...form, publish_date: e.target.value })} />
                 </div>
                 <div className="field">
                   <label>PIC Creative{noteBtn('pic')}</label>
