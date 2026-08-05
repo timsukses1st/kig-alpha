@@ -174,6 +174,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [onlyTodo, setOnlyTodo] = useState(false);
   const [hiddenCols, setHiddenCols] = useState<ColKey[]>([]);
   const [colMenu, setColMenu] = useState(false);
+  const [searchFocus, setSearchFocus] = useState(false);
   const [copiedRow, setCopiedRow] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   // Project konten yang sudah ada dikunci. Memindahkannya harus disengaja
@@ -791,16 +792,64 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       <div className="div-desc">
         <span className="bar" style={{ background: activeDiv.color }} />
         <span className="div-name">{division === 'semua' ? 'Semua Divisi' : `Divisi ${activeDiv.label}`}</span>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Cari judul / akun / kode ads…"
-          style={{ minWidth: 190, maxWidth: 240 }}
-        />
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-          <input type="checkbox" checked={onlyTodo} onChange={(e) => setOnlyTodo(e.target.checked)} />
-          Perlu ditindak
-        </label>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', width: 250 }}>
+          <svg
+            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"
+            style={{ position: 'absolute', left: 11, opacity: 0.4, pointerEvents: 'none' }}
+          >
+            <circle cx="11" cy="11" r="7" />
+            <line x1="16.5" y1="16.5" x2="21" y2="21" />
+          </svg>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onFocus={() => setSearchFocus(true)}
+            onBlur={() => setSearchFocus(false)}
+            placeholder="Cari judul, akun, kode ads…"
+            style={{
+              width: '100%',
+              padding: '7px 30px 7px 33px',
+              background: 'var(--raised)',
+              border: '1px solid ' + (searchFocus ? 'var(--accent)' : 'var(--border)'),
+              borderRadius: 999,
+              color: 'var(--text)',
+              font: 'inherit',
+              fontSize: 13,
+              outline: 'none',
+              transition: 'border-color .15s',
+            }}
+          />
+          {search && (
+            <button
+              type="button"
+              title="Hapus pencarian"
+              onClick={() => setSearch('')}
+              style={{
+                position: 'absolute', right: 8,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 18, height: 18, padding: 0,
+                background: 'transparent', border: 'none', borderRadius: 999,
+                color: 'var(--text-3)', cursor: 'pointer', fontSize: 13, lineHeight: 1,
+              }}
+            >✕</button>
+          )}
+        </div>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setOnlyTodo(!onlyTodo)}
+          title="Tampilkan hanya konten yang belum ada link drive, atau sudah tayang tapi link post-nya kosong"
+          style={{
+            whiteSpace: 'nowrap',
+            borderColor: onlyTodo ? 'var(--amber)' : undefined,
+            color: onlyTodo ? 'var(--amber)' : undefined,
+            background: onlyTodo ? 'rgba(245,158,11,.1)' : undefined,
+            fontWeight: onlyTodo ? 600 : undefined,
+          }}
+        >
+          ⚑ Perlu ditindak
+        </button>
         <select
           className="cat-filter"
           value={catFilter}
