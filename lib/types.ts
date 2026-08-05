@@ -279,7 +279,7 @@ export const STATUSES: StatusDef[] = [
   { key: 'review', label: 'Review', ownerTeam: 'creative', color: 'var(--st-review)' },
   { key: 'siap_upload', label: 'Siap Upload', ownerTeam: 'distribution', color: 'var(--st-siap)' },
   { key: 'terjadwal', label: 'Terjadwal', ownerTeam: 'distribution', color: 'var(--st-terjadwal)' },
-  { key: 'published', label: 'Published', ownerTeam: 'ads', color: 'var(--st-published)' },
+  { key: 'published', label: 'Published', ownerTeam: 'distribution', color: 'var(--st-published)' },
   { key: 'diiklankan', label: 'Diiklankan', ownerTeam: 'ads', color: 'var(--st-diiklankan)' },
 ];
 
@@ -297,19 +297,19 @@ export const DIVISIONS: { key: Division; label: string; color: string; desc: str
   {
     key: 'distribution', label: 'Distribution', color: 'var(--st-terjadwal)',
     desc: 'Siap Upload → Terjadwal → Published. Menyusun caption, media, dan menayangkan.',
-    statuses: ['siap_upload', 'terjadwal'],
+    statuses: ['siap_upload', 'terjadwal', 'published'],
   },
   {
     key: 'ads', label: 'Ads', color: 'var(--st-diiklankan)',
-    desc: 'Published → Diiklankan. Mengelola boosting dan kode ads.',
-    statuses: ['published', 'diiklankan'],
+    desc: 'Konten yang sudah diiklankan — boosting & kode ads.',
+    statuses: ['diiklankan'],
   },
 ];
 
 export const TEAM_EDITABLE: Record<Team, ContentStatus[]> = {
   delta: ['drafting', 'review', 'siap_upload', 'terjadwal', 'published', 'diiklankan'],
   creative: ['drafting', 'review'],
-  distribution: ['siap_upload', 'terjadwal'],
+  distribution: ['siap_upload', 'terjadwal', 'published'],
   ads: ['published', 'diiklankan'],
   pm: [],
   finance: [],
