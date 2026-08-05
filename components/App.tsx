@@ -213,6 +213,7 @@ export default function App() {
   const [view, setView] = useState<View>('board');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileNav, setMobileNav] = useState(false);
   const [booting, setBooting] = useState(true);
 
   useEffect(() => {
@@ -298,7 +299,22 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
+      {/* Hanya tampil di layar kecil — lihat globals.css */}
+      <button
+        className="mobile-nav-btn"
+        aria-label="Buka menu"
+        onClick={() => setMobileNav(true)}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+          <line x1="4" y1="7" x2="20" y2="7" />
+          <line x1="4" y1="12" x2="20" y2="12" />
+          <line x1="4" y1="17" x2="20" y2="17" />
+        </svg>
+      </button>
+      {mobileNav && <div className="nav-backdrop" onClick={() => setMobileNav(false)} />}
+
+      <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileNav ? 'mobile-open' : ''}`}>
         <div className="brand">
           <AlphaBadge size={30} />
           {!collapsed && (
@@ -333,13 +349,13 @@ export default function App() {
             </button>
             {accMenuOpen && (
               <div className="account-menu">
-                <button className="account-option" onClick={() => { setActiveProject('all'); setAccMenuOpen(false); }}>
+                <button className="account-option" onClick={() => { setActiveProject('all'); setAccMenuOpen(false); setMobileNav(false); }}>
                   <div className="acc-avatar" style={{ background: 'var(--raised)', color: 'var(--text)' }}>∗</div>
                   <div className="acc-name">Semua project</div>
                   {activeProject === 'all' && <span className="check">✓</span>}
                 </button>
                 {projects.map((pr) => (
-                  <button key={pr.id} className="account-option" onClick={() => { setActiveProject(pr.id); setAccMenuOpen(false); }}>
+                  <button key={pr.id} className="account-option" onClick={() => { setActiveProject(pr.id); setAccMenuOpen(false); setMobileNav(false); }}>
                     <div className="acc-avatar">{initials(pr.name)}</div>
                     <div>
                       <div className="acc-name">{pr.name}</div>
@@ -384,7 +400,7 @@ export default function App() {
             key={n.key}
             className={`nav-item ${view === n.key ? 'active' : ''}`}
             title={collapsed ? n.label : undefined}
-            onClick={() => setView(n.key)}
+            onClick={() => { setView(n.key); setMobileNav(false); }}
           >
             <NavIcon view={n.key} />
             {!collapsed && n.label}
