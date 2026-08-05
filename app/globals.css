@@ -1013,18 +1013,40 @@ label.btn.act input[type='file'] { display: none; }
   .content-area { padding: 14px 12px 96px; }
   .board { padding: 14px 12px 24px; }
 
-  /* Kolom judul menempel saat tabel digeser mendatar */
+  /* ---- Kolom checkbox + judul menempel saat tabel digeser mendatar ----
+     Urutan tumpuk (z-index) WAJIB begini, kalau tidak baris pertama akan
+     menimpa baris header:
+       header pojok kiri (th 1-2)  = 6   ← paling atas
+       header biasa (th lain)      = 5
+       sel body yang menempel      = 1
+       sel body biasa              = auto
+     <th> di Board.tsx memakai style inline (top/zIndex), dan inline SELALU
+     menang atas stylesheet — makanya di sini dipaksa pakai !important. */
+  .table-wrap thead th { z-index: 5 !important; }
+
   .table-wrap thead th:nth-child(1),
   .table-wrap tbody td:nth-child(1) {
-    position: sticky; left: 0; z-index: 3; background: var(--panel);
+    position: sticky; left: 0;
+    background-color: var(--panel);
+    /* ikut semburat amber baris yang belum ada link drive */
+    background-image: inherit;
   }
   .table-wrap thead th:nth-child(2),
   .table-wrap tbody td:nth-child(2) {
-    position: sticky; left: 38px; z-index: 3; background: var(--panel);
+    position: sticky; left: 38px;
+    background-color: var(--panel);
+    background-image: inherit;
     box-shadow: 6px 0 10px -8px rgba(0,0,0,.7);
   }
+  .table-wrap tbody td:nth-child(1),
+  .table-wrap tbody td:nth-child(2) { z-index: 1; }
+
   .table-wrap thead th:nth-child(1),
-  .table-wrap thead th:nth-child(2) { z-index: 6; }
+  .table-wrap thead th:nth-child(2) {
+    z-index: 6 !important;
+    background-color: var(--raised);
+    background-image: none;
+  }
 
   .table-wrap td { padding: 10px 12px; }
   .table-wrap th { padding: 10px 12px; }
