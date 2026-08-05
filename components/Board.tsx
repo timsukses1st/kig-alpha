@@ -1481,13 +1481,21 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                   return (
                     <tr
                       key={row.id}
+                      // Belum ada link drive → seluruh barisnya diberi semburat amber,
+                      // sama seperti penanda di kartu papan dulu.
+                      style={row.asset_url ? undefined : {
+                        backgroundImage: 'linear-gradient(rgba(245,158,11,.07), rgba(245,158,11,.07))',
+                      }}
                       onContextMenu={(e) => { e.preventDefault(); openCtx(row, e.clientX, e.clientY); }}
                       onTouchStart={(e) => startLongPress(row, e)}
                       onTouchEnd={cancelLongPress}
                       onTouchMove={cancelLongPress}
                       onTouchCancel={cancelLongPress}
                     >
-                      <td style={{ width: 38 }}>
+                      <td style={{
+                        width: 38,
+                        boxShadow: row.asset_url ? undefined : 'inset 3px 0 0 var(--amber)',
+                      }}>
                         <input
                           type="checkbox"
                           checked={selected.includes(row.id)}
