@@ -91,13 +91,26 @@ const COLUMNS: { key: ColKey; label: string; width: number }[] = [
   { key: 'tayang', label: 'Tayang', width: 105 },
 ];
 
-/** Empat peran PIC dalam satu tempat. Tim 'copywriter' belum ada di daftar
- *  anggota, jadi pilihannya diambil dari tim Creative (+ Delta) seperti PIC Content. */
-const PIC_SLOTS: { field: 'pic_copywriter' | 'pic_creative' | 'pic_distribution' | 'pic_ads'; label: string; team: 'creative' | 'distribution' | 'ads' }[] = [
-  { field: 'pic_copywriter', label: 'PIC Copywriter', team: 'creative' },
-  { field: 'pic_creative', label: 'PIC Content', team: 'creative' },
-  { field: 'pic_distribution', label: 'PIC Distribution', team: 'distribution' },
-  { field: 'pic_ads', label: 'PIC Ads', team: 'ads' },
+/**
+ * Empat peran PIC dalam satu tempat.
+ *
+ * Copywriter & Content sama-sama tim Creative — bedanya cuma tugas: copywriter
+ * menyusun briefnya, content yang menggarap materinya. Karena satu divisi,
+ * warnanya sama; yang membedakan bentuknya (garis vs terisi).
+ */
+const divColor = (k: Division) => DIVISIONS.find((d) => d.key === k)?.color || 'var(--text-3)';
+
+const PIC_SLOTS: {
+  field: 'pic_copywriter' | 'pic_creative' | 'pic_distribution' | 'pic_ads';
+  label: string;
+  team: 'creative' | 'distribution' | 'ads';
+  desc: string;
+  solid: boolean;
+}[] = [
+  { field: 'pic_copywriter', label: 'PIC Copywriter', team: 'creative', desc: 'menyusun brief', solid: false },
+  { field: 'pic_creative', label: 'PIC Content', team: 'creative', desc: 'menggarap materinya', solid: true },
+  { field: 'pic_distribution', label: 'PIC Distribution', team: 'distribution', desc: 'menayangkan', solid: true },
+  { field: 'pic_ads', label: 'PIC Ads', team: 'ads', desc: 'mengiklankan', solid: true },
 ];
 
 /** Sel teks: satu baris, dipotong dengan elipsis — jangan pernah pecah per huruf. */
@@ -283,7 +296,9 @@ function PicCell({ row, members, disabled, onSave }: {
         onClick={openPanel}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
-        title={filled.length ? filled.map((x) => `${x.sl.label}: ${x.name}`).join('\n') : 'Belum ada PIC'}
+        title={filled.length
+          ? filled.map((x) => `${x.sl.label} (${x.sl.desc}): ${x.name}`).join('\n')
+          : 'Belum ada PIC — klik untuk menunjuk'}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 4,
           background: hover ? 'var(--raised)' : 'transparent',
@@ -298,19 +313,23 @@ function PicCell({ row, members, disabled, onSave }: {
           <span style={{ flex: 1 }}>—</span>
         ) : (
           <span style={{ flex: 1, display: 'flex', gap: 3 }}>
-            {filled.map((x) => (
-              <span
-                key={x.sl.field}
-                style={{
-                  width: 21, height: 21, borderRadius: 999,
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  background: 'var(--raised)', border: '1px solid var(--border)',
-                  color: 'var(--text)', fontSize: 10.5, fontWeight: 700,
-                }}
-              >
-                {initials(x.name)}
-              </span>
-            ))}
+            {filled.map((x) => {
+              const col = divColor(x.sl.team as Division);
+              return (
+                <span
+                  key={x.sl.field}
+                  style={{
+                    width: 21, height: 21, borderRadius: 999,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    background: x.sl.solid ? `color-mix(in srgb, ${col} 22%, transparent)` : 'transparent',
+                    border: '1px solid ' + col,
+                    color: col, fontSize: 10.5, fontWeight: 700,
+                  }}
+                >
+                  {initials(x.name)}
+                </span>
+              );
+            })}
           </span>
         )}
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -335,22 +354,35 @@ function PicCell({ row, members, disabled, onSave }: {
               boxShadow: '0 14px 36px rgba(0,0,0,.55)',
             }}
           >
-            {PIC_SLOTS.map((sl) => (
-              <div key={sl.field} style={{ marginBottom: 8 }}>
-                <div className="modal-col-label" style={{ marginBottom: 3 }}>{sl.label}</div>
-                <select
-                  value={row[sl.field] || ''}
-                  disabled={disabled}
-                  onChange={(e) => onSave(sl.field, e.target.value || null)}
-                  style={{ width: '100%' }}
-                >
-                  <option value="">—</option>
-                  {optionsFor(sl.team).map((m) => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
+            {PIC_SLOTS.map((sl, i) => {
+              const col = divColor(sl.team as Division);
+              const newGroup = i === 0 || PIC_SLOTS[i - 1].team !== sl.team;
+              return (
+                <div key={sl.field} style={{ marginBottom: 9, marginTop: newGroup && i > 0 ? 12 : 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: 999,
+                      background: sl.solid ? col : 'transparent',
+                      border: '1px solid ' + col,
+                      flexShrink: 0,
+                    }} />
+                    <span className="modal-col-label" style={{ margin: 0 }}>{sl.label}</span>
+                    <span className="sub" style={{ fontSize: 11 }}>· {sl.desc}</span>
+                  </div>
+                  <select
+                    value={row[sl.field] || ''}
+                    disabled={disabled}
+                    onChange={(e) => onSave(sl.field, e.target.value || null)}
+                    style={{ width: '100%' }}
+                  >
+                    <option value="">—</option>
+                    {optionsFor(sl.team).map((m) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
             {disabled && (
               <div className="hint" style={{ margin: 0 }}>Tahap ini dikelola tim lain.</div>
             )}
