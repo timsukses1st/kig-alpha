@@ -254,7 +254,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [searchPos, setSearchPos] = useState<{ top: number; left: number } | null>(null);
   const searchBoxRef = useRef<HTMLDivElement | null>(null);
   // ---- duplikat ke platform lain ----
-  const [dupRow, setDupRow] = useState<ContentRow | null>(null);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [dupRows, setDupRows] = useState<ContentRow[] | null>(null);
   const [dupTargets, setDupTargets] = useState<string[]>([]);
   const [dupBusy, setDupBusy] = useState(false);
   const [dupErr, setDupErr] = useState('');
@@ -606,40 +607,58 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     });
   };
 
-  const openDup = (row: ContentRow) => {
+  const openDup = (rows_: ContentRow[]) => {
+    if (!rows_.length) return;
     setDupErr('');
     setDupTargets([]);
-    setDupRow(row);
+    setDupRows(rows_);
   };
 
   const runDuplicate = async () => {
-    if (!dupRow || !profile || dupTargets.length === 0) return;
+    if (!dupRows || !profile || dupTargets.length === 0) return;
     setDupBusy(true);
     setDupErr('');
 
-    // Konten asal & semua salinannya berbagi satu group_id.
-    const gid = dupRow.group_id || newGroupId();
+    const payloads: Record<string, unknown>[] = [];
+    const groupPatch: { id: string; gid: string }[] = [];
+    let skipped = 0;
 
-    const payloads = dupTargets.map((pf) => ({
-      title: dupRow.title,
-      project_id: dupRow.project_id,
-      account_id: dupRow.account_id,
-      category_id: dupRow.category_id,
-      status: dupRow.status,
-      publish_date: dupRow.publish_date,
-      caption: dupRow.caption,
-      hashtags: dupRow.hashtags,
-      visual_hook: dupRow.visual_hook,
-      asset_url: dupRow.asset_url,
-      pic_creative: dupRow.pic_creative,
-      pic_distribution: dupRow.pic_distribution,
-      pic_ads: dupRow.pic_ads,
-      potensi_fyp: dupRow.potensi_fyp,
-      platform: pf,
-      group_id: gid,
-      created_by: profile.id,
-      // post_url & ads_code SENGAJA tidak disalin — keduanya khas per tayangan.
-    }));
+    for (const row of dupRows) {
+      // Tiap konten asal punya kelompoknya sendiri; salinannya ikut kelompok itu.
+      const gid = row.group_id || newGroupId();
+      if (!row.group_id) groupPatch.push({ id: row.id, gid });
+
+      for (const pf of dupTargets) {
+        // Lewati kalau konten itu memang sudah ada di platform tersebut.
+        if (row.platform === pf) { skipped++; continue; }
+        payloads.push({
+          title: row.title,
+          project_id: row.project_id,
+          account_id: row.account_id,
+          category_id: row.category_id,
+          status: row.status,
+          publish_date: row.publish_date,
+          caption: row.caption,
+          hashtags: row.hashtags,
+          visual_hook: row.visual_hook,
+          asset_url: row.asset_url,
+          pic_creative: row.pic_creative,
+          pic_distribution: row.pic_distribution,
+          pic_ads: row.pic_ads,
+          potensi_fyp: row.potensi_fyp,
+          platform: pf,
+          group_id: gid,
+          created_by: profile.id,
+          // post_url & ads_code SENGAJA tidak disalin — keduanya khas per tayangan.
+        });
+      }
+    }
+
+    if (payloads.length === 0) {
+      setDupBusy(false);
+      setDupErr('Semua konten terpilih sudah ada di platform tersebut.');
+      return;
+    }
 
     const { error: insErr } = await supabase.from('contents').insert(payloads);
     if (insErr) {
@@ -647,20 +666,30 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       setDupErr('Gagal menduplikat — cek wewenang tim kamu untuk tahap ini.');
       return;
     }
-    // Tandai konten asal ikut serumpun (kalau belum).
-    if (!dupRow.group_id) {
-      await supabase.from('contents').update({ group_id: gid }).eq('id', dupRow.id);
+    for (const g of groupPatch) {
+      await supabase.from('contents').update({ group_id: g.gid }).eq('id', g.id);
     }
+
     setDupBusy(false);
-    setDupRow(null);
-    flashToast(`${payloads.length} salinan dibuat.`);
+    setDupRows(null);
+    setSelected([]);
+    flashToast(
+      `${payloads.length} salinan dibuat${skipped ? ` · ${skipped} dilewati (sudah ada di platform itu)` : ''}.`
+    );
     load();
   };
+
+  // Pilihan dibersihkan tiap kali daftar berubah, supaya tidak ada aksi
+  // massal yang mengenai baris di luar layar.
+  useEffect(() => { setSelected([]); }, [projectFilter, division, search, range, pickDate, onlyTodo]);
+
+  const toggleSel = (id: string) =>
+    setSelected((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
 
   const shownCols = COLUMNS.filter((c) => !hiddenCols.includes(c.key));
   // Dengan tableLayout 'fixed', lebar total harus dihitung sendiri supaya
   // scroll mendatarnya pas — tidak ada kolom yang terhimpit.
-  const tableWidth = TITLE_COL_W + shownCols.reduce((a, c) => a + c.width, 0);
+  const tableWidth = 38 + TITLE_COL_W + shownCols.reduce((a, c) => a + c.width, 0);
   const toggleCol = (k: ColKey) =>
     setHiddenCols((h) => (h.includes(k) ? h.filter((x) => x !== k) : [...h, k]));
 
@@ -1254,6 +1283,20 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
             <table style={{ tableLayout: 'fixed', width: tableWidth, minWidth: '100%' }}>
               <thead>
                 <tr>
+                  <th style={{
+                    width: 38, minWidth: 38, maxWidth: 38,
+                    position: 'sticky', top: 0, background: 'var(--raised)', zIndex: 2,
+                  }}>
+                    <input
+                      type="checkbox"
+                      title="Pilih semua yang sedang tampil"
+                      checked={filtered.length > 0 && selected.length === filtered.length}
+                      ref={(el) => {
+                        if (el) el.indeterminate = selected.length > 0 && selected.length < filtered.length;
+                      }}
+                      onChange={(e) => setSelected(e.target.checked ? filtered.map((r) => r.id) : [])}
+                    />
+                  </th>
                   {th('Konten', TITLE_COL_W)}
                   {shownCols.map((c) => th(c.label, c.width))}
                 </tr>
@@ -1275,6 +1318,14 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       onTouchMove={cancelLongPress}
                       onTouchCancel={cancelLongPress}
                     >
+                      <td style={{ width: 38 }}>
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(row.id)}
+                          onChange={() => toggleSel(row.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </td>
                       <td style={{ maxWidth: TITLE_COL_W }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                           <span
@@ -1449,7 +1500,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                 })}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={shownCols.length + 1} className="empty">
+                    <td colSpan={shownCols.length + 2} className="empty">
                       Tidak ada konten yang cocok dengan filter ini.
                     </td>
                   </tr>
@@ -1457,6 +1508,42 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
               </tbody>
             </table>
           </div>
+
+          {selected.length > 0 && (
+            <div
+              style={{
+                position: 'fixed',
+                left: '50%',
+                bottom: 26,
+                transform: 'translateX(-50%)',
+                zIndex: 70,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '10px 14px',
+                background: 'var(--raised)',
+                border: '1px solid var(--border)',
+                borderRadius: 999,
+                boxShadow: '0 14px 36px rgba(0,0,0,.55)',
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                {selected.length} dipilih
+              </span>
+              <button
+                className="btn primary"
+                style={{ whiteSpace: 'nowrap' }}
+                onClick={() => openDup(rows.filter((r) => selected.includes(r.id)))}
+              >
+                ⧉ Duplikat ke platform lain
+              </button>
+              <button
+                className="btn ghost"
+                title="Batalkan pilihan"
+                onClick={() => setSelected([])}
+              >✕</button>
+            </div>
+          )}
 
           <p className="cal-legend">
             Ketik langsung di kolomnya — tersimpan otomatis saat pindah kolom atau tekan Enter, Esc untuk batal.
@@ -1924,7 +2011,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
             <CtxItem
               label="Duplikat ke platform lain"
               icon={ic('M9 9h12v12H9zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1')}
-              onPick={() => { setCtxMenu(null); openDup(row); }}
+              onPick={() => { setCtxMenu(null); openDup([row]); }}
             />
             <CtxItem
               label="Buka Link Post"
@@ -1961,8 +2048,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       })()}
 
       {/* Duplikat konten ke platform lain */}
-      {dupRow && (
-        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !dupBusy && setDupRow(null)}>
+      {dupRows && dupRows.length > 0 && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !dupBusy && setDupRows(null)}>
           <div className="modal" style={{ maxWidth: 460 }}>
             <div className="modal-head">
               <div>
@@ -1975,7 +2062,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                   Tiap platform jadi barisnya sendiri, jadi caption &amp; jadwalnya tetap bisa dibedakan.
                 </div>
               </div>
-              <button className="btn ghost modal-close" disabled={dupBusy} onClick={() => setDupRow(null)}>✕</button>
+              <button className="btn ghost modal-close" disabled={dupBusy} onClick={() => setDupRows(null)}>✕</button>
             </div>
 
             <div style={{ padding: '4px 24px 0' }}>
@@ -1984,7 +2071,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                 <div className="status-chip" style={{ ['--sc' as never]: 'var(--accent)', maxWidth: '100%' }}>
                   <span className="sq" style={{ background: 'var(--accent)' }} />
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {plainTitle(dupRow.title) || '(tanpa judul)'}
+                    {dupRows.length === 1
+                      ? (plainTitle(dupRows[0].title) || '(tanpa judul)')
+                      : `${dupRows.length} konten terpilih`}
                   </span>
                 </div>
               </div>
@@ -1993,7 +2082,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                 <label>Pilih platform tujuan</label>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
                   {PLATFORMS.map((pf) => {
-                    const already = dupRow.platform === pf.key;
+                    const already = dupRows.length === 1 && dupRows[0].platform === pf.key;
                     const picked = dupTargets.includes(pf.key);
                     return (
                       <button
@@ -2030,6 +2119,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
               <div className="hint" style={{ marginTop: 10 }}>
                 <b>Ikut disalin:</b> brief, caption, hashtag, kategori, link drive, PIC, tanggal tayang.<br />
                 <b>Tidak disalin:</b> Link Post &amp; Kode Ads — keduanya selalu beda per platform.
+                {dupRows.length > 1 && <><br />Konten yang sudah berada di platform tujuan akan dilewati otomatis.</>}
               </div>
 
               {dupErr && <p className="error-msg" style={{ marginTop: 10 }}>{dupErr}</p>}
@@ -2038,11 +2128,11 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
             <div className="modal-foot">
               <span className="foot-note">
                 {dupTargets.length > 0
-                  ? `${dupTargets.length} baris baru akan dibuat.`
+                  ? `Sampai ${dupTargets.length * dupRows.length} baris baru akan dibuat.`
                   : 'Pilih minimal satu platform.'}
               </span>
               <div className="right">
-                <button className="btn" disabled={dupBusy} onClick={() => setDupRow(null)}>Batal</button>
+                <button className="btn" disabled={dupBusy} onClick={() => setDupRows(null)}>Batal</button>
                 <button
                   className="btn primary"
                   disabled={dupBusy || dupTargets.length === 0}
