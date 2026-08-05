@@ -527,10 +527,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       if (projectFilter !== 'all' && r.project_id !== projectFilter) return false;
       if (!inRange(r)) return false;
       // "Perlu ditindak" = aset belum ada, atau sudah tayang tapi link post kosong
-      if (onlyTodo) {
-        const needsAsset = !r.asset_url;
-        const needsPost = (r.status === 'published' || r.status === 'diiklankan') && !r.post_url;
-        if (!needsAsset && !needsPost) return false;
+      if (onlyTodo && !(!r.asset_url || ((r.status === 'published' || r.status === 'diiklankan') && !r.post_url))) {
+        return false;
       }
       if (query) {
         if (query.pf.length && !query.pf.includes(r.platform || '')) return false;
@@ -846,6 +844,11 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     );
     load();
   };
+
+  const needsAction = (r: ContentRow) =>
+    !r.asset_url || ((r.status === 'published' || r.status === 'diiklankan') && !r.post_url);
+
+  const todoCount = useMemo(() => filtered.filter(needsAction).length, [filtered]);
 
   // Pilihan dibersihkan tiap kali daftar berubah, supaya tidak ada aksi
   // massal yang mengenai baris di luar layar.
@@ -1245,7 +1248,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       <div className="div-desc">
         {/* Nama divisi dihapus dari sini — sudah terbaca dari tab di atas.
             Ruangnya dipakai untuk filter yang benar-benar dipakai sehari-hari. */}
-        <div ref={searchBoxRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: 280 }}>
+        <div ref={searchBoxRef} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: 280, maxWidth: '100%' }}>
           <svg
             width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"
@@ -1283,7 +1286,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                 position: 'fixed',
                 top: searchPos.top,
                 left: searchPos.left,
-                width: 300,
+                width: 'min(300px, calc(100vw - 24px))',
                 maxHeight: 300,
                 overflowY: 'auto',
                 zIndex: 60,
@@ -1358,7 +1361,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
             fontWeight: onlyTodo ? 600 : undefined,
           }}
         >
-          ⚑ Perlu ditindak
+          ⚑ Perlu ditindak{todoCount > 0 ? ` (${todoCount})` : ''}
         </button>
 
         <div className="range-tabs">
@@ -1412,7 +1415,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
               }}
             >
               <div className="modal-col-label" style={{ marginBottom: 8 }}>
-                Request dari PM ({visibleRequests.length})
+                Request dari Project Manager ({visibleRequests.length})
               </div>
               {visibleRequests.map((rq) => (
                 <div
@@ -1429,6 +1432,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     </div>
                     <div className="sub" style={{ fontSize: 12 }}>
                       {accName(rq.account_id)}
+                      {rq.requester_name ? ' · oleh ' + rq.requester_name : ''}
                       {rq.requested_date ? ' · butuh ' + fmtDate(rq.requested_date) : ''}
                       {rq.note ? ' · ' + rq.note : ''}
                     </div>
@@ -1625,8 +1629,13 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                         if (c.key === 'drive' || c.key === 'post') {
                           const field = c.key === 'drive' ? 'asset_url' : 'post_url';
                           const val = (c.key === 'drive' ? row.asset_url : row.post_url) || '';
+                          // Sudah tayang tapi link post belum diisi → tandai selnya,
+                          // supaya jelas kenapa baris ini terhitung "perlu ditindak".
+                          const lacking = c.key === 'post'
+                            && !val
+                            && (row.status === 'published' || row.status === 'diiklankan');
                           return (
-                            <td key={c.key}>
+                            <td key={c.key} style={lacking ? { boxShadow: 'inset 0 0 0 1px var(--amber)', borderRadius: 8 } : undefined}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                                 <CellInput
                                   value={val}
@@ -1694,6 +1703,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
           {selected.length > 0 && (
             <div
+              className="bulk-bar"
               style={{
                 position: 'fixed',
                 left: '50%',
@@ -1718,7 +1728,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                 style={{ whiteSpace: 'nowrap' }}
                 onClick={() => openDup(rows.filter((r) => selected.includes(r.id)))}
               >
-                ⧉ Duplikat ke platform lain
+                ⧉ <span className="bulk-long">Duplikat ke platform lain</span>
+                <span className="bulk-short">Duplikat</span>
               </button>
               <button
                 className="btn ghost"
@@ -1749,10 +1760,35 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
               <div>
                 <div className="modal-eyebrow">
                   <span className="sq" style={{ background: 'var(--req)' }} />
-                  Request konten · PM
+                  Request konten
                 </div>
                 <div className="modal-title">Request Konten Baru</div>
-                <div className="modal-sub">Masuk antrian Request di board — Creative yang mengangkatnya jadi Drafting.</div>
+                {/* Ditonjolkan supaya jelas ini wewenang Project Manager, bukan tim lain */}
+                <div style={{ margin: '7px 0 4px' }}>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 7,
+                      padding: '5px 13px',
+                      borderRadius: 999,
+                      border: '1px solid var(--req)',
+                      background: 'color-mix(in srgb, var(--req) 16%, transparent)',
+                      color: 'var(--req)',
+                      fontSize: 12.5,
+                      fontWeight: 700,
+                      letterSpacing: '.05em',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    <span style={{ width: 7, height: 7, borderRadius: 999, background: 'var(--req)' }} />
+                    Project Manager
+                  </span>
+                </div>
+                <div className="modal-sub">
+                  Diajukan oleh <b>Project Manager</b>. Masuk antrian Request di board —
+                  tim Creative yang mengangkatnya jadi Drafting.
+                </div>
               </div>
               <button className="btn ghost modal-close" onClick={() => setReqModalOpen(false)}>✕</button>
             </div>
