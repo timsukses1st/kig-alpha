@@ -544,9 +544,6 @@ td select {
 .cal-month { font-weight: 700; font-size: 14px; min-width: 140px; text-align: center; }
 .calendar {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;
-  /* Tanpa ini, satu hari yang isinya belasan konten menarik seluruh barisnya
-     jadi sangat tinggi dan bentuk kalender bulanannya hilang. */
-  align-items: start;
 }
 .cal-dayname {
   font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
@@ -554,18 +551,20 @@ td select {
 }
 .cal-cell {
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: 10px; min-height: 96px; padding: 8px;
-  /* Dulu hanya ada min-height. Begitu satu hari berisi belasan konten, selnya
-     memanjang tanpa batas. Sekarang tingginya dipatok dan isinya digeser
-     di dalam sel. */
-  max-height: 216px; overflow-y: auto;
-  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
+  border-radius: 10px; padding: 8px;
+  /* TINGGI TETAP, bukan min-height. Dulu hanya min-height, jadi hari yang
+     berisi belasan konten memanjang tanpa batas dan bentuk kalendernya hilang.
+     Dipatok supaya semua sel sama tinggi — kalender rompal kalau tidak. */
+  height: 188px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: transparent transparent;
 }
-.cal-cell::-webkit-scrollbar { width: 6px; }
+/* Scrollbar disembunyikan sampai kursor masuk ke selnya — kalau selalu tampil,
+   14 batang abu-abu muncul sekaligus dan tampilannya jadi ramai. */
+.cal-cell:hover { scrollbar-color: var(--border-strong) transparent; }
+.cal-cell::-webkit-scrollbar { width: 5px; }
 .cal-cell::-webkit-scrollbar-track { background: transparent; }
-.cal-cell::-webkit-scrollbar-thumb {
-  background: var(--border-strong); border-radius: 3px;
-}
+.cal-cell::-webkit-scrollbar-thumb { background: transparent; border-radius: 3px; }
+.cal-cell:hover::-webkit-scrollbar-thumb { background: var(--border-strong); }
 /* Nomor tanggal ikut menempel saat isi sel digeser — biar tidak bingung
    sedang melihat tanggal berapa. */
 .cal-daynum-sticky,
@@ -581,10 +580,11 @@ td select {
 .cal-item {
   background: var(--raised); border: 1px solid var(--border);
   border-left: 3px solid var(--ci, var(--accent));
-  border-radius: 7px; padding: 6px 8px; margin-bottom: 6px;
+  /* Dipadatkan supaya 3 konten muat tanpa digeser — sebelumnya cuma 2. */
+  border-radius: 7px; padding: 5px 7px; margin-bottom: 5px;
 }
 .cal-item-title {
-  font-size: 11.5px; font-weight: 700; line-height: 1.3;
+  font-size: 11px; font-weight: 700; line-height: 1.28;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; overflow-wrap: anywhere;
 }
@@ -1105,7 +1105,7 @@ label.btn.act input[type='file'] { display: none; }
   .cw-panel { bottom: 14px; right: 12px; left: 12px; width: auto; height: 76vh; }
 
   .calendar { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-  .cal-cell { min-height: 64px; max-height: 150px; padding: 4px; }
+  .cal-cell { height: 132px; padding: 4px; }
   .cal-item-acc { display: none; }
 
   .ot-desc-clip { max-width: 180px; }
