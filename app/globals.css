@@ -544,6 +544,9 @@ td select {
 .cal-month { font-weight: 700; font-size: 14px; min-width: 140px; text-align: center; }
 .calendar {
   display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px;
+  /* Tanpa ini, satu hari yang isinya belasan konten menarik seluruh barisnya
+     jadi sangat tinggi dan bentuk kalender bulanannya hilang. */
+  align-items: start;
 }
 .cal-dayname {
   font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em;
@@ -552,7 +555,25 @@ td select {
 .cal-cell {
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 10px; min-height: 96px; padding: 8px;
+  /* Dulu hanya ada min-height. Begitu satu hari berisi belasan konten, selnya
+     memanjang tanpa batas. Sekarang tingginya dipatok dan isinya digeser
+     di dalam sel. */
+  max-height: 216px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
 }
+.cal-cell::-webkit-scrollbar { width: 6px; }
+.cal-cell::-webkit-scrollbar-track { background: transparent; }
+.cal-cell::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: 3px;
+}
+/* Nomor tanggal ikut menempel saat isi sel digeser — biar tidak bingung
+   sedang melihat tanggal berapa. */
+.cal-daynum-sticky,
+.cal-cell > .cal-daynum {
+  position: sticky; top: -8px; z-index: 1;
+  background: var(--panel); padding-top: 2px; padding-bottom: 4px;
+}
+.cal-cell.today > .cal-daynum { background: transparent; }
 .cal-cell.blank { background: transparent; border-color: transparent; }
 .cal-cell.today { border-color: var(--accent); background: var(--accent-soft); }
 .cal-daynum { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-bottom: 6px; }
@@ -1033,10 +1054,13 @@ label.btn.act input[type='file'] { display: none; }
   }
   .table-wrap thead th:nth-child(2),
   .table-wrap tbody td:nth-child(2) {
-    position: sticky; left: 38px;
+    position: sticky; left: 38px;   /* = CHECK_COL_W di Board.tsx */
     background-color: var(--panel);
     background-image: inherit;
-    box-shadow: 6px 0 10px -8px rgba(0,0,0,.7);
+    /* Garis tegas + bayangan: tanpa ini kolom yang lewat di bawahnya
+       kelihatan seperti tulisan terpotong, bukan seperti kolom terkunci. */
+    border-right: 1px solid var(--border-strong);
+    box-shadow: 10px 0 12px -6px rgba(0,0,0,.55);
   }
   .table-wrap tbody td:nth-child(1),
   .table-wrap tbody td:nth-child(2) { z-index: 1; }
@@ -1081,7 +1105,7 @@ label.btn.act input[type='file'] { display: none; }
   .cw-panel { bottom: 14px; right: 12px; left: 12px; width: auto; height: 76vh; }
 
   .calendar { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
-  .cal-cell { min-height: 64px; padding: 4px; }
+  .cal-cell { min-height: 64px; max-height: 150px; padding: 4px; }
   .cal-item-acc { display: none; }
 
   .ot-desc-clip { max-width: 180px; }
