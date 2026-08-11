@@ -1,5 +1,5 @@
 export type Role = 'superadmin' | 'manager' | 'tim';
-export type Team = 'delta' | 'creative' | 'distribution' | 'ads' | 'pm' | 'finance';
+export type Team = 'delta' | 'creative' | 'distribution' | 'ads' | 'pm' | 'finance' | 'ga';
 export type ContentStatus =
   | 'drafting' | 'review'
   | 'siap_upload' | 'terjadwal'
@@ -314,6 +314,10 @@ export const TEAM_EDITABLE: Record<Team, ContentStatus[]> = {
   ads: ['published', 'diiklankan'],
   pm: [],
   finance: [],
+  // GA (General Affairs) — urusan umum/operasional kantor, tidak menyentuh
+  // alur konten. Sama seperti pm & finance: boleh melihat, tidak boleh
+  // memindahkan status konten.
+  ga: [],
 };
 
 export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
@@ -323,6 +327,7 @@ export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
   ads: ['published', 'diiklankan'],
   pm: [],
   finance: [],
+  ga: [],
 };
 
 export function canEditRow(profile: Profile | null, status: ContentStatus): boolean {
