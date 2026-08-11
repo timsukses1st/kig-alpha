@@ -6,7 +6,10 @@ import { initials, tagColor, VERTICALS, type Account, type ContentCategory, type
 import { sigma, type SigmaProject } from '@/lib/sigma';
 
 const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
-const TEAMS: (Team | '')[] = ['', 'delta', 'creative', 'distribution', 'ads', 'pm', 'finance'];
+const TEAMS: (Team | '')[] = ['', 'delta', 'creative', 'distribution', 'ads', 'pm', 'finance', 'ga'];
+/** Daftar tim tanpa opsi kosong. Dipakai di modal Tambah User supaya tidak
+    ada dua daftar terpisah yang bisa lupa disamakan. */
+const TEAM_OPTIONS = TEAMS.filter(Boolean) as Team[];
 const MEMBER_TEAMS: Team[] = ['creative', 'distribution', 'ads', 'delta'];
 
 interface Props {
@@ -1104,7 +1107,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                   <label>Team</label>
                   <select value={nu.team} onChange={(e) => setNu({ ...nu, team: e.target.value })}>
                     <option value="">—</option>
-                    {['delta', 'creative', 'distribution', 'ads', 'pm', 'finance'].map((t) => <option key={t} value={t}>{t}</option>)}
+                    {TEAM_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div className="field">
