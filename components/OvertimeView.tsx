@@ -209,10 +209,18 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     [scoped, filter],
   );
 
-  // rekap per orang (hanya yang disetujui)
+  /**
+   * Rekap & KPI memakai `scoped`, bukan `personRows` — supaya ikut tombol
+   * "Lembur saya / Semua tim" persis seperti tabelnya.
+   *
+   * Sebelumnya keduanya memakai data penuh, sehingga di layar yang sama tabel
+   * bisa menampilkan 1 baris sementara rekap di bawahnya menampilkan 3 orang.
+   * Yang TIDAK ikut cuma saringan status (Diajukan/Disetujui/Ditolak) — rekap
+   * memang perlu semuanya untuk bisa memisahkan mana yang disetujui.
+   */
   const rekap = useMemo(() => {
     const map = new Map<string, { name: string; hours: number; count: number }>();
-    personRows.filter((r) => r.status === 'disetujui').forEach((r) => {
+    scoped.filter((r) => r.status === 'disetujui').forEach((r) => {
       const key = r.requester_id || r.requester_name || '?';
       const cur = map.get(key) || { name: r.requester_name || '—', hours: 0, count: 0 };
       cur.hours += durationHours(r.start_time, r.end_time);
@@ -220,9 +228,10 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
       map.set(key, cur);
     });
     return Array.from(map.values()).sort((a, b) => b.hours - a.hours);
-  }, [personRows]);
+  }, [scoped]);
 
-  const myPending = personRows.filter((r) => r.status === 'diajukan' && (scope === 'tim' || r.requester_id === profile?.id)).length;
+  // `scoped` sudah menerapkan Lembur saya / Semua tim, jadi tidak perlu diulang di sini.
+  const myPending = scoped.filter((r) => r.status === 'diajukan').length;
 
   return (
     <>
@@ -239,7 +248,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
       <div className="content-area">
         <div className="kpi-row">
           <div className="kpi"><div className="kpi-label">Menunggu keputusan</div><div className="kpi-value" style={{ color: 'var(--st-review)' }}>{myPending}</div></div>
-          <div className="kpi"><div className="kpi-label">Disetujui (pengajuan)</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{personRows.filter((r) => r.status === 'disetujui').length}</div></div>
+          <div className="kpi"><div className="kpi-label">Disetujui (pengajuan)</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{scoped.filter((r) => r.status === 'disetujui').length}</div></div>
           <div className="kpi"><div className="kpi-label">Total jam disetujui</div><div className="kpi-value" style={{ fontSize: 20 }}>{fmtDur(rekap.reduce((a, r) => a + r.hours, 0))}</div></div>
         </div>
 
