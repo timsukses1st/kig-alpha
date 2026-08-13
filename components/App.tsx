@@ -11,6 +11,7 @@ import LogView from '@/components/LogView';
 import AccessView from '@/components/AccessView';
 import CalendarView from '@/components/CalendarView';
 import ReportView from '@/components/ReportView';
+import ExportView from '@/components/ExportView';
 import RecapView from '@/components/RecapView';
 import BudgetView from '@/components/BudgetView';
 import OvertimeView from '@/components/OvertimeView';
@@ -20,7 +21,7 @@ import ComplaintWidget from '@/components/ComplaintWidget';
 import ChatView from '@/components/ChatView';
 import TrackerView from '@/components/TrackerView';
 
-type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'sebaran' | 'chat' | 'laporan' | 'komplain' | 'log' | 'access';
+type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'sebaran' | 'chat' | 'laporan' | 'ekspor' | 'komplain' | 'log' | 'access';
 
 const NAV: { key: View; label: string }[] = [
   { key: 'board', label: 'Board Pipeline' },
@@ -33,6 +34,7 @@ const NAV: { key: View; label: string }[] = [
   { key: 'sebaran', label: 'Sebaran Harian' },
   { key: 'chat', label: 'Chat Project' },
   { key: 'laporan', label: 'Laporan Kerja' },
+  { key: 'ekspor', label: 'Ekspor Data' },
   { key: 'komplain', label: 'Komplain' },
   { key: 'log', label: 'Log Aktivitas' },
   { key: 'access', label: 'Kelola Akses' },
@@ -130,6 +132,13 @@ const ICON_PATHS: Record<View, React.ReactNode> = {
       <circle cx="5" cy="6" r="1" />
       <circle cx="5" cy="12" r="1" />
       <circle cx="5" cy="18" r="1" />
+    </>
+  ),
+  ekspor: (
+    <>
+      <path d="M12 3v10" />
+      <polyline points="8 9.5 12 13.5 16 9.5" />
+      <path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" />
     </>
   ),
   access: (
@@ -490,6 +499,9 @@ export default function App() {
         {view === 'sebaran' && <SebaranView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'chat' && <ChatView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'laporan' && <ReportView projects={projects} projectFilter={activeProject} />}
+        {view === 'ekspor' && (
+          <ExportView profile={profile} projects={projects} accounts={accounts} projectFilter={activeProject} />
+        )}
         {view === 'komplain' && <ComplaintView profile={profile} />}
         {view === 'log' && canSeeLog && <LogView />}
         {view === 'access' && isSuper && <AccessView selfId={session.user.id} onAccountsChanged={loadAccounts} activeProjectId={activeProject} activeProjectName={activeProj ? activeProj.name : null} />}
