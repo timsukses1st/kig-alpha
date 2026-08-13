@@ -3,7 +3,9 @@ export type Team = 'delta' | 'creative' | 'distribution' | 'ads' | 'pm' | 'finan
 export type ContentStatus =
   | 'drafting' | 'review'
   | 'siap_upload' | 'terjadwal'
-  | 'published' | 'diiklankan';
+  | 'published' | 'diiklankan'
+  /** Sudah tayang lalu kena pelanggaran platform — harus ditindak. */
+  | 'pelanggaran';
 /**
  * @deprecated Sejak v24 kategori konten pindah ke tabel `content_categories`
  * (per project). Tipe & label ini dipertahankan hanya karena kolom `pillar`
@@ -282,13 +284,14 @@ export const STATUSES: StatusDef[] = [
   { key: 'terjadwal', label: 'Terjadwal', ownerTeam: 'distribution', color: 'var(--st-terjadwal)' },
   { key: 'published', label: 'Published', ownerTeam: 'distribution', color: 'var(--st-published)' },
   { key: 'diiklankan', label: 'Diiklankan', ownerTeam: 'ads', color: 'var(--st-diiklankan)' },
+  { key: 'pelanggaran', label: 'Pelanggaran', ownerTeam: 'distribution', color: 'var(--st-pelanggaran)' },
 ];
 
 export const DIVISIONS: { key: Division; label: string; color: string; desc: string; statuses: ContentStatus[] }[] = [
   {
     key: 'semua', label: 'Semua', color: 'var(--accent)',
     desc: 'Semua konten lintas divisi — cari & edit tanpa pindah papan.',
-    statuses: ['drafting', 'review', 'siap_upload', 'terjadwal', 'published', 'diiklankan'],
+    statuses: ['drafting', 'review', 'siap_upload', 'terjadwal', 'published', 'diiklankan', 'pelanggaran'],
   },
   {
     key: 'creative', label: 'Creative', color: 'var(--st-ide)',
@@ -298,7 +301,7 @@ export const DIVISIONS: { key: Division; label: string; color: string; desc: str
   {
     key: 'distribution', label: 'Distribution', color: 'var(--st-terjadwal)',
     desc: 'Siap Upload → Terjadwal → Published. Menyusun caption, media, dan menayangkan.',
-    statuses: ['siap_upload', 'terjadwal', 'published'],
+    statuses: ['siap_upload', 'terjadwal', 'published', 'pelanggaran'],
   },
   {
     key: 'ads', label: 'Ads', color: 'var(--st-diiklankan)',
@@ -308,10 +311,13 @@ export const DIVISIONS: { key: Division; label: string; color: string; desc: str
 ];
 
 export const TEAM_EDITABLE: Record<Team, ContentStatus[]> = {
-  delta: ['drafting', 'review', 'siap_upload', 'terjadwal', 'published', 'diiklankan'],
-  creative: ['drafting', 'review'],
-  distribution: ['siap_upload', 'terjadwal', 'published'],
-  ads: ['published', 'diiklankan'],
+  delta: ['drafting', 'review', 'siap_upload', 'terjadwal', 'published', 'diiklankan', 'pelanggaran'],
+  // Creative ikut memegang 'pelanggaran' supaya konten bermasalah bisa ditarik
+  // kembali ke Drafting untuk diperbaiki.
+  creative: ['drafting', 'review', 'pelanggaran'],
+  distribution: ['siap_upload', 'terjadwal', 'published', 'pelanggaran'],
+  // Ads perlu bisa menyentuhnya untuk menghentikan iklan konten bermasalah.
+  ads: ['published', 'diiklankan', 'pelanggaran'],
   pm: [],
   finance: [],
   // GA (General Affairs) — urusan umum/operasional kantor, tidak menyentuh
@@ -321,10 +327,10 @@ export const TEAM_EDITABLE: Record<Team, ContentStatus[]> = {
 };
 
 export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
-  delta: ['drafting', 'review', 'siap_upload', 'terjadwal', 'published', 'diiklankan'],
-  creative: ['drafting', 'review'],
-  distribution: ['siap_upload', 'terjadwal', 'published'],
-  ads: ['published', 'diiklankan'],
+  delta: ['drafting', 'review', 'siap_upload', 'terjadwal', 'published', 'diiklankan', 'pelanggaran'],
+  creative: ['drafting', 'review', 'pelanggaran'],
+  distribution: ['siap_upload', 'terjadwal', 'published', 'pelanggaran'],
+  ads: ['published', 'diiklankan', 'pelanggaran'],
   pm: [],
   finance: [],
   ga: [],
