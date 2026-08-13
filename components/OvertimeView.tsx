@@ -16,6 +16,17 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
   ditolak: { label: 'Ditolak', color: 'var(--red)' },
 };
 
+/**
+ * Tanggal hari ini menurut jam LOKAL (WIB), bukan UTC.
+ * toISOString() memakai UTC — antara 00:00 dan 07:00 WIB dia masih menunjuk
+ * tanggal kemarin, sehingga tanggal default pengajuan meleset sehari.
+ */
+function todayLocal(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 // hitung durasi jam (mendukung lintas tengah malam)
 function durationHours(start: string, end: string): number {
   const [sh, sm] = start.split(':').map(Number);
@@ -35,13 +46,17 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'diajukan' | 'disetujui' | 'ditolak'>('all');
   const [scope, setScope] = useState<'saya' | 'tim'>('saya');
+  /** 'all' atau kunci orang — lihat peopleKey() di bawah. */
+  const [person, setPerson] = useState<string>('all');
+  /** Daftar akun login, dipakai mengisi pilihan filter Pemohon. */
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OvertimeRequest | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({
-    work_date: new Date().toISOString().slice(0, 10),
+    work_date: todayLocal(),
     start_time: '17:00', end_time: '20:00',
     description: '', project_id: '',
   });
@@ -54,6 +69,21 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     if (projectFilter !== 'all') q = q.eq('project_id', projectFilter);
     const { data } = await q;
     setRows((data as OvertimeRequest[]) || []);
+
+    // Daftar akun diambil dari tabel profiles supaya setiap user baru yang
+    // ditambahkan lewat Kelola Akses langsung muncul di filter — tanpa perlu
+    // mengubah kode. Kalau RLS menutup tabel ini untuk sebagian peran,
+    // errornya sengaja diabaikan: daftarnya masih bisa disusun dari data
+    // lembur yang ada (lihat peopleOptions).
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('id, full_name, email')
+      .eq('is_active', true);
+    setUsers(
+      ((prof as { id: string; full_name: string | null; email: string }[]) || [])
+        .map((u) => ({ id: u.id, name: u.full_name || u.email })),
+    );
+
     setLoading(false);
   }, [projectFilter]);
 
@@ -62,7 +92,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   const openModal = () => {
     setEditId(null);
     setForm({
-      work_date: new Date().toISOString().slice(0, 10),
+      work_date: todayLocal(),
       start_time: '17:00', end_time: '20:00', description: '',
       project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || ''),
     });
@@ -139,9 +169,40 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
   const fmtDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
 
+  /**
+   * Kunci identitas pemohon. Pakai requester_id kalau ada — nama bisa berubah
+   * atau kembar, ID tidak. Baris lama yang tidak punya id disimpan dengan
+   * awalan 'nama:' supaya riwayatnya tetap bisa disaring.
+   */
+  const peopleKey = (r: OvertimeRequest) =>
+    r.requester_id || `nama:${r.requester_name || '—'}`;
+
+  /**
+   * Pilihan filter Pemohon = gabungan dua sumber:
+   *  1. akun aktif dari Kelola Akses — supaya orang baru langsung muncul
+   *  2. nama yang benar-benar ada di data lembur — supaya riwayat orang yang
+   *     akunnya sudah dihapus tidak ikut hilang dari filter
+   */
+  const peopleOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    users.forEach((u) => map.set(u.id, u.name));
+    rows.forEach((r) => {
+      const k = peopleKey(r);
+      if (!map.has(k)) map.set(k, r.requester_name || '—');
+    });
+    return Array.from(map, ([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'id'));
+  }, [users, rows]);
+
+  /** Dasar semua hitungan di layar ini — KPI, tabel, dan rekap ikut filter orang. */
+  const personRows = useMemo(
+    () => (person === 'all' ? rows : rows.filter((r) => peopleKey(r) === person)),
+    [rows, person],
+  );
+
   const scoped = useMemo(
-    () => rows.filter((r) => (scope === 'saya' ? r.requester_id === profile?.id : true)),
-    [rows, scope, profile],
+    () => personRows.filter((r) => (scope === 'saya' ? r.requester_id === profile?.id : true)),
+    [personRows, scope, profile],
   );
   const filtered = useMemo(
     () => scoped.filter((r) => filter === 'all' || r.status === filter),
@@ -151,7 +212,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   // rekap per orang (hanya yang disetujui)
   const rekap = useMemo(() => {
     const map = new Map<string, { name: string; hours: number; count: number }>();
-    rows.filter((r) => r.status === 'disetujui').forEach((r) => {
+    personRows.filter((r) => r.status === 'disetujui').forEach((r) => {
       const key = r.requester_id || r.requester_name || '?';
       const cur = map.get(key) || { name: r.requester_name || '—', hours: 0, count: 0 };
       cur.hours += durationHours(r.start_time, r.end_time);
@@ -159,9 +220,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
       map.set(key, cur);
     });
     return Array.from(map.values()).sort((a, b) => b.hours - a.hours);
-  }, [rows]);
+  }, [personRows]);
 
-  const myPending = rows.filter((r) => r.status === 'diajukan' && (scope === 'tim' || r.requester_id === profile?.id)).length;
+  const myPending = personRows.filter((r) => r.status === 'diajukan' && (scope === 'tim' || r.requester_id === profile?.id)).length;
 
   return (
     <>
@@ -178,7 +239,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
       <div className="content-area">
         <div className="kpi-row">
           <div className="kpi"><div className="kpi-label">Menunggu keputusan</div><div className="kpi-value" style={{ color: 'var(--st-review)' }}>{myPending}</div></div>
-          <div className="kpi"><div className="kpi-label">Disetujui (pengajuan)</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{rows.filter((r) => r.status === 'disetujui').length}</div></div>
+          <div className="kpi"><div className="kpi-label">Disetujui (pengajuan)</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{personRows.filter((r) => r.status === 'disetujui').length}</div></div>
           <div className="kpi"><div className="kpi-label">Total jam disetujui</div><div className="kpi-value" style={{ fontSize: 20 }}>{fmtDur(rekap.reduce((a, r) => a + r.hours, 0))}</div></div>
         </div>
 
@@ -190,8 +251,37 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
               </button>
             ))}
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button className={`chip-btn ${scope === 'saya' ? 'active' : ''}`} onClick={() => setScope('saya')}>Lembur saya</button>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Filter per orang hanya untuk yang berwenang melihat lembur tim —
+                buat anggota biasa pilihannya tidak ada gunanya dan justru
+                memperlihatkan nama rekan yang tidak perlu dia lihat. */}
+            {canApprove && (
+              <select
+                value={person}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setPerson(v);
+                  // Memilih orang lain sementara tampilan masih "Lembur saya"
+                  // akan menghasilkan tabel kosong dan terlihat seperti bug.
+                  if (v !== 'all') setScope('tim');
+                }}
+                style={{
+                  padding: '6px 10px', borderRadius: 8, fontSize: 12.5, fontWeight: 600,
+                  background: person === 'all' ? 'var(--raised)' : 'var(--accent-soft)',
+                  border: `1px solid ${person === 'all' ? 'var(--border-strong)' : 'var(--accent)'}`,
+                  color: person === 'all' ? 'var(--text-2)' : 'var(--accent)',
+                  maxWidth: 200,
+                }}
+                title="Saring berdasarkan pemohon"
+              >
+                <option value="all">Semua orang ({peopleOptions.length})</option>
+                {peopleOptions.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            )}
+            <button className={`chip-btn ${scope === 'saya' ? 'active' : ''}`}
+              onClick={() => { setScope('saya'); setPerson('all'); }}>Lembur saya</button>
             {canApprove && <button className={`chip-btn ${scope === 'tim' ? 'active' : ''}`} onClick={() => setScope('tim')}>Semua tim</button>}
           </div>
         </div>
@@ -242,7 +332,14 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
 
         {rekap.length > 0 && (
           <>
-            <div className="section-title" style={{ marginTop: 28 }}>Rekap Jam (disetujui)</div>
+            <div className="section-title" style={{ marginTop: 28 }}>
+              Rekap Jam (disetujui)
+              {person !== 'all' && (
+                <span className="sub" style={{ marginLeft: 8, fontWeight: 400 }}>
+                  · {peopleOptions.find((p) => p.id === person)?.name || ''}
+                </span>
+              )}
+            </div>
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Nama</th><th>Jumlah pengajuan</th><th>Total jam lembur</th></tr></thead>
