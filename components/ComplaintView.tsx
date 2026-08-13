@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { initials, type Complaint, type ComplaintMessage, type Profile } from '@/lib/types';
 
@@ -41,14 +41,43 @@ export default function ComplaintView({ profile }: Props) {
 
   const isLead = profile?.role === 'superadmin' || profile?.role === 'manager';
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // --- notifikasi in-app (window.alert diblokir di browser) ---
+  const [toast, setToast] = useState('');
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 3200);
+  };
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const { data } = await supabase.from('complaints').select('*').order('created_at', { ascending: false });
     setRows((data as Complaint[]) || []);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // --- REALTIME: daftar komplain ---
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const segarkan = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { load(true); }, 250);
+    };
+    const ch = supabase
+      .channel('complaint-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'complaints' }, segarkan)
+      .subscribe();
+    return () => { if (timer) clearTimeout(timer); supabase.removeChannel(ch); };
+  }, [load]);
+
+  // Sinkronkan modal thread yang sedang terbuka dengan data terbaru.
+  useEffect(() => {
+    setActive((cur) => (cur ? rows.find((r) => r.id === cur.id) || cur : cur));
+  }, [rows]);
 
   const loadMessages = async (id: string) => {
     const { data } = await supabase
@@ -58,6 +87,26 @@ export default function ComplaintView({ profile }: Props) {
       .order('created_at', { ascending: true });
     setMessages((data as ComplaintMessage[]) || []);
   };
+
+  // --- REALTIME: balasan pada thread yang sedang dibuka ---
+  const activeId = active?.id || null;
+  useEffect(() => {
+    if (!activeId) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const segarkan = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { loadMessages(activeId); }, 200);
+    };
+    const ch = supabase
+      .channel(`complaint-msg-${activeId}`)
+      .on('postgres_changes', {
+        event: 'INSERT', schema: 'public', table: 'complaint_messages',
+        filter: `complaint_id=eq.${activeId}`,
+      }, segarkan)
+      .subscribe();
+    return () => { if (timer) clearTimeout(timer); supabase.removeChannel(ch); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId]);
 
   const openThread = (c: Complaint) => {
     setActive(c);
@@ -81,7 +130,8 @@ export default function ComplaintView({ profile }: Props) {
     if (err) { setError('Gagal mengirim komplain.'); return; }
     setOpen(false);
     setForm({ category: 'bug', title: '', detail: '' });
-    load();
+    flashToast('Komplain terkirim. Lead akan menindaklanjuti.');
+    load(true);
   };
 
   const sendMsg = async () => {
@@ -104,9 +154,10 @@ export default function ComplaintView({ profile }: Props) {
       patch.handler_name = profile?.full_name || profile?.email || null;
     }
     const { error: err } = await supabase.from('complaints').update(patch).eq('id', c.id);
-    if (err) { window.alert('Gagal mengubah status.'); return; }
+    if (err) { flashToast('Gagal mengubah status — cek wewenang akunmu.'); return; }
     if (active?.id === c.id) setActive({ ...active, status });
-    load();
+    flashToast(`Status diubah ke "${STATUS_META[status]?.label || status}".`);
+    load(true);
   };
 
   const filtered = useMemo(
@@ -344,6 +395,8 @@ export default function ComplaintView({ profile }: Props) {
           </div>
         </div>
       )}
+
+      {toast && <div className="toast">{toast}</div>}
     </>
   );
 }

@@ -57,16 +57,49 @@ export default function RecapView({ profile, projects, projectFilter }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // --- notifikasi & konfirmasi in-app (window.confirm/alert diblokir di browser) ---
+  const [toast, setToast] = useState('');
+  const [confirmDel, setConfirmDel] = useState<RecapReport | null>(null);
+  const [actBusy, setActBusy] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 3200);
+  };
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     let q = supabase.from('recap_reports').select('*').order('created_at', { ascending: false });
     if (projectFilter !== 'all') q = q.eq('project_id', projectFilter);
     const { data } = await q;
     setRows((data as RecapReport[]) || []);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [projectFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  // --- REALTIME: laporan baru / dihapus oleh anggota lain ---
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; }, [load]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const segarkan = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { loadRef.current(true); }, 250);
+    };
+    const ch = supabase
+      .channel('recap-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'recap_reports' }, segarkan)
+      .subscribe();
+    return () => { if (timer) clearTimeout(timer); supabase.removeChannel(ch); };
+  }, []);
+
+  // Tutup pratinjau otomatis kalau laporannya sudah dihapus orang lain.
+  useEffect(() => {
+    setPreview((cur) => (cur ? rows.find((r) => r.id === cur.id) || null : cur));
+  }, [rows]);
 
   const openModal = () => {
     setForm({
@@ -122,22 +155,28 @@ export default function RecapView({ profile, projects, projectFilter }: Props) {
     setBusy(false);
     if (err) { setError('Gagal menyimpan data laporan.'); return; }
     setOpen(false);
-    load();
+    flashToast('Laporan tersimpan.');
+    load(true);
   };
 
   const download = async (r: RecapReport) => {
     if (!r.file_path) return;
     const { data, error: err } = await supabase.storage.from('reports').createSignedUrl(r.file_path, 60);
-    if (err || !data) { window.alert('Gagal membuka file.'); return; }
+    if (err || !data) { flashToast('Gagal membuka file.'); return; }
     window.open(data.signedUrl, '_blank', 'noopener');
   };
 
-  const remove = async (r: RecapReport) => {
-    if (!window.confirm(`Hapus laporan "${r.title}"?`)) return;
+  const doDelete = async () => {
+    const r = confirmDel;
+    if (!r) return;
+    setActBusy(true);
     if (r.file_path) await supabase.storage.from('reports').remove([r.file_path]);
     const { error: err } = await supabase.from('recap_reports').delete().eq('id', r.id);
-    if (err) { window.alert('Gagal menghapus — hanya pengunggah atau lead.'); return; }
-    load();
+    setActBusy(false);
+    if (err) { setConfirmDel(null); flashToast('Gagal menghapus — hanya pengunggah atau lead.'); return; }
+    setConfirmDel(null);
+    flashToast('Laporan dihapus.');
+    load(true);
   };
 
   const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
@@ -207,7 +246,7 @@ export default function RecapView({ profile, projects, projectFilter }: Props) {
                         )}
                         {r.file_path && <button className="btn act" onClick={() => download(r)}>↓ Unduh</button>}
                         {canDelete(r) && (
-                          <button className="icon-del" title="Hapus laporan" onClick={() => remove(r)}>
+                          <button className="icon-del" title="Hapus laporan" onClick={() => setConfirmDel(r)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                               <polyline points="3 6 5 6 21 6" />
@@ -350,6 +389,38 @@ export default function RecapView({ profile, projects, projectFilter }: Props) {
           </div>
         </div>
       )}
+
+      {/* Konfirmasi hapus (pengganti window.confirm yang diblokir browser) */}
+      {confirmDel && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setConfirmDel(null)}>
+          <div className="modal" style={{ maxWidth: 380 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--red)' }} />Hapus laporan</div>
+                <div className="modal-title">{confirmDel.title}</div>
+                <div className="modal-sub">{projName(confirmDel.project_id)} · {confirmDel.uploader_name}</div>
+              </div>
+              <button className="btn ghost modal-close" onClick={() => setConfirmDel(null)}>&#10005;</button>
+            </div>
+            <div style={{ padding: '16px 24px' }}>
+              <p className="thread-detail">
+                Laporan ini akan dihapus permanen{confirmDel.file_path ? ', termasuk berkas yang diunggah' : ''}. Tindakan ini tidak bisa dibatalkan.
+              </p>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" onClick={() => setConfirmDel(null)} disabled={actBusy}>Batal</button>
+                <button className="btn primary" style={{ background: 'var(--red)', borderColor: 'var(--red)' }}
+                  onClick={doDelete} disabled={actBusy}>
+                  {actBusy ? 'Menghapus…' : 'Ya, hapus'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && <div className="toast">{toast}</div>}
     </>
   );
 }

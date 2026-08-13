@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { initials, PILLAR_LABEL, type DistributionLog, type Pillar, type Profile, type Project } from '@/lib/types';
 
@@ -43,16 +43,49 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
 
   const canSeeAll = profile?.role === 'manager' || profile?.role === 'superadmin';
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // --- notifikasi & konfirmasi in-app (window.confirm/alert diblokir di browser) ---
+  const [toast, setToast] = useState('');
+  const [confirmDel, setConfirmDel] = useState<DistributionLog | null>(null);
+  const [actBusy, setActBusy] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 3200);
+  };
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     let q = supabase.from('distribution_logs').select('*').order('created_at', { ascending: false });
     if (projectFilter !== 'all') q = q.eq('project_id', projectFilter);
     const { data } = await q;
     setRows((data as DistributionLog[]) || []);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [projectFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  // --- REALTIME: laporan sebaran dari anggota lain ---
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; }, [load]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const segarkan = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { loadRef.current(true); }, 250);
+    };
+    const ch = supabase
+      .channel('sebaran-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'distribution_logs' }, segarkan)
+      .subscribe();
+    return () => { if (timer) clearTimeout(timer); supabase.removeChannel(ch); };
+  }, []);
+
+  // Tutup modal detail otomatis kalau barisnya sudah dihapus orang lain.
+  useEffect(() => {
+    setDetail((cur) => (cur ? rows.find((r) => r.id === cur.id) || null : cur));
+  }, [rows]);
 
   const openModal = () => {
     setForm({ platform: 'whatsapp', content_category: 'lagi_ramai', group_names: '', content_url: '', note: '', project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || '') });
@@ -134,7 +167,8 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
     setBusy(false);
     if (err) { setError('Gagal menyimpan laporan.'); return; }
     setOpen(false);
-    load();
+    flashToast('Laporan sebaran tersimpan.');
+    load(true);
   };
 
   const openDetail = async (d: DistributionLog) => {
@@ -146,11 +180,16 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
     }
   };
 
-  const removeOwn = async (d: DistributionLog) => {
-    if (!window.confirm('Hapus laporan sebaran ini?')) return;
+  const doDelete = async () => {
+    const d = confirmDel;
+    if (!d) return;
+    setActBusy(true);
     const { error: err } = await supabase.from('distribution_logs').delete().eq('id', d.id);
-    if (err) { window.alert('Gagal menghapus.'); return; }
-    setDetail(null); load();
+    setActBusy(false);
+    if (err) { setConfirmDel(null); flashToast('Gagal menghapus — hanya pelapor atau superadmin.'); return; }
+    setConfirmDel(null); setDetail(null);
+    flashToast('Laporan sebaran dihapus.');
+    load(true);
   };
 
   const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
@@ -312,7 +351,7 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
             </div>
             <div className="modal-foot">
               {(detail.reporter_id === profile?.id || profile?.role === 'superadmin') && (
-                <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => removeOwn(detail)}>Hapus</button>
+                <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => setConfirmDel(detail)}>Hapus</button>
               )}
               <div className="right"><button className="btn" onClick={() => setDetail(null)}>Tutup</button></div>
             </div>
@@ -405,6 +444,38 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
           </div>
         </div>
       )}
+
+      {/* Konfirmasi hapus (pengganti window.confirm yang diblokir browser) */}
+      {confirmDel && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setConfirmDel(null)}>
+          <div className="modal" style={{ maxWidth: 380 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--red)' }} />Hapus laporan</div>
+                <div className="modal-title">Hapus laporan sebaran ini?</div>
+                <div className="modal-sub">
+                  {platMeta(confirmDel.platform).label} · {confirmDel.group_count} grup · {confirmDel.reporter_name}
+                </div>
+              </div>
+              <button className="btn ghost modal-close" onClick={() => setConfirmDel(null)}>&#10005;</button>
+            </div>
+            <div style={{ padding: '16px 24px' }}>
+              <p className="thread-detail">Data laporan akan hilang permanen dan tidak bisa dikembalikan. Bukti yang sudah diunggah tetap tersimpan di storage.</p>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" onClick={() => setConfirmDel(null)} disabled={actBusy}>Batal</button>
+                <button className="btn primary" style={{ background: 'var(--red)', borderColor: 'var(--red)' }}
+                  onClick={doDelete} disabled={actBusy}>
+                  {actBusy ? 'Menghapus…' : 'Ya, hapus'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && <div className="toast">{toast}</div>}
     </>
   );
 }

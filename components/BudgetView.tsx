@@ -47,20 +47,55 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
   const [reqProofUrl, setReqProofUrl] = useState<string | null>(null);
   const [payProofUrl, setPayProofUrl] = useState<string | null>(null);
 
+  // --- notifikasi & konfirmasi in-app (window.alert/prompt diblokir di browser) ---
+  const [toast, setToast] = useState('');
+  const [rejectFor, setRejectFor] = useState<BudgetRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [actBusy, setActBusy] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(''), 3200);
+  };
+  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
+
   const isPM = profile?.team === 'pm' || profile?.role === 'superadmin';
   const isFinance = profile?.team === 'finance' || profile?.role === 'superadmin';
   const canRequest = profile?.role === 'tim' || profile?.role === 'manager' || profile?.role === 'superadmin';
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     let q = supabase.from('budget_requests').select('*').order('created_at', { ascending: false });
     if (projectFilter !== 'all') q = q.eq('project_id', projectFilter);
     const { data } = await q;
     setRows((data as BudgetRequest[]) || []);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [projectFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  // --- REALTIME: dengarkan perubahan budget_requests dari user lain ---
+  // Pakai ref supaya channel tidak di-subscribe ulang tiap kali projectFilter ganti.
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; }, [load]);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const segarkan = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { loadRef.current(true); }, 250);
+    };
+    const ch = supabase
+      .channel('budget-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'budget_requests' }, segarkan)
+      .subscribe();
+    return () => { if (timer) clearTimeout(timer); supabase.removeChannel(ch); };
+  }, []);
+
+  // Kalau modal detail sedang terbuka, ikut segarkan isinya saat data berubah.
+  useEffect(() => {
+    setDetail((cur) => (cur ? rows.find((r) => r.id === cur.id) || cur : cur));
+  }, [rows]);
 
   const openModal = () => {
     setEditId(null);
@@ -126,7 +161,8 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
       setBusy(false);
       if (err) { setError('Gagal menyimpan perubahan.'); return; }
       setOpen(false);
-      load();
+      flashToast('Perubahan pengajuan tersimpan.');
+      load(true);
       return;
     }
 
@@ -145,46 +181,60 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
     setBusy(false);
     if (err) { setError('Gagal menyimpan pengajuan.'); return; }
     setOpen(false);
-    load();
+    flashToast('Pengajuan budget terkirim.');
+    load(true);
   };
 
   const approve = async (b: BudgetRequest) => {
     if (!profile) return;
+    setActBusy(true);
     const { error: err } = await supabase.from('budget_requests').update({
       status: 'disetujui', approver_id: profile.id,
       approver_name: profile.full_name || profile.email, approved_at: new Date().toISOString(),
     }).eq('id', b.id);
-    if (err) { window.alert('Gagal menyetujui — hanya PM.'); return; }
-    setDetail(null); load();
+    setActBusy(false);
+    if (err) { flashToast('Gagal menyetujui — hanya PM yang boleh ACC.'); return; }
+    setDetail(null);
+    flashToast('Pengajuan disetujui, diteruskan ke Finance.');
+    load(true);
   };
 
-  const reject = async (b: BudgetRequest) => {
-    const reason = window.prompt('Alasan menolak pengajuan ini:');
-    if (reason === null) return;
-    if (!profile) return;
+  const doReject = async () => {
+    const b = rejectFor;
+    if (!b || !profile) return;
+    setActBusy(true);
     const { error: err } = await supabase.from('budget_requests').update({
       status: 'ditolak', approver_id: profile.id,
-      approver_name: profile.full_name || profile.email, reject_reason: reason || null,
+      approver_name: profile.full_name || profile.email,
+      reject_reason: rejectReason.trim() || null,
     }).eq('id', b.id);
-    if (err) { window.alert('Gagal menolak.'); return; }
-    setDetail(null); load();
+    setActBusy(false);
+    if (err) { flashToast('Gagal menolak pengajuan.'); return; }
+    setRejectFor(null); setRejectReason(''); setDetail(null);
+    flashToast('Pengajuan ditolak.');
+    load(true);
   };
 
   const markPaid = async (b: BudgetRequest, f: File | null) => {
     if (!profile) return;
     let proof: { path: string; name: string } | null = null;
     if (f) {
-      if (f.size > MAX_MB * 1024 * 1024) { window.alert(`Bukti maksimal ${MAX_MB} MB.`); return; }
+      if (f.size > MAX_MB * 1024 * 1024) { flashToast(`Bukti maksimal ${MAX_MB} MB.`); return; }
+      setActBusy(true);
       proof = await uploadProof(f, 'payment');
-      if (!proof) { window.alert('Gagal mengunggah bukti pembayaran.'); return; }
+      if (!proof) { setActBusy(false); flashToast('Gagal mengunggah bukti pembayaran.'); return; }
     }
+    setActBusy(true);
     const { error: err } = await supabase.from('budget_requests').update({
       status: 'dibayar', payer_id: profile.id,
       payer_name: profile.full_name || profile.email, paid_at: new Date().toISOString(),
       payment_proof_path: proof?.path || null, payment_proof_name: proof?.name || null,
     }).eq('id', b.id);
-    if (err) { window.alert('Gagal menandai dibayar — hanya Finance.'); return; }
-    setDetail(null); load();
+    setActBusy(false);
+    if (err) { flashToast('Gagal menandai dibayar — hanya Finance.'); return; }
+    setDetail(null);
+    flashToast('Ditandai sudah dibayar.');
+    load(true);
   };
 
   const signed = async (path: string | null): Promise<string | null> => {
@@ -278,7 +328,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                         {b.status === 'diajukan' && isPM && (
                           <>
                             <button className="btn act" style={{ borderColor: 'var(--green)', color: 'var(--green)' }} onClick={() => approve(b)}>ACC</button>
-                            <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => reject(b)}>Tolak</button>
+                            <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => { setRejectReason(''); setRejectFor(b); }}>Tolak</button>
                           </>
                         )}
                         {b.status === 'disetujui' && isFinance && (
@@ -357,7 +407,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
               )}
               {detail.status === 'diajukan' && isPM && (
                 <>
-                  <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => reject(detail)}>Tolak</button>
+                  <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => { setRejectReason(''); setRejectFor(detail); }}>Tolak</button>
                   <button className="btn primary" onClick={() => approve(detail)}>✓ ACC</button>
                 </>
               )}
@@ -447,6 +497,40 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
           </div>
         </div>
       )}
+
+      {/* Modal alasan menolak (pengganti window.prompt yang diblokir browser) */}
+      {rejectFor && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setRejectFor(null)}>
+          <div className="modal" style={{ maxWidth: 400 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--red)' }} />Tolak pengajuan</div>
+                <div className="modal-title">{rejectFor.title}</div>
+                <div className="modal-sub">{rupiah(rejectFor.amount)} · {rejectFor.requester_name}</div>
+              </div>
+              <button className="btn ghost modal-close" onClick={() => setRejectFor(null)}>✕</button>
+            </div>
+            <div style={{ padding: '18px 24px' }}>
+              <div className="field">
+                <label>Alasan menolak <span style={{ color: 'var(--text-3)' }}>(opsional, tapi sangat membantu pemohon)</span></label>
+                <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="mis. nominal di luar plafon bulan ini, ajukan ulang minggu depan" rows={3} />
+              </div>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" onClick={() => setRejectFor(null)} disabled={actBusy}>Batal</button>
+                <button className="btn primary" style={{ background: 'var(--red)', borderColor: 'var(--red)' }}
+                  onClick={doReject} disabled={actBusy}>
+                  {actBusy ? 'Memproses…' : 'Tolak pengajuan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && <div className="toast">{toast}</div>}
     </>
   );
 }
