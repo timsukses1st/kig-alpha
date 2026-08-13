@@ -62,6 +62,24 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   });
 
   const canApprove = profile?.role === 'manager' || profile?.role === 'superadmin';
+  /** Hanya superadmin yang boleh menghapus pengajuan milik orang lain. */
+  const isSuper = profile?.role === 'superadmin';
+
+  /**
+   * window.confirm / prompt / alert DIBLOKIR di lingkungan ini — tombol yang
+   * memakainya tidak melakukan apa pun tanpa pesan apa pun. Semua diganti
+   * modal & toast di dalam aplikasi.
+   */
+  const [toast, setToast] = useState('');
+  const [confirmDel, setConfirmDel] = useState<OvertimeRequest | null>(null);
+  const [rejectFor, setRejectFor] = useState<OvertimeRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [actBusy, setActBusy] = useState(false);
+
+  const flashToast = (m: string) => {
+    setToast(m);
+    window.setTimeout(() => setToast((t) => (t === m ? '' : t)), 3200);
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -140,14 +158,10 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     load();
   };
 
-  const decide = async (o: OvertimeRequest, approve: boolean) => {
+  /** Menyetujui langsung; menolak lewat modal alasan (lihat rejectFor). */
+  const decide = async (o: OvertimeRequest, approve: boolean, reason: string | null = null) => {
     if (!profile) return;
-    let reason: string | null = null;
-    if (!approve) {
-      const r = window.prompt('Alasan menolak (opsional):');
-      if (r === null) return;
-      reason = r || null;
-    }
+    setActBusy(true);
     const { error: err } = await supabase.from('overtime_requests').update({
       status: approve ? 'disetujui' : 'ditolak',
       approver_id: profile.id,
@@ -155,16 +169,37 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
       decided_at: new Date().toISOString(),
       reject_reason: reason,
     }).eq('id', o.id);
-    if (err) { window.alert('Gagal — hanya manager yang bisa menyetujui.'); return; }
-    setDetail(null); load();
-  };
-
-  const removeOwn = async (o: OvertimeRequest) => {
-    if (!window.confirm('Hapus pengajuan lembur ini?')) return;
-    const { error: err } = await supabase.from('overtime_requests').delete().eq('id', o.id);
-    if (err) { window.alert('Gagal menghapus.'); return; }
+    setActBusy(false);
+    if (err) {
+      flashToast(`Gagal — ${err.message}`);
+      return;
+    }
+    flashToast(approve ? 'Lembur disetujui.' : 'Lembur ditolak.');
+    setDetail(null);
+    setRejectFor(null);
+    setRejectReason('');
     load();
   };
+
+  /** Penghapusan sebenarnya. Konfirmasinya ditangani modal confirmDel. */
+  const doDelete = async (o: OvertimeRequest) => {
+    setActBusy(true);
+    const { error: err } = await supabase.from('overtime_requests').delete().eq('id', o.id);
+    setActBusy(false);
+    setConfirmDel(null);
+    if (err) {
+      flashToast(`Gagal menghapus — ${err.message}`);
+      return;
+    }
+    flashToast('Pengajuan lembur dihapus.');
+    setDetail(null);
+    load();
+  };
+
+  /** Boleh menghapus: superadmin (apa pun status & pemiliknya), atau pemilik
+   *  selama pengajuannya masih menunggu keputusan. */
+  const bolehHapus = (o: OvertimeRequest) =>
+    isSuper || (o.status === 'diajukan' && o.requester_id === profile?.id);
 
   const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
   const fmtDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -321,14 +356,17 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                         {o.status === 'diajukan' && canApprove && (
                           <>
                             <button className="btn act" style={{ borderColor: 'var(--green)', color: 'var(--green)' }} onClick={() => decide(o, true)}>Setujui</button>
-                            <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => decide(o, false)}>Tolak</button>
+                            <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                              onClick={() => { setRejectReason(''); setRejectFor(o); }}>Tolak</button>
                           </>
                         )}
                         {o.status === 'diajukan' && o.requester_id === profile?.id && (
-                          <>
-                            <button className="btn act" onClick={() => openEdit(o)}>Edit</button>
-                            <button className="btn act" onClick={() => removeOwn(o)}>Hapus</button>
-                          </>
+                          <button className="btn act" onClick={() => openEdit(o)}>Edit</button>
+                        )}
+                        {bolehHapus(o) && (
+                          <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                            title={isSuper ? 'Hapus permanen (superadmin)' : 'Hapus pengajuan ini'}
+                            onClick={() => setConfirmDel(o)}>Hapus</button>
                         )}
                       </div>
                     </td>
@@ -400,12 +438,17 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
             <div className="modal-foot">
               {detail.status === 'diajukan' && canApprove && (
                 <>
-                  <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }} onClick={() => decide(detail, false)}>Tolak</button>
-                  <button className="btn primary" onClick={() => decide(detail, true)}>✓ Setujui</button>
+                  <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                    onClick={() => { setRejectReason(''); setRejectFor(detail); }}>Tolak</button>
+                  <button className="btn primary" disabled={actBusy} onClick={() => decide(detail, true)}>✓ Setujui</button>
                 </>
               )}
               {detail.status === 'diajukan' && detail.requester_id === profile?.id && (
                 <button className="btn" onClick={() => openEdit(detail)}>✎ Edit</button>
+              )}
+              {bolehHapus(detail) && (
+                <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                  onClick={() => setConfirmDel(detail)}>Hapus</button>
               )}
               <div className="right">
                 <button className="btn" onClick={() => setDetail(null)}>Tutup</button>
@@ -414,6 +457,89 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
           </div>
         </div>
       )}
+
+      {/* ---- Konfirmasi hapus (menggantikan window.confirm yang diblokir) ---- */}
+      {confirmDel && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setConfirmDel(null)}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--red)' }} />
+                  Hapus pengajuan
+                </div>
+                <div className="modal-title">{fmtDate(confirmDel.work_date)}</div>
+                <div className="modal-sub">
+                  {confirmDel.requester_name} · {confirmDel.start_time.slice(0, 5)}–{confirmDel.end_time.slice(0, 5)} ·{' '}
+                  {fmtDur(durationHours(confirmDel.start_time, confirmDel.end_time))}
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: '16px 24px' }}>
+              <p className="thread-detail" style={{ whiteSpace: 'pre-wrap' }}>{confirmDel.description}</p>
+              <p style={{ marginTop: 14, fontSize: 12.5, color: 'var(--red)' }}>
+                Terhapus permanen — tidak bisa dikembalikan, termasuk riwayat persetujuannya.
+              </p>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={actBusy} onClick={() => setConfirmDel(null)}>Batal</button>
+                <button className="btn" disabled={actBusy}
+                  style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                  onClick={() => doDelete(confirmDel)}>
+                  {actBusy ? 'Menghapus…' : 'Hapus permanen'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Alasan menolak (menggantikan window.prompt yang diblokir) ---- */}
+      {rejectFor && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setRejectFor(null)}>
+          <div className="modal" style={{ maxWidth: 440 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--red)' }} />
+                  Tolak lembur
+                </div>
+                <div className="modal-title">{fmtDate(rejectFor.work_date)}</div>
+                <div className="modal-sub">
+                  {rejectFor.requester_name} · {fmtDur(durationHours(rejectFor.start_time, rejectFor.end_time))}
+                </div>
+              </div>
+              <button className="btn ghost modal-close" onClick={() => setRejectFor(null)}>✕</button>
+            </div>
+            <div style={{ padding: '18px 24px' }}>
+              <div className="field">
+                <label>Alasan menolak (opsional)</label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="mis. jam tidak sesuai catatan kehadiran"
+                />
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                Alasan ini ikut tersimpan dan terlihat oleh pemohon.
+              </p>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={actBusy} onClick={() => setRejectFor(null)}>Batal</button>
+                <button className="btn" disabled={actBusy}
+                  style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                  onClick={() => decide(rejectFor, false, rejectReason.trim() || null)}>
+                  {actBusy ? 'Menyimpan…' : 'Tolak pengajuan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && <div className="toast">{toast}</div>}
 
       {open && (
         <div className="overlay" onClick={(e) => e.target === e.currentTarget && setOpen(false)}>
