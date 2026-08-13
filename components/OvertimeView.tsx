@@ -81,8 +81,13 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     window.setTimeout(() => setToast((t) => (t === m ? '' : t)), 3200);
   };
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  /**
+   * silent = true → muat ulang tanpa menyalakan layar "Memuat…".
+   * Dipakai oleh realtime dan oleh aksi simpan: kalau tidak, tiap perubahan
+   * dari orang lain membuat seluruh halaman berkedip.
+   */
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     let q = supabase.from('overtime_requests').select('*').order('work_date', { ascending: false });
     if (projectFilter !== 'all') q = q.eq('project_id', projectFilter);
     const { data } = await q;
@@ -102,10 +107,39 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
         .map((u) => ({ id: u.id, name: u.full_name || u.email })),
     );
 
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [projectFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  /**
+   * Realtime — layar ikut berubah begitu ada yang mengajukan, menyetujui,
+   * menolak, atau menghapus lembur. Tidak perlu refresh manual.
+   *
+   * Penyegarannya SENYAP (load(true)) supaya tidak ada kedipan, dan ditunda
+   * 250 ms: satu aksi bisa memicu beberapa kejadian beruntun, dan tanpa jeda
+   * ini database dipanggil berkali-kali untuk hasil yang sama.
+   *
+   * ⚠️ Butuh Replication tabel overtime_requests dinyalakan di Supabase.
+   * Kalau belum, kodenya tetap aman — hanya tidak terjadi apa-apa.
+   */
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const segarkan = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { load(true); }, 250);
+    };
+
+    const ch = supabase
+      .channel('overtime-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'overtime_requests' }, segarkan)
+      .subscribe();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(ch);
+    };
+  }, [load]);
 
   const openModal = () => {
     setEditId(null);
@@ -155,7 +189,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     setBusy(false);
     if (err) { setError('Gagal menyimpan pengajuan.'); return; }
     setOpen(false);
-    load();
+    load(true);
   };
 
   /** Menyetujui langsung; menolak lewat modal alasan (lihat rejectFor). */
@@ -178,7 +212,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     setDetail(null);
     setRejectFor(null);
     setRejectReason('');
-    load();
+    load(true);
   };
 
   /** Penghapusan sebenarnya. Konfirmasinya ditangani modal confirmDel. */
@@ -193,7 +227,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     }
     flashToast('Pengajuan lembur dihapus.');
     setDetail(null);
-    load();
+    load(true);
   };
 
   /** Boleh menghapus: superadmin (apa pun status & pemiliknya), atau pemilik
