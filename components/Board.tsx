@@ -77,6 +77,11 @@ const htmlToMd = (node: Node): string => {
 type ColKey = 'akun' | 'platform' | 'kategori' | 'status' | 'caption' | 'drive' | 'post' | 'ads' | 'pic' | 'tayang';
 
 const TITLE_COL_W = 300;
+/** Di HP kolom Konten menempel (sticky) — kalau tetap 300px, layar 560px habis
+ *  dipakai kolom itu saja dan kolom lain cuma kelihatan sepotong. */
+const TITLE_COL_W_MOBILE = 150;
+/** Lebar kolom checkbox. Dipakai juga sebagai offset sticky di globals.css. */
+const CHECK_COL_W = 38;
 
 const COLUMNS: { key: ColKey; label: string; width: number }[] = [
   { key: 'akun', label: 'Akun', width: 175 },
@@ -420,6 +425,16 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [searchFocus, setSearchFocus] = useState(false);
   const [searchPos, setSearchPos] = useState<{ top: number; left: number } | null>(null);
   const searchBoxRef = useRef<HTMLDivElement | null>(null);
+  /** Breakpoint ini WAJIB sama dengan @media (max-width: 820px) di globals.css. */
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 820px)');
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
+  const titleColW = isMobile ? TITLE_COL_W_MOBILE : TITLE_COL_W;
   // ---- duplikat ke platform lain ----
   const [selected, setSelected] = useState<string[]>([]);
   const [dupRows, setDupRows] = useState<ContentRow[] | null>(null);
@@ -860,7 +875,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const shownCols = COLUMNS.filter((c) => !hiddenCols.includes(c.key));
   // Dengan tableLayout 'fixed', lebar total harus dihitung sendiri supaya
   // scroll mendatarnya pas — tidak ada kolom yang terhimpit.
-  const tableWidth = 38 + TITLE_COL_W + shownCols.reduce((a, c) => a + c.width, 0);
+  const tableWidth = CHECK_COL_W + titleColW + shownCols.reduce((a, c) => a + c.width, 0);
   const toggleCol = (k: ColKey) =>
     setHiddenCols((h) => (h.includes(k) ? h.filter((x) => x !== k) : [...h, k]));
 
@@ -1457,7 +1472,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
               <thead>
                 <tr>
                   <th style={{
-                    width: 38, minWidth: 38, maxWidth: 38,
+                    width: CHECK_COL_W, minWidth: CHECK_COL_W, maxWidth: CHECK_COL_W,
                     position: 'sticky', top: 0, background: 'var(--raised)', zIndex: 2,
                   }}>
                     <input
@@ -1470,7 +1485,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       onChange={(e) => setSelected(e.target.checked ? filtered.map((r) => r.id) : [])}
                     />
                   </th>
-                  {th('Konten', TITLE_COL_W)}
+                  {th('Konten', titleColW)}
                   {shownCols.map((c) => th(c.label, c.width))}
                 </tr>
               </thead>
@@ -1497,7 +1512,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       onTouchCancel={cancelLongPress}
                     >
                       <td style={{
-                        width: 38,
+                        width: CHECK_COL_W,
                         boxShadow: row.asset_url ? undefined : 'inset 3px 0 0 var(--amber)',
                       }}>
                         <input
@@ -1507,7 +1522,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                           onClick={(e) => e.stopPropagation()}
                         />
                       </td>
-                      <td style={{ maxWidth: TITLE_COL_W }}>
+                      <td style={{ width: titleColW, maxWidth: titleColW }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                           <span
                             className="flag-dot"
@@ -1534,7 +1549,26 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       {shownCols.map((c) => {
                         if (c.key === 'akun') {
                           const h = accName(row.account_id);
-                          return <td key={c.key} className="sub" style={CLIP} title={h}>{h}</td>;
+                          // Dulu pakai className="sub" — 11,5px dengan warna --text-3
+                          // yang paling pudar. Di layar terang hampir tidak terbaca,
+                          // padahal nama akun ini yang paling sering dicari mata.
+                          return (
+                            <td
+                              key={c.key}
+                              style={{
+                                ...CLIP,
+                                fontFamily: 'var(--mono)',
+                                fontSize: 12.5,
+                                fontWeight: 600,
+                                letterSpacing: '.01em',
+                                color: row.account_id ? 'var(--text-2)' : 'var(--text-3)',
+                                fontStyle: row.account_id ? undefined : 'italic',
+                              }}
+                              title={h}
+                            >
+                              {h}
+                            </td>
+                          );
                         }
 
                         if (c.key === 'platform') {
