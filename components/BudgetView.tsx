@@ -51,6 +51,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
   const [toast, setToast] = useState('');
   const [rejectFor, setRejectFor] = useState<BudgetRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
+  const [confirmDel, setConfirmDel] = useState<BudgetRequest | null>(null);
   const [actBusy, setActBusy] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashToast = (msg: string) => {
@@ -123,6 +124,40 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
 
   const canEdit = (b: BudgetRequest) =>
     b.status === 'diajukan' && (b.requester_id === profile?.id || profile?.role === 'superadmin');
+
+  // Cerminan persis policy RLS "budget_delete" di database: superadmin saja.
+  // Kalau tombolnya ditampilkan lebih longgar dari policy, user akan menekan
+  // tombol yang "berhasil" tapi tidak menghapus apa pun.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const bolehHapus = (_b: BudgetRequest) => profile?.role === 'superadmin';
+
+  const doDelete = async () => {
+    const b = confirmDel;
+    if (!b) return;
+    setActBusy(true);
+
+    // Bersihkan bukti di storage dulu supaya tidak jadi sampah yang tetap kena kuota.
+    const berkas = [b.request_proof_path, b.payment_proof_path].filter(Boolean) as string[];
+    if (berkas.length) await supabase.storage.from('budget').remove(berkas);
+
+    // .select() dipakai supaya kita tahu baris benar-benar terhapus. Tanpa ini,
+    // RLS yang menolak akan menghapus 0 baris TANPA error — tombol terlihat sukses.
+    const { data, error: err } = await supabase
+      .from('budget_requests').delete().eq('id', b.id).select('id');
+    setActBusy(false);
+
+    if (err) { setConfirmDel(null); flashToast('Gagal menghapus: ' + err.message); return; }
+    if (!data || data.length === 0) {
+      setConfirmDel(null);
+      flashToast('Tidak ada data yang terhapus — wewenang akunmu tidak mencukupi untuk pengajuan ini.');
+      load(true);
+      return;
+    }
+
+    setConfirmDel(null); setDetail(null);
+    flashToast('Pengajuan dihapus.');
+    load(true);
+  };
 
   const uploadProof = async (f: File, prefix: string): Promise<{ path: string; name: string } | null> => {
     const safe = f.name.replace(/[^\w.\-]+/g, '_');
@@ -338,6 +373,17 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                               onChange={(e) => markPaid(b, e.target.files?.[0] || null)} />
                           </label>
                         )}
+                        {bolehHapus(b) && (
+                          <button className="icon-del" title="Hapus pengajuan" onClick={() => setConfirmDel(b)}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -404,6 +450,10 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
             <div className="modal-foot">
               {canEdit(detail) && (
                 <button className="btn" onClick={() => openEdit(detail)}>✎ Edit</button>
+              )}
+              {bolehHapus(detail) && (
+                <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                  onClick={() => setConfirmDel(detail)}>Hapus</button>
               )}
               {detail.status === 'diajukan' && isPM && (
                 <>
@@ -523,6 +573,44 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                 <button className="btn primary" style={{ background: 'var(--red)', borderColor: 'var(--red)' }}
                   onClick={doReject} disabled={actBusy}>
                   {actBusy ? 'Memproses…' : 'Tolak pengajuan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Konfirmasi hapus (pengganti window.confirm yang diblokir browser) */}
+      {confirmDel && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setConfirmDel(null)}>
+          <div className="modal" style={{ maxWidth: 400 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--red)' }} />Hapus pengajuan</div>
+                <div className="modal-title">{confirmDel.title}</div>
+                <div className="modal-sub">
+                  {rupiah(confirmDel.amount)} · {projName(confirmDel.project_id)} · {confirmDel.requester_name}
+                </div>
+              </div>
+              <button className="btn ghost modal-close" onClick={() => setConfirmDel(null)}>&#10005;</button>
+            </div>
+            <div style={{ padding: '16px 24px' }}>
+              <p className="thread-detail">
+                Pengajuan ini akan dihapus permanen beserta bukti yang diunggah, dan tidak bisa dikembalikan.
+              </p>
+              {confirmDel.status === 'dibayar' && (
+                <p className="error-msg" style={{ marginTop: 10 }}>
+                  Perhatian: status pengajuan ini sudah <b>Dibayar</b>. Menghapusnya berarti jejak pengeluaran ini
+                  hilang dari rekap Finance.
+                </p>
+              )}
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" onClick={() => setConfirmDel(null)} disabled={actBusy}>Batal</button>
+                <button className="btn primary" style={{ background: 'var(--red)', borderColor: 'var(--red)' }}
+                  onClick={doDelete} disabled={actBusy}>
+                  {actBusy ? 'Menghapus…' : 'Ya, hapus'}
                 </button>
               </div>
             </div>
