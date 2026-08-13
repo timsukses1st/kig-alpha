@@ -441,6 +441,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const [dupTargets, setDupTargets] = useState<string[]>([]);
   const [dupBusy, setDupBusy] = useState(false);
   const [dupErr, setDupErr] = useState('');
+  // Panel pilihan status untuk perubahan massal (muncul di atas bar 'N dipilih').
+  const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
   // ---- menu klik-kanan / tekan-tahan pada baris ----
   const [ctxMenu, setCtxMenu] = useState<{ row: ContentRow; x: number; y: number } | null>(null);
   const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -697,6 +699,64 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     } else {
       flashToast(`${label} tersimpan.`);
     }
+  };
+
+  /**
+   * Ubah status banyak konten sekaligus.
+   *
+   * Baris yang tidak boleh disentuh oleh tim pengguna DILEWATI, bukan
+   * membatalkan seluruh aksi — kalau satu baris ditolak lalu semuanya batal,
+   * pengguna harus menebak-nebak baris mana yang bermasalah.
+   * Jumlah yang dilewati dilaporkan di toast supaya tidak ada yang mengira
+   * semuanya berhasil.
+   */
+  const applyBulkStatus = async (target: ContentStatus) => {
+    const chosen = rows.filter((r) => selected.includes(r.id));
+    const boleh: ContentRow[] = [];
+    let takBerwenang = 0;
+    let tanpaTanggal = 0;
+
+    for (const r of chosen) {
+      if (r.status === target) continue;
+      if (!canEditRow(profile, r.status) || !targetableStatuses(profile, r.status).includes(target)) {
+        takBerwenang++;
+        continue;
+      }
+      // Aturan yang sama dengan perpindahan satuan — jangan sampai jalur
+      // massal jadi celah untuk melewati validasi.
+      if (target === 'terjadwal' && !r.publish_date) {
+        tanpaTanggal++;
+        continue;
+      }
+      boleh.push(r);
+    }
+
+    setBulkStatusOpen(false);
+
+    if (!boleh.length) {
+      const sebab: string[] = [];
+      if (takBerwenang) sebab.push(`${takBerwenang} di luar wewenang tim kamu`);
+      if (tanpaTanggal) sebab.push(`${tanpaTanggal} belum ada Tanggal tayang`);
+      flashToast(sebab.length ? `Tidak ada yang dipindah — ${sebab.join(', ')}.` : 'Semua sudah berstatus itu.');
+      return;
+    }
+
+    const ids = boleh.map((r) => r.id);
+    setRows((cur) => cur.map((r) => (ids.includes(r.id) ? { ...r, status: target } : r)));
+
+    const { error: err } = await supabase.from('contents').update({ status: target }).in('id', ids);
+    if (err) {
+      flashToast('Gagal menyimpan perubahan massal — data dikembalikan.');
+      load(true);
+      return;
+    }
+
+    const dilewati = takBerwenang + tanpaTanggal;
+    flashToast(
+      `${ids.length} konten → ${statusDef(target).label}` +
+      (dilewati ? ` · ${dilewati} dilewati` : '') + '.',
+    );
+    setSelected([]);
   };
 
   const moveStatusInline = async (row: ContentRow, target: ContentStatus) => {
@@ -1776,9 +1836,17 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                 {selected.length} dipilih
               </span>
               <button
+                className="btn ghost"
+                style={{ whiteSpace: 'nowrap', position: 'relative' }}
+                onClick={() => setBulkStatusOpen((o) => !o)}
+              >
+                ⇄ <span className="bulk-long">Ubah status</span>
+                <span className="bulk-short">Status</span>
+              </button>
+              <button
                 className="btn primary"
                 style={{ whiteSpace: 'nowrap' }}
-                onClick={() => openDup(rows.filter((r) => selected.includes(r.id)))}
+                onClick={() => { setBulkStatusOpen(false); openDup(rows.filter((r) => selected.includes(r.id))); }}
               >
                 ⧉ <span className="bulk-long">Duplikat ke platform lain</span>
                 <span className="bulk-short">Duplikat</span>
@@ -1786,14 +1854,56 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
               <button
                 className="btn ghost"
                 title="Batalkan pilihan"
-                onClick={() => setSelected([])}
+                onClick={() => { setBulkStatusOpen(false); setSelected([]); }}
               >✕</button>
+
+              {bulkStatusOpen && (
+                <div
+                  style={{
+                    position: 'absolute', bottom: 'calc(100% + 10px)', left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'var(--panel)', border: '1px solid var(--border-strong)',
+                    borderRadius: 12, padding: 6, minWidth: 190,
+                    boxShadow: '0 14px 36px rgba(0,0,0,.55)',
+                  }}
+                >
+                  <div style={{
+                    fontSize: 10.5, fontFamily: 'var(--mono)', letterSpacing: '.1em',
+                    textTransform: 'uppercase', color: 'var(--text-3)', padding: '6px 10px 8px',
+                  }}>
+                    Pindahkan {selected.length} konten ke
+                  </div>
+                  {ORDER.map((st) => {
+                    const def = statusDef(st);
+                    return (
+                      <button
+                        key={st}
+                        onClick={() => applyBulkStatus(st)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 9, width: '100%',
+                          padding: '9px 10px', borderRadius: 8, background: 'transparent',
+                          border: 0, textAlign: 'left', fontSize: 13, fontWeight: 600,
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--hover)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                      >
+                        <span style={{
+                          width: 8, height: 8, borderRadius: '50%',
+                          background: def.color, flexShrink: 0,
+                        }} />
+                        {def.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
           <p className="cal-legend">
             Ketik langsung di kolomnya — tersimpan otomatis saat pindah kolom atau tekan Enter, Esc untuk batal.
             Klik judul konten untuk membuka brief lengkapnya, atau klik kanan pada baris (tekan-tahan di HP) untuk duplikat, salin caption, dan hapus.
+            Centang beberapa baris untuk mengubah statusnya sekaligus lewat tombol <b>⇄ Ubah status</b> yang muncul di bawah.
             Filter tanggal mengikuti <b>Tanggal tayang</b> — konten yang belum dijadwalkan hanya muncul di rentang <b>Semua</b>. Kolom yang tidak bisa diketik berarti tahapnya sedang dikelola tim lain.
           </p>
 
