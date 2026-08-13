@@ -450,8 +450,13 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   // (klik tombol dulu), supaya tidak bisa berpindah klien karena salah klik.
   const [movingProject, setMovingProject] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  /**
+   * silent = true → muat ulang data TANPA menyalakan layar "Memuat…".
+   * Dipakai setiap kali menyimpan perubahan: kalau tidak, seluruh tabel
+   * diganti tulisan "Memuat…" sepersekian detik dan terlihat berkedip.
+   */
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const [c, m, rq, cc] = await Promise.all([
       // Urut created_at, BUKAN updated_at: kalau pakai updated_at, baris yang
       // baru diketik langsung melompat ke atas dan bikin kacau saat input massal.
@@ -464,7 +469,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setMembers((m.data as TeamMember[]) || []);
     setRequests((rq.data as ContentRequest[]) || []);
     setCategories((cc.data as ContentCategory[]) || []);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -675,17 +680,30 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     window.setTimeout(() => setToast(''), 2600);
   };
 
+  /**
+   * Perubahan langsung dipasang di layar DULU, baru dikirim ke database.
+   * Sebelumnya setiap penyimpanan memanggil load() penuh — seluruh tabel
+   * diganti tulisan "Memuat…" lalu digambar ulang, dan itulah kedipan yang
+   * terasa tiap kali status diganti.
+   * Kalau penyimpanan gagal, data ditarik ulang secara senyap sehingga
+   * tampilan kembali ke keadaan sebenarnya.
+   */
   const patchRow = async (row: ContentRow, patch: Record<string, unknown>, label: string) => {
+    setRows((cur) => cur.map((r) => (r.id === row.id ? { ...r, ...(patch as Partial<ContentRow>) } : r)));
     const { error: err } = await supabase.from('contents').update(patch).eq('id', row.id);
-    flashToast(err ? `Gagal menyimpan ${label} — cek wewenang tim kamu untuk tahap ini.` : `${label} tersimpan.`);
-    load();
+    if (err) {
+      flashToast(`Gagal menyimpan ${label} — cek wewenang tim kamu untuk tahap ini.`);
+      load(true);
+    } else {
+      flashToast(`${label} tersimpan.`);
+    }
   };
 
   const moveStatusInline = async (row: ContentRow, target: ContentStatus) => {
     if (target === row.status) return;
     if (target === 'terjadwal' && !row.publish_date) {
       flashToast('Isi Tanggal tayang dulu sebelum menjadwalkan.');
-      load();
+      load(true);
       return;
     }
     await patchRow(row, { status: target }, 'Status');
@@ -857,7 +875,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     flashToast(
       `${payloads.length} salinan dibuat${skipped ? ` · ${skipped} dilewati (sudah ada di platform itu)` : ''}.`
     );
-    load();
+    load(true);
   };
 
   const needsAction = (r: ContentRow) =>
@@ -972,7 +990,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setSaving(false);
     if (err) { setError('Gagal menyimpan. Cek wewenang tim kamu untuk tahap ini.'); return; }
     setModalOpen(false);
-    load();
+    load(true);
   };
 
   const canAcc = profile?.role === 'superadmin' || profile?.role === 'manager';
@@ -1011,7 +1029,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setFlowBusy(false);
     if (err) { setError('Gagal memindahkan — cek wewenang tim.'); return; }
     setModalOpen(false);
-    load();
+    load(true);
   };
 
   const canRequest = canAcc || profile?.team === 'pm';
@@ -1044,7 +1062,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     if (err) { setReqError('Gagal mengirim request — hanya PM/lead yang bisa request.'); return; }
     setReqModalOpen(false);
     setReqForm({ title: '', account_id: '', requested_date: '', note: '' });
-    load();
+    load(true);
   };
 
   const liftRequest = async (rq: ContentRequest) => {
@@ -1085,7 +1103,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     }
     setReqBusy(null);
     if (ins.error) window.alert('Gagal mengangkat request — cek wewenang.');
-    load();
+    load(true);
   };
 
   const rejectRequest = async (rq: ContentRequest) => {
@@ -1093,7 +1111,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setReqBusy(rq.id);
     await supabase.from('content_requests').update({ status: 'ditolak' }).eq('id', rq.id);
     setReqBusy(null);
-    load();
+    load(true);
   };
 
   // ---- Hapus konten lewat ikon di kartu Board ----
@@ -1110,7 +1128,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setDelBusy(false);
     if (err) { setDelErr('Gagal menghapus. Hanya superadmin/manager yang bisa menghapus.'); return; }
     setDelRow(null);
-    load();
+    load(true);
   };
 
   const canDelete = profile?.role === 'superadmin' || profile?.role === 'manager';
