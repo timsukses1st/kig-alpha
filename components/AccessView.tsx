@@ -6,7 +6,7 @@ import { initials, tagColor, VERTICALS, type Account, type ContentCategory, type
 import { sigma, type SigmaProject } from '@/lib/sigma';
 
 const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
-const TEAMS: (Team | '')[] = ['', 'delta', 'creative', 'distribution', 'ads', 'pm', 'finance', 'ga'];
+const TEAMS: (Team | '')[] = ['', 'delta', 'creative', 'distribution', 'ads', 'pm', 'finance', 'ga', 'ho'];
 /** Daftar tim tanpa opsi kosong. Dipakai di modal Tambah User supaya tidak
     ada dua daftar terpisah yang bisa lupa disamakan. */
 const TEAM_OPTIONS = TEAMS.filter(Boolean) as Team[];
