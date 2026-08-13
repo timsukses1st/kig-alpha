@@ -476,6 +476,46 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   useEffect(() => { load(); }, [load]);
 
+  // ==========================================================================
+  // REALTIME
+  // Board beda dengan modul lain: di sini orang SEDANG MENGETIK. Kalau data
+  // ditarik ulang begitu saja saat modal edit terbuka, isian yang belum
+  // disimpan bisa tertimpa dan hilang. Jadi refresh-nya "dibekukan" selama
+  // pengguna berada di dalam modal / sedang menyimpan, lalu diserap sekali
+  // begitu dia selesai.
+  // ==========================================================================
+  const bekuRef = useRef(false);       // true = jangan tarik data sekarang
+  const tertundaRef = useRef(false);   // ada perubahan yang belum diserap
+  const [adaPerubahan, setAdaPerubahan] = useState(false);
+
+  const serapPerubahan = useCallback(() => {
+    tertundaRef.current = false;
+    setAdaPerubahan(false);
+    load(true);
+  }, [load]);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const segarkan = () => {
+      if (bekuRef.current) {
+        tertundaRef.current = true;
+        setAdaPerubahan(true);
+        return;
+      }
+      if (timer) clearTimeout(timer);
+      // 400 ms, bukan 250 ms seperti modul lain: perubahan massal di Board
+      // sering datang beruntun (mis. ubah status 20 baris sekaligus), jadi
+      // jeda sedikit lebih panjang menghemat satu-dua tarikan data.
+      timer = setTimeout(() => { load(true); }, 400);
+    };
+    const ch = supabase
+      .channel('board-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contents' }, segarkan)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'content_requests' }, segarkan)
+      .subscribe();
+    return () => { if (timer) clearTimeout(timer); supabase.removeChannel(ch); };
+  }, [load]);
+
   // Kategori milik project lain tidak berlaku — reset filter tiap ganti project,
   // supaya papan tidak tampak kosong karena filter yang tertinggal.
 
@@ -1197,6 +1237,15 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setDelRow(null);
     load(true);
   };
+
+  // Ditaruh di sini, BUKAN di atas dekat blok realtime, karena delRow /
+  // reqModalOpen / dupRows baru dideklarasikan di bawah — menyebutnya lebih
+  // awal akan kena temporal dead zone saat render.
+  const sedangSibuk = modalOpen || reqModalOpen || !!dupRows || !!delRow || saving;
+  useEffect(() => {
+    bekuRef.current = sedangSibuk;
+    if (!sedangSibuk && tertundaRef.current) serapPerubahan();
+  }, [sedangSibuk, serapPerubahan]);
 
   const canDelete = profile?.role === 'superadmin' || profile?.role === 'manager';
   const nextStep = editing ? nextActionFor(editing.status) : null;
@@ -1929,6 +1978,24 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
             Centang beberapa baris untuk mengubah statusnya sekaligus lewat tombol <b>⇄ Ubah status</b> yang muncul di bawah.
             Filter tanggal mengikuti <b>Tanggal tayang</b> — konten yang belum dijadwalkan hanya muncul di rentang <b>Semua</b>. Kolom yang tidak bisa diketik berarti tahapnya sedang dikelola tim lain.
           </p>
+
+          {adaPerubahan && (
+            <div
+              onClick={serapPerubahan}
+              title="Klik untuk memuat sekarang"
+              style={{
+                position: 'fixed', left: 16, bottom: 16, zIndex: 90, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '9px 14px', borderRadius: 22, fontSize: 12.5,
+                background: 'var(--panel)', color: 'var(--text-2)',
+                border: '1px solid var(--amber)',
+                boxShadow: '0 10px 30px rgba(0,0,0,.45)',
+              }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--amber)' }} />
+              Ada perubahan dari anggota lain — ditahan sampai kamu selesai
+            </div>
+          )}
 
           {toast && (
             <div className="toast" onClick={() => setToast('')}>

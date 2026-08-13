@@ -24,18 +24,34 @@ export default function CalendarView({ accounts, projectFilter }: Props) {
   const [rows, setRows] = useState<ContentRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const { data } = await supabase
       .from('contents')
       .select('*')
       .not('publish_date', 'is', null)
       .order('publish_date');
     setRows((data as ContentRow[]) || []);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // --- REALTIME: kalender ikut berubah begitu tanggal tayang diubah di Board ---
+  // Tidak perlu pengaman "beku" seperti di Board: layar ini hanya menampilkan,
+  // tidak ada isian yang bisa tertimpa.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const segarkan = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { load(true); }, 400);
+    };
+    const ch = supabase
+      .channel('calendar-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contents' }, segarkan)
+      .subscribe();
+    return () => { if (timer) clearTimeout(timer); supabase.removeChannel(ch); };
+  }, [load]);
 
   const filtered = useMemo(
     () => rows.filter((r) => projectFilter === 'all' || r.project_id === projectFilter),
