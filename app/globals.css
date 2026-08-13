@@ -78,6 +78,12 @@ input, select, textarea { font: inherit; color: var(--text); }
   padding: 18px 14px;
   display: flex; flex-direction: column; gap: 3px;
   position: sticky; top: 0; height: 100vh;
+  /* Tanpa z-index, sidebar berada di lapisan paling dasar. Isi .main ditulis
+     setelahnya di DOM, jadi elemen ber-position di sana (kotak cari Board,
+     misalnya) tergambar DI ATAS menu project yang melayang keluar sidebar.
+     Angka 40 sengaja di bawah overlay modal (50) supaya modal tetap menutupi
+     sidebar. Di layar HP nilainya ditimpa jadi 400 oleh blok @media. */
+  z-index: 40;
 }
 .brand { display: flex; align-items: center; gap: 10px; padding: 2px 6px 16px; }
 .brand-logo {
@@ -123,7 +129,9 @@ input, select, textarea { font: inherit; color: var(--text); }
    mendorong seluruh menu navigasi jauh ke bawah dan sidebar jadi penuh.
    Di layar sempit perilaku lama dipertahankan — tidak ada ruang untuk
    melayang ke samping. */
-.acc-backdrop { position: fixed; inset: 0; z-index: 55; }
+/* Harus DI BAWAH sidebar (40), kalau tidak lapisan ini menutupi menunya
+   sendiri dan setiap klik pilihan project malah mengenai backdrop. */
+.acc-backdrop { position: fixed; inset: 0; z-index: 20; }
 
 @media (min-width: 821px) {
   .account-menu {
