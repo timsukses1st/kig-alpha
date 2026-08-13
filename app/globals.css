@@ -1123,4 +1123,73 @@ label.btn.act input[type='file'] { display: none; }
   .tracker-filters select, .tracker-filters input { width: 100%; }
   .kpi-row { grid-template-columns: 1fr 1fr; }
   .kpi-value { font-size: 20px; }
+
+  /* ===================================================================
+     TABEL DI LAYAR HP
+     Kolom terkunci DIMATIKAN di bawah 560px. Checkbox + Judul memakan
+     188px; di layar 390px itu hampir separuh, sehingga kolom yang sedang
+     dilihat selalu tertutup separuh dan terbaca seperti "terpotong".
+     Di tablet (560–820px) kolom terkunci tetap menyala — di sana ruangnya
+     cukup dan manfaatnya nyata.
+     =================================================================== */
+  .table-wrap thead th:nth-child(1),
+  .table-wrap tbody td:nth-child(1),
+  .table-wrap thead th:nth-child(2),
+  .table-wrap tbody td:nth-child(2) {
+    position: static;
+    box-shadow: none;
+    border-right: 0;
+    background-image: none;
+  }
+  /* Penanda amber "belum ada link drive" dikembalikan ke sel pertama,
+     karena aturan di atas mematikan background-image-nya. */
+  .table-wrap tbody td:nth-child(1) { background-color: transparent; }
+  .table-wrap tbody td:nth-child(2) { background-color: transparent; }
+
+  /* Tabel memakai lebar layar penuh — menambah ±24px ruang baca, dan di
+     layar sesempit ini setiap piksel terasa. */
+  .table-wrap {
+    margin-left: -12px; margin-right: -12px;
+    width: auto; border-radius: 0;
+    border-left: 0; border-right: 0;
+    /* Batas tinggi dari style inline dilepas supaya tabel memakai layar
+       penuh dan tidak ada dua scroll bertumpuk (dalam tabel & halaman). */
+    max-height: none !important;
+  }
+  .table-wrap td, .table-wrap th { padding: 9px 10px; }
+
+  /* Kontrol yang tadinya berdesakan dalam satu baris */
+  .top-actions { flex-wrap: wrap; gap: 8px; }
+  .top-actions .btn { flex: 1 1 46%; font-size: 12.5px; padding: 9px 8px; }
+  .topbar { padding: 12px 12px 12px 60px; gap: 8px; }
+  .topbar h2 { font-size: 15px; }
+
+  .div-desc { flex-wrap: wrap; }
+  .cat-filter { width: 100%; }
+
+  /* Modal hampir memenuhi layar — kalau tidak, isian di dalamnya sempit
+     dan tombolnya susah dijangkau ibu jari. */
+  .overlay { padding: 0; align-items: flex-end; overflow: hidden; }
+  .modal {
+    width: 100%; max-width: 100%;
+    max-height: 94dvh;
+    border-radius: 16px 16px 0 0;
+    /* .modal aslinya overflow:hidden. Tanpa tiga baris ini, isian yang
+       panjang terpotong dan tidak bisa digulir sama sekali di HP. */
+    display: flex; flex-direction: column;
+  }
+  .modal-head, .modal-foot { flex-shrink: 0; }
+  .modal-body { overflow-y: auto; flex: 1; min-height: 0; }
+
+  /* Bar aksi massal diangkat sedikit supaya tidak tertutup bilah
+     navigasi bawaan browser HP. */
+  .bulk-bar { bottom: 20px !important; padding: 8px 10px !important; }
+  .bulk-bar .btn { padding: 7px 10px; font-size: 12px; }
+
+  /* Tombol komplain mengambang sering menutupi tombol di pojok kanan
+     bawah — dikecilkan dan digeser. */
+  .cw-bubble { width: 42px; height: 42px; bottom: 92px; right: 10px; }
+
+  /* Halaman Ekspor & sejenisnya: kartu tidak perlu bermargin tebal */
+  .content-area { padding-left: 12px; padding-right: 12px; }
 }
