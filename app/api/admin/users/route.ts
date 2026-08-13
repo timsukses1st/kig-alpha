@@ -13,9 +13,27 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
+// ⚠️ Daftar ini WAJIB sama dengan enum app_team di database dan tipe Team di
+// lib/types.ts. Kalau ada yang ketinggalan, nilainya dulu diam-diam diubah jadi
+// null tanpa pesan apa pun — user tampak berhasil dibuat padahal tim/vertical-nya
+// kosong. Sekarang nilai tak dikenal DITOLAK, bukan dibuang diam-diam.
 const VALID_ROLES = ['superadmin', 'manager', 'tim'];
-const VALID_TEAMS = ['delta', 'creative', 'distribution', 'ads', 'pm'];
-const VALID_VERTICALS = ['KC', 'GME', 'KIG'];
+const VALID_TEAMS = ['delta', 'creative', 'distribution', 'ads', 'pm', 'finance', 'ga', 'ho'];
+// 'ALL' = lintas unit. Dipakai oleh can_see_all() di database.
+const VALID_VERTICALS = ['KC', 'GME', 'KIG', 'ALL'];
+
+/**
+ * Kosong / tidak diisi → null (sah, artinya "belum diatur").
+ * Diisi tapi tidak dikenal → lempar error, jangan diam-diam dijadikan null.
+ */
+function pilihan(nilai: unknown, sah: string[], label: string): string | null {
+  const v = typeof nilai === 'string' ? nilai.trim() : '';
+  if (!v) return null;
+  if (!sah.includes(v)) {
+    throw new Error(`${label} "${v}" tidak dikenal. Pilihan yang sah: ${sah.join(', ')}.`);
+  }
+  return v;
+}
 
 const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
@@ -61,9 +79,17 @@ export async function POST(req: Request) {
       const email = (body.email || '').trim();
       const password = body.password || '';
       const full_name = (body.full_name || '').trim() || null;
+      // role sengaja tetap jatuh ke 'tim' kalau kosong — itu default paling
+      // sempit, jadi kelalaian menyempitkan akses, bukan melebarkan.
       const role = VALID_ROLES.includes(body.role) ? body.role : 'tim';
-      const team = VALID_TEAMS.includes(body.team) ? body.team : null;
-      const vertical = VALID_VERTICALS.includes(body.vertical) ? body.vertical : null;
+      let team: string | null;
+      let vertical: string | null;
+      try {
+        team = pilihan(body.team, VALID_TEAMS, 'Team');
+        vertical = pilihan(body.vertical, VALID_VERTICALS, 'Vertical');
+      } catch (e) {
+        return NextResponse.json({ error: (e as Error).message }, { status: 400 });
+      }
 
       if (!email || !password) return NextResponse.json({ error: 'Email & password wajib diisi.' }, { status: 400 });
       if (password.length < 6) return NextResponse.json({ error: 'Password minimal 6 karakter.' }, { status: 400 });
