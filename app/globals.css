@@ -111,10 +111,49 @@ input, select, textarea { font: inherit; color: var(--text); }
 .acc-name { font-size: 13px; font-weight: 700; line-height: 1.2; }
 .acc-sub { font-size: 10.5px; color: var(--text-3); font-family: var(--mono); }
 .acc-caret { margin-left: auto; color: var(--text-3); font-size: 11px; }
+.acc-wrap { position: relative; }
 .account-menu {
   background: var(--raised); border: 1px solid var(--border);
   border-radius: 12px; padding: 6px; margin-bottom: 8px;
   display: flex; flex-direction: column; gap: 2px;
+}
+
+/* ---- Menu project melayang ke samping (layar lebar) ----
+   Dulu menu ini menyisip ke bawah tombolnya, sehingga daftar 9 project
+   mendorong seluruh menu navigasi jauh ke bawah dan sidebar jadi penuh.
+   Di layar sempit perilaku lama dipertahankan — tidak ada ruang untuk
+   melayang ke samping. */
+.acc-backdrop { position: fixed; inset: 0; z-index: 55; }
+
+@media (min-width: 821px) {
+  .account-menu {
+    position: absolute;
+    top: 0;
+    left: calc(100% + 12px);
+    width: 268px;
+    margin-bottom: 0;
+    z-index: 60;
+    max-height: min(70vh, 520px);
+    overflow-y: auto;
+    background: var(--panel);
+    border-color: var(--border-strong);
+    box-shadow: 0 18px 44px rgba(0,0,0,.5);
+    scrollbar-width: thin;
+  }
+  /* Ekor kecil ke arah tombolnya, supaya jelas menu ini milik pemilih project
+     dan bukan panel yang mengambang entah dari mana. */
+  .account-menu::before {
+    content: '';
+    position: absolute;
+    left: -6px; top: 18px;
+    width: 10px; height: 10px;
+    background: var(--panel);
+    border-left: 1px solid var(--border-strong);
+    border-bottom: 1px solid var(--border-strong);
+    transform: rotate(45deg);
+  }
+  .account-menu::-webkit-scrollbar { width: 6px; }
+  .account-menu::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
 }
 .account-option {
   display: flex; align-items: center; gap: 10px;
