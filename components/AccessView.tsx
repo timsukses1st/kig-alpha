@@ -10,6 +10,30 @@ const TEAMS: (Team | '')[] = ['', 'delta', 'creative', 'distribution', 'ads', 'p
 /** Daftar tim tanpa opsi kosong. Dipakai di modal Tambah User supaya tidak
     ada dua daftar terpisah yang bisa lupa disamakan. */
 const TEAM_OPTIONS = TEAMS.filter(Boolean) as Team[];
+/**
+ * Pilihan vertical untuk AKUN PENGGUNA — sengaja berbeda dari VERTICALS yang
+ * dipakai untuk project.
+ *
+ * Aturan sebenarnya ada di fungsi can_see_all() di database:
+ *     my_role() = 'superadmin' or my_vertical() = 'KIG' or my_vertical() = 'ALL'
+ *
+ * Jadi 'ALL' itu penanda resmi lintas unit, dan 'KIG' ikut memberi akses penuh
+ * karena KIG adalah holding-nya. Sementara nilai KOSONG (NULL) berarti
+ * "tidak cocok dengan project mana pun" — di SQL, `vertical = NULL` selalu
+ * menghasilkan NULL, bukan true.
+ *
+ * Label lama untuk nilai kosong tertulis "semua", padahal artinya justru
+ * kebalikannya. Itu sempat membuat satu akun manager tidak melihat project
+ * sama sekali dan sulit dilacak. Sekarang labelnya dibuat jujur.
+ */
+const USER_VERTICALS: { value: string; label: string }[] = [
+  { value: '', label: '— belum diatur (tidak lihat apa pun) —' },
+  { value: 'ALL', label: 'ALL — lintas unit' },
+  { value: 'KIG', label: 'KIG — holding (lintas unit)' },
+  { value: 'KC', label: 'KC — Kahfi Corp' },
+  { value: 'GME', label: 'GME — Gala Mega Enigma' },
+];
+
 const MEMBER_TEAMS: Team[] = ['creative', 'distribution', 'ads', 'delta'];
 
 interface Props {
@@ -714,8 +738,9 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                           disabled={u.id === selfId}
                           onChange={(e) => updateUser(u.id, { vertical: e.target.value || null })}
                         >
-                          <option value="">semua</option>
-                          {VERTICALS.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}
+                          {USER_VERTICALS.map((v) => (
+                            <option key={v.value} value={v.value}>{v.label}</option>
+                          ))}
                         </select>
                       </td>
                       <td>
@@ -1113,8 +1138,9 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                 <div className="field">
                   <label>Vertical</label>
                   <select value={nu.vertical} onChange={(e) => setNu({ ...nu, vertical: e.target.value })}>
-                    <option value="">semua</option>
-                    {VERTICALS.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}
+                    {USER_VERTICALS.map((v) => (
+                      <option key={v.value} value={v.value}>{v.label}</option>
+                    ))}
                   </select>
                 </div>
               </div>
