@@ -549,7 +549,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       if (projectFilter !== 'all' && r.project_id !== projectFilter) return false;
       if (!inRange(r)) return false;
       // "Perlu ditindak" = aset belum ada, atau sudah tayang tapi link post kosong
-      if (onlyTodo && !(!r.asset_url || ((r.status === 'published' || r.status === 'diiklankan') && !r.post_url))) {
+      // Pelanggaran selalu masuk 'Perlu ditindak' — itu justru yang paling
+      // mendesak dibanding link drive yang belum diisi.
+      if (onlyTodo && !(r.status === 'pelanggaran' || !r.asset_url || ((r.status === 'published' || r.status === 'diiklankan') && !r.post_url))) {
         return false;
       }
       if (query) {
@@ -1055,7 +1057,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
 
   const canAcc = profile?.role === 'superadmin' || profile?.role === 'manager';
 
-  const ORDER: ContentStatus[] = ['drafting', 'review', 'siap_upload', 'terjadwal', 'published', 'diiklankan'];
+  // 'pelanggaran' sengaja di urutan terakhir — dia keadaan pengecualian,
+  // bukan tahap lanjutan dari alur normal.
+  const ORDER: ContentStatus[] = ['drafting', 'review', 'siap_upload', 'terjadwal', 'published', 'diiklankan', 'pelanggaran'];
   const [flowBusy, setFlowBusy] = useState(false);
 
   const nextActionFor = (s: ContentStatus): { target: ContentStatus; label: string; allowed: boolean } | null => {
@@ -1072,6 +1076,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
         return { target: 'published', label: 'Tandai Sudah Tayang', allowed: priv || team === 'distribution' || team === 'delta' };
       case 'published':
         return { target: 'diiklankan', label: 'Tandai Diiklankan', allowed: priv || team === 'ads' || team === 'delta' };
+      case 'pelanggaran':
+        // Jalan keluar dari pelanggaran = perbaiki dari awal.
+        return { target: 'drafting', label: 'Perbaiki → Kembalikan ke Drafting', allowed: priv || team === 'creative' || team === 'distribution' || team === 'delta' };
       default:
         return null;
     }
@@ -1572,17 +1579,27 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                   const editable = canEditRow(profile, row.status);
                   const def = statusDef(row.status);
                   const targets = targetableStatuses(profile, row.status);
+                  // Pelanggaran didahulukan atas penanda amber "belum ada link drive":
+                  // konten yang kena pelanggaran jauh lebih mendesak, dan kalau dua
+                  // warna ditumpuk hasilnya jadi cokelat lumpur yang tidak terbaca.
+                  const langgar = row.status === 'pelanggaran';
+                  const perluDrive = !langgar && !row.asset_url;
+                  const barColor = langgar ? 'var(--st-pelanggaran)' : perluDrive ? 'var(--amber)' : null;
                   const rowCat = row.category_id
                     ? (categories.find((c) => c.id === row.category_id) || null)
                     : null;
                   return (
                     <tr
                       key={row.id}
-                      // Belum ada link drive → seluruh barisnya diberi semburat amber,
-                      // sama seperti penanda di kartu papan dulu.
-                      style={row.asset_url ? undefined : {
-                        backgroundImage: 'linear-gradient(rgba(245,158,11,.07), rgba(245,158,11,.07))',
-                      }}
+                      // Semburat sewarna penandanya: merah untuk pelanggaran,
+                      // amber untuk yang belum ada link drive.
+                      style={
+                        langgar
+                          ? { backgroundImage: 'linear-gradient(rgba(239,68,68,.12), rgba(239,68,68,.12))' }
+                          : perluDrive
+                            ? { backgroundImage: 'linear-gradient(rgba(245,158,11,.07), rgba(245,158,11,.07))' }
+                            : undefined
+                      }
                       onContextMenu={(e) => { e.preventDefault(); openCtx(row, e.clientX, e.clientY); }}
                       onTouchStart={(e) => startLongPress(row, e)}
                       onTouchEnd={cancelLongPress}
@@ -1591,7 +1608,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     >
                       <td style={{
                         width: CHECK_COL_W,
-                        boxShadow: row.asset_url ? undefined : 'inset 3px 0 0 var(--amber)',
+                        boxShadow: barColor ? `inset 3px 0 0 ${barColor}` : undefined,
                       }}>
                         <input
                           type="checkbox"
@@ -1604,8 +1621,14 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
                           <span
                             className="flag-dot"
-                            title={row.asset_url ? 'Aset siap' : 'Perlu link drive'}
-                            style={{ background: row.asset_url ? 'var(--green)' : 'var(--amber)', flexShrink: 0 }}
+                            title={langgar ? 'Kena pelanggaran — perlu ditindak' : row.asset_url ? 'Aset siap' : 'Perlu link drive'}
+                            style={{
+                              background: langgar ? 'var(--st-pelanggaran)' : row.asset_url ? 'var(--green)' : 'var(--amber)',
+                              flexShrink: 0,
+                              // Titik pelanggaran diberi lingkar cahaya supaya langsung
+                              // tertangkap mata saat memindai daftar panjang.
+                              boxShadow: langgar ? '0 0 0 3px rgba(239,68,68,.25)' : undefined,
+                            }}
                           />
                           <button
                             type="button"
