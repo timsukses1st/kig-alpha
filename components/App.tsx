@@ -353,6 +353,12 @@ export default function App() {
         </svg>
       </button>
       {mobileNav && <div className="nav-backdrop" onClick={() => setMobileNav(false)} />}
+      {/* Menu project melayang menutup saat diklik di luar. Pakai lapisan
+          backdrop, BUKAN listener mousedown di document — listener itu menutup
+          menu sebelum event click sempat terpicu, jadi pilihannya tidak jalan. */}
+      {accMenuOpen && !isMobile && (
+        <div className="acc-backdrop" onClick={() => setAccMenuOpen(false)} />
+      )}
 
       <aside className={`sidebar ${slim ? 'collapsed' : ''} ${mobileNav ? 'mobile-open' : ''}`}>
         <div className="brand">
@@ -380,6 +386,10 @@ export default function App() {
         {!slim && (
           <>
             <div className="section-label">Project</div>
+            {/* Pembungkus ini yang jadi jangkar posisi menu project.
+                Tanpa dia, menunya tidak punya patokan dan harus dipaksa pakai
+                offset angka mati yang gampang meleset kalau sidebar berubah. */}
+            <div className="acc-wrap">
             <button className="account-picker" onClick={() => setAccMenuOpen(!accMenuOpen)}>
               <div className="acc-avatar">{activeProj ? initials(activeProj.name) : '∗'}</div>
               <div>
@@ -436,6 +446,7 @@ export default function App() {
                 )}
               </div>
             )}
+            </div>
             <div className="section-label">Menu</div>
           </>
         )}
