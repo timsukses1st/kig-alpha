@@ -18,6 +18,8 @@
   --st-terjadwal: #fbbf24;
   --st-published: #fb7185;
   --st-diiklankan: #ec4899;
+  /* Merah tegas untuk konten yang kena pelanggaran platform. */
+  --st-pelanggaran: #ef4444;
   --green: #34d399;
   --amber: #fbbf24;
   --red: #f87171;
@@ -45,6 +47,7 @@
   --st-terjadwal: #d99a00;
   --st-published: #e05563;
   --st-diiklankan: #d6247f;
+  --st-pelanggaran: #d92020;
   --green: #0f9d6e;
   --amber: #b97b00;
   --red: #d64545;
