@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { initials, type OvertimeRequest, type Profile, type Project } from '@/lib/types';
 
@@ -254,16 +254,27 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
    * memang perlu semuanya untuk bisa memisahkan mana yang disetujui.
    */
   const rekap = useMemo(() => {
-    const map = new Map<string, { name: string; hours: number; count: number }>();
+    const map = new Map<string, {
+      key: string; name: string; hours: number; count: number;
+      /** Rincian pengajuannya, supaya barisnya bisa dibuka untuk melihat
+       *  pekerjaan apa saja yang menghasilkan jam tersebut. */
+      items: OvertimeRequest[];
+    }>();
     scoped.filter((r) => r.status === 'disetujui').forEach((r) => {
-      const key = r.requester_id || r.requester_name || '?';
-      const cur = map.get(key) || { name: r.requester_name || '—', hours: 0, count: 0 };
+      const key = peopleKey(r);
+      const cur = map.get(key) || { key, name: r.requester_name || '—', hours: 0, count: 0, items: [] };
       cur.hours += durationHours(r.start_time, r.end_time);
       cur.count += 1;
+      cur.items.push(r);
       map.set(key, cur);
     });
-    return Array.from(map.values()).sort((a, b) => b.hours - a.hours);
+    return Array.from(map.values())
+      .map((v) => ({ ...v, items: v.items.sort((a, b) => b.work_date.localeCompare(a.work_date)) }))
+      .sort((a, b) => b.hours - a.hours);
   }, [scoped]);
+
+  /** Baris rekap yang sedang dibuka rinciannya. */
+  const [openRekap, setOpenRekap] = useState<string | null>(null);
 
   // `scoped` sudah menerapkan Lembur saya / Semua tim, jadi tidak perlu diulang di sini.
   const myPending = scoped.filter((r) => r.status === 'diajukan').length;
@@ -381,6 +392,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
           <>
             <div className="section-title" style={{ marginTop: 28 }}>
               Rekap Jam (disetujui)
+              <span className="sub" style={{ marginLeft: 8, fontWeight: 400, fontSize: 11.5 }}>
+                klik nama untuk melihat rincian pekerjaannya
+              </span>
               {person !== 'all' && (
                 <span className="sub" style={{ marginLeft: 8, fontWeight: 400 }}>
                   · {peopleOptions.find((p) => p.id === person)?.name || ''}
@@ -391,13 +405,71 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
               <table>
                 <thead><tr><th>Nama</th><th>Jumlah pengajuan</th><th>Total jam lembur</th></tr></thead>
                 <tbody>
-                  {rekap.map((r, i) => (
-                    <tr key={i}>
-                      <td><span className="row-avatar">{initials(r.name)}</span><b>{r.name}</b></td>
-                      <td>{r.count}×</td>
-                      <td><b>{fmtDur(r.hours)}</b></td>
-                    </tr>
-                  ))}
+                  {rekap.map((r) => {
+                    const buka = openRekap === r.key;
+                    return (
+                      <Fragment key={r.key}>
+                        <tr
+                          className="tracker-row"
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => setOpenRekap(buka ? null : r.key)}
+                          title={buka ? 'Tutup rincian' : 'Lihat pekerjaan yang dikerjakan'}
+                        >
+                          <td>
+                            <span className="row-avatar">{initials(r.name)}</span>
+                            <b>{r.name}</b>
+                            <span style={{
+                              marginLeft: 8, color: 'var(--text-3)', fontSize: 11,
+                              display: 'inline-block',
+                              transform: buka ? 'rotate(90deg)' : 'none',
+                              transition: 'transform .12s',
+                            }}>▸</span>
+                          </td>
+                          <td>{r.count}×</td>
+                          <td><b>{fmtDur(r.hours)}</b></td>
+                        </tr>
+
+                        {buka && (
+                          <tr>
+                            {/* Rincian sengaja dipasang sebagai baris terpisah selebar
+                                tabel, bukan kolom baru. Uraian pekerjaan panjang-panjang;
+                                kalau dijejalkan jadi kolom, tabelnya melebar dan judulnya
+                                terpotong. */}
+                            <td colSpan={3} style={{ background: 'var(--raised)', padding: '4px 16px 12px' }}>
+                              {r.items.map((o) => (
+                                <div
+                                  key={o.id}
+                                  style={{
+                                    display: 'flex', gap: 12, alignItems: 'flex-start',
+                                    padding: '9px 0', borderTop: '1px solid var(--border)',
+                                  }}
+                                >
+                                  <div style={{ minWidth: 108, flexShrink: 0 }}>
+                                    <div style={{ fontSize: 12.5, fontWeight: 700 }}>{fmtDate(o.work_date)}</div>
+                                    <div className="sub" style={{ fontSize: 11 }}>
+                                      {o.start_time.slice(0, 5)}–{o.end_time.slice(0, 5)}
+                                    </div>
+                                  </div>
+                                  <div style={{ minWidth: 54, flexShrink: 0, fontSize: 12.5, fontWeight: 700 }}>
+                                    {fmtDur(durationHours(o.start_time, o.end_time))}
+                                  </div>
+                                  <div style={{ minWidth: 0, flex: 1 }}>
+                                    <div style={{ fontSize: 12.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                                      {o.description}
+                                    </div>
+                                    <div className="sub" style={{ fontSize: 11, marginTop: 2 }}>
+                                      {projName(o.project_id)}
+                                      {o.approver_name ? ` · disetujui ${o.approver_name}` : ''}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
