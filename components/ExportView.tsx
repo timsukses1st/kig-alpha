@@ -152,7 +152,7 @@ export default function ExportView({ profile, projects, accounts, projectFilter 
   const [to, setTo] = useState('');
   const [picked, setPicked] = useState<ModKey[]>(DEFAULT_PICK);
   const [counts, setCounts] = useState<Record<string, number | null>>({});
-  const [counting, setCounting] = useState(false);
+  const [counting, setCounting] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
@@ -359,7 +359,7 @@ export default function ExportView({ profile, projects, accounts, projectFilter 
                     padding: '11px 13px', borderRadius: 10,
                     border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`,
                     background: on ? 'var(--accent-soft)' : 'var(--raised)',
-                    opacity: n === null ? 0.55 : 1,
+                    opacity: n === null ? 0.55 : n === undefined ? 0.7 : 1,
                   }}
                 >
                   <input type="checkbox" checked={on} onChange={() => toggle(m.key)} style={{ marginTop: 2 }} />
@@ -369,7 +369,11 @@ export default function ExportView({ profile, projects, accounts, projectFilter 
                   </div>
                   <div style={{ fontFamily: 'var(--mono)', fontSize: 12, whiteSpace: 'nowrap',
                     color: n === null ? 'var(--red)' : kosong ? 'var(--text-3)' : 'var(--text-2)' }}>
-                    {counting && n === undefined ? '…'
+                    {/* Urutan pengecekan WAJIB begini. Pada render pertama counts masih
+                        kosong sehingga n bernilai undefined — kalau undefined tidak
+                        dicegat lebih dulu, n.toLocaleString() dipanggil pada undefined
+                        dan seluruh halaman mati. */}
+                    {n === undefined ? '…'
                       : n === null ? 'tabel tidak terbaca'
                       : `${n.toLocaleString('id-ID')} baris`}
                   </div>
