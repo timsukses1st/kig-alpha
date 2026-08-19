@@ -631,8 +631,17 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   }, [baseRows]);
 
   const accName = (id: string | null) => accounts.find((a) => a.id === id)?.handle || 'Akun belum ditentukan';
+  /**
+   * Akun yang boleh dipilih untuk sebuah project.
+   *
+   * Dulu di sini ada `|| !a.project_id`, sehingga akun yang belum ditugaskan
+   * ke project mana pun muncul di dropdown SEMUA project — padahal di Kelola
+   * Akses dia tidak kelihatan sama sekali karena daftarnya disaring per
+   * project. Akibatnya ada akun nyasar yang bisa dipilih siapa saja tapi tidak
+   * bisa diurus siapa pun. Sekarang akun wajib punya project.
+   */
   const accountsOfProject = (projId: string) =>
-    projId ? accounts.filter((a) => a.project_id === projId || !a.project_id) : accounts;
+    projId ? accounts.filter((a) => a.project_id === projId) : accounts;
   const membersOf = (team: 'creative' | 'distribution' | 'ads') =>
     members.filter((m) => m.team === team || m.team === 'delta');
   const canCreate =
