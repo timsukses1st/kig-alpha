@@ -527,10 +527,17 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
 
   useEffect(() => { load(); }, [load]);
 
-  // Akun yang ditampilkan: ikut project aktif di sidebar (kalau bukan 'all')
+  /**
+   * Akun yang ditampilkan: ikut project aktif di sidebar (kalau bukan 'all').
+   *
+   * Akun TANPA project selalu ikut ditampilkan. Kalau tidak, dia tidak muncul
+   * di project mana pun dan jadi tidak bisa ditugaskan maupun dihapus — persis
+   * yang terjadi pada @sakjsak. Kolom Project di barisnya sudah bisa dipakai
+   * untuk langsung menugaskannya.
+   */
   const shownAccounts = useMemo(
     () => (activeProjectId && activeProjectId !== 'all'
-      ? accounts.filter((a) => a.project_id === activeProjectId)
+      ? accounts.filter((a) => a.project_id === activeProjectId || !a.project_id)
       : accounts),
     [accounts, activeProjectId]
   );
@@ -860,7 +867,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
             <div className="section-title">Akun Media</div>
             <p className="section-hint">
               {activeProjectName
-                ? <>Menampilkan akun project <b>{activeProjectName}</b> — ganti lewat selector Project di sidebar. Akun yang dipakai konten tidak bisa dihapus, nonaktifkan saja.</>
+                ? <>Menampilkan akun project <b>{activeProjectName}</b> — ganti lewat selector Project di sidebar. Akun yang belum punya project ikut ditampilkan di sini supaya bisa ditugaskan; selama project-nya kosong, akun itu tidak bisa dipilih di Board. Akun yang dipakai konten tidak bisa dihapus, nonaktifkan saja.</>
                 : <>Semua akun media. Pilih project di sidebar untuk menyaring. Akun yang dipakai konten tidak bisa dihapus — nonaktifkan saja.</>}
             </p>
             {/* Daftar pilihan Label — dipakai bersama oleh form tambah & kolom tabel */}
