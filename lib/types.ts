@@ -377,9 +377,10 @@ export const TEAM_EDITABLE: Record<Team, ContentStatus[]> = {
   distribution: ['siap_upload', 'terjadwal', 'published', 'pelanggaran'],
   // Ads perlu bisa menyentuhnya untuk menghentikan iklan konten bermasalah.
   ads: ['published', 'diiklankan', 'pelanggaran'],
-  // VMT — sengaja dikosongkan sampai diputuskan status apa yang mereka pegang.
-  // Kosong = boleh melihat, belum boleh memindahkan status.
-  vmt: [],
+  // VMT sejajar dengan Creative di bagan CV KahfiCorp — menggarap materi,
+  // bukan menayangkan. Kalau ternyata VMT ikut menayangkan, ganti barisnya
+  // jadi: ['siap_upload', 'terjadwal', 'published', 'pelanggaran'].
+  vmt: ['drafting', 'review', 'pelanggaran'],
 
   // --- Jabatan yang tidak menggarap konten ---
   // Boleh melihat dan memakai modul pengajuan, tidak memindahkan status.
@@ -406,7 +407,7 @@ export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
   creative: ['drafting', 'review', 'pelanggaran'],
   distribution: ['siap_upload', 'terjadwal', 'published', 'pelanggaran'],
   ads: ['published', 'diiklankan', 'pelanggaran'],
-  vmt: [],
+  vmt: ['drafting', 'review', 'pelanggaran'],
 
   pimpinan: [],
   ho: [],
