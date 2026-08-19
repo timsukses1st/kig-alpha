@@ -36,6 +36,11 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
   const [rows, setRows] = useState<BudgetRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'diajukan' | 'disetujui' | 'dibayar' | 'ditolak'>('all');
+  // Periode sengaja mulai dari 'all' supaya pengajuan lama tidak mendadak
+  // hilang dari layar orang yang baru membuka menu ini.
+  const [periode, setPeriode] = useState<'bulan' | '30hari' | '3bulan' | 'all'>('all');
+  const [dari, setDari] = useState('');
+  const [sampai, setSampai] = useState('');
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -288,16 +293,46 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
 
   const isImage = (name: string | null) => !!name && /\.(png|jpe?g|webp|gif)$/i.test(name);
 
-  const filtered = useMemo(() => rows.filter((r) => filter === 'all' || r.status === filter), [rows, filter]);
+  /**
+   * Penyaring periode.
+   * Kalau tanggal khusus diisi (salah satu saja boleh), dia menang atas pilihan
+   * chip — jadi tidak ada dua aturan yang saling bertabrakan diam-diam.
+   */
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const dalamPeriode = useCallback((iso: string) => {
+    const d = new Date(iso);
+    if (dari || sampai) {
+      const k = ymd(d);
+      if (dari && k < dari) return false;
+      if (sampai && k > sampai) return false;
+      return true;
+    }
+    if (periode === 'all') return true;
+    const kini = new Date();
+    if (periode === 'bulan') {
+      return d.getFullYear() === kini.getFullYear() && d.getMonth() === kini.getMonth();
+    }
+    const batas = new Date();
+    batas.setDate(batas.getDate() - (periode === '30hari' ? 30 : 90));
+    return d >= batas;
+  }, [periode, dari, sampai]);
+
+  // KPI dan tabel dua-duanya dihitung dari `scoped`. Kalau KPI memakai `rows`
+  // penuh sementara tabelnya tersaring, angkanya tidak akan cocok dengan isi
+  // layar dan orang akan mengira rekapnya salah.
+  const scoped = useMemo(() => rows.filter((r) => dalamPeriode(r.created_at)), [rows, dalamPeriode]);
+  const filtered = useMemo(() => scoped.filter((r) => filter === 'all' || r.status === filter), [scoped, filter]);
   const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
 
   const stats = useMemo(() => {
-    const sum = (s: string) => rows.filter((r) => r.status === s).reduce((a, r) => a + (r.amount || 0), 0);
+    const sum = (s: string) => scoped.filter((r) => r.status === s).reduce((a, r) => a + (r.amount || 0), 0);
     return {
       diajukan: sum('diajukan'), disetujui: sum('disetujui'), dibayar: sum('dibayar'),
-      countDiajukan: rows.filter((r) => r.status === 'diajukan').length,
+      countDiajukan: scoped.filter((r) => r.status === 'diajukan').length,
     };
-  }, [rows]);
+  }, [scoped]);
 
   const fmt = (iso: string) => new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -306,7 +341,9 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
       <div className="topbar">
         <div style={{ display: 'flex', alignItems: 'baseline' }}>
           <h2>Pengajuan Budget</h2>
-          <span className="top-note">{rows.length} pengajuan</span>
+          <span className="top-note">
+            {scoped.length} pengajuan{scoped.length !== rows.length ? ` dari ${rows.length}` : ''}
+          </span>
         </div>
         <div className="top-actions">
           {canRequest && <button className="btn primary" onClick={openModal}>+ Ajukan budget</button>}
@@ -327,6 +364,34 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
               {f === 'all' ? 'Semua' : STATUS_META[f].label}
             </button>
           ))}
+        </div>
+
+        <div className="team-filter" style={{ justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            {([
+              { k: 'all', l: 'Semua waktu' },
+              { k: 'bulan', l: 'Bulan ini' },
+              { k: '30hari', l: '30 hari' },
+              { k: '3bulan', l: '3 bulan' },
+            ] as const).map((p) => (
+              <button
+                key={p.k}
+                className={`chip-btn ${!dari && !sampai && periode === p.k ? 'active' : ''}`}
+                onClick={() => { setDari(''); setSampai(''); setPeriode(p.k); }}
+              >
+                {p.l}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="sub" style={{ fontFamily: 'inherit' }}>Tanggal tertentu</span>
+            <input type="date" className="cat-filter" value={dari} onChange={(e) => setDari(e.target.value)} />
+            <span className="sub">—</span>
+            <input type="date" className="cat-filter" value={sampai} onChange={(e) => setSampai(e.target.value)} />
+            {(dari || sampai) && (
+              <button className="btn act" onClick={() => { setDari(''); setSampai(''); }}>Hapus tanggal</button>
+            )}
+          </div>
         </div>
 
         <div className="table-wrap">
@@ -360,6 +425,9 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                     <td>
                       <div className="recap-actions" onClick={(e) => e.stopPropagation()}>
                         <button className="btn act" onClick={() => openDetail(b)}>Detail</button>
+                        {canEdit(b) && (
+                          <button className="btn act" onClick={() => openEdit(b)}>✎ Edit</button>
+                        )}
                         {b.status === 'diajukan' && isPM && (
                           <>
                             <button className="btn act" style={{ borderColor: 'var(--green)', color: 'var(--green)' }} onClick={() => approve(b)}>ACC</button>
