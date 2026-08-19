@@ -68,7 +68,12 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
 
   const isPM = profile?.team === 'pm' || profile?.role === 'superadmin';
   const isFinance = profile?.team === 'finance' || profile?.role === 'superadmin';
-  const canRequest = profile?.role === 'tim' || profile?.role === 'manager' || profile?.role === 'superadmin';
+  /**
+   * Sejak notulen 14 Agustus, anggota berperan `tim` TIDAK lagi mengajukan
+   * budget sendiri — pengajuan naik lewat lead atau manager masing-masing.
+   * Yang lama tetap bisa mereka lihat dan sunting selama statusnya Diajukan.
+   */
+  const canRequest = profile?.role === 'manager' || profile?.role === 'superadmin';
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -461,8 +466,14 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
           )}
         </div>
         <p className="cal-legend">
-          Alur: <b>Team/Manager ajukan</b> (+ bukti) → <b>PM ACC</b> → <b>Finance tandai dibayar</b> (+ struk). Ikut tembok unit project.
+          Alur: <b>Manager ajukan</b> (+ bukti) → <b>PM ACC</b> → <b>Finance tandai dibayar</b> (+ struk). Ikut tembok unit project.
         </p>
+        {!canRequest && (
+          <p className="cal-legend" style={{ color: 'var(--amber)' }}>
+            Pengajuan budget dinaikkan lewat lead atau manager timmu — bukan diajukan sendiri.
+            Halaman ini tetap bisa kamu pakai untuk memantau statusnya.
+          </p>
+        )}
       </div>
 
       {detail && (
