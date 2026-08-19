@@ -2,14 +2,34 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { initials, tagColor, VERTICALS, type Account, type ContentCategory, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
+import { initials, tagColor, TEAM_GROUPS, TEAM_LABEL, teamsForVertical, VERTICALS, type Account, type ContentCategory, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
 import { sigma, type SigmaProject } from '@/lib/sigma';
 
 const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
-const TEAMS: (Team | '')[] = ['', 'delta', 'creative', 'distribution', 'ads', 'pm', 'finance', 'ga', 'ho'];
-/** Daftar tim tanpa opsi kosong. Dipakai di modal Tambah User supaya tidak
-    ada dua daftar terpisah yang bisa lupa disamakan. */
-const TEAM_OPTIONS = TEAMS.filter(Boolean) as Team[];
+/**
+ * Pilihan tim, dikelompokkan dan disaring menurut unit bisnisnya.
+ *
+ * `current` wajib diikutkan: kalau tim yang sedang dipakai seseorang tidak
+ * lolos penyaring (misalnya orang KC bertim 'delta'), tanpa ini pilihannya
+ * hilang dari daftar dan timnya bisa ikut terhapus begitu dropdown disentuh.
+ */
+function TeamOptions({ vertical, current }: { vertical?: string | null; current?: string | null }) {
+  const boleh = new Set<string>(teamsForVertical(vertical));
+  if (current) boleh.add(current);
+  return (
+    <>
+      {TEAM_GROUPS.map((g) => {
+        const isi = g.teams.filter((t) => boleh.has(t));
+        if (!isi.length) return null;
+        return (
+          <optgroup key={g.label} label={g.label}>
+            {isi.map((t) => <option key={t} value={t}>{TEAM_LABEL[t]}</option>)}
+          </optgroup>
+        );
+      })}
+    </>
+  );
+}
 /**
  * Pilihan vertical untuk AKUN PENGGUNA — sengaja berbeda dari VERTICALS yang
  * dipakai untuk project.
@@ -34,7 +54,7 @@ const USER_VERTICALS: { value: string; label: string }[] = [
   { value: 'GME', label: 'GME — Gala Mega Enigma' },
 ];
 
-const MEMBER_TEAMS: Team[] = ['creative', 'distribution', 'ads', 'delta'];
+const MEMBER_TEAMS: Team[] = ['creative', 'distribution', 'ads', 'vmt', 'delta'];
 
 interface Props {
   selfId: string;
@@ -729,7 +749,8 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                       </td>
                       <td>
                         <select value={u.team || ''} onChange={(e) => updateUser(u.id, { team: (e.target.value || null) as Team | null })}>
-                          {TEAMS.map((t) => <option key={t} value={t}>{t || '—'}</option>)}
+                          <option value="">—</option>
+                          <TeamOptions vertical={u.vertical} current={u.team} />
                         </select>
                       </td>
                       <td>
@@ -963,7 +984,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
               <input placeholder="Nama anggota" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && addMember()} />
               <select value={newMemberTeam} onChange={(e) => setNewMemberTeam(e.target.value as Team)}>
-                {MEMBER_TEAMS.map((t) => <option key={t} value={t}>{t}</option>)}
+                {MEMBER_TEAMS.map((t) => <option key={t} value={t}>{TEAM_LABEL[t]}</option>)}
               </select>
               <button className="btn primary" onClick={addMember} disabled={!newMemberName.trim()}>+ Tambah</button>
             </div>
@@ -1132,7 +1153,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                   <label>Team</label>
                   <select value={nu.team} onChange={(e) => setNu({ ...nu, team: e.target.value })}>
                     <option value="">—</option>
-                    {TEAM_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+                    <TeamOptions vertical={nu.vertical} />
                   </select>
                 </div>
                 <div className="field">
