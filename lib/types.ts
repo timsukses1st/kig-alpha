@@ -1,5 +1,64 @@
 export type Role = 'superadmin' | 'manager' | 'tim';
-export type Team = 'delta' | 'creative' | 'distribution' | 'ads' | 'pm' | 'finance' | 'ga' | 'ho';
+/**
+ * Tim = jabatan pada bagan organisasi, bukan sekadar fungsi kerja.
+ * Nilai-nilai ini harus SAMA PERSIS dengan enum `app_team` di database.
+ * Ingat: nilai enum Postgres bisa ditambah, TIDAK bisa dihapus — jadi jangan
+ * menambah nilai baru sebelum disepakati.
+ */
+export type Team =
+  // Level PT Kahfi Indo Group
+  | 'ceo' | 'komisaris' | 'coo' | 'cfo' | 'cpo' | 'ia' | 'staff' | 'ga' | 'delta'
+  // Level unit bisnis (KC & GME)
+  | 'pimpinan' | 'ho' | 'lo' | 'sm' | 'hrd' | 'pm' | 'finance' | 'developer'
+  // Tim yang menggarap konten
+  | 'creative' | 'distribution' | 'ads' | 'vmt';
+
+/** Label yang enak dibaca manusia. Dipakai di dropdown Kelola Akses. */
+export const TEAM_LABEL: Record<Team, string> = {
+  ceo: 'CEO',
+  komisaris: 'Komisaris',
+  coo: 'COO',
+  cfo: 'CFO',
+  cpo: 'CPO',
+  ia: 'Internal Affairs',
+  staff: 'Staff KIG',
+  ga: 'General Affairs',
+  delta: 'Delta',
+  pimpinan: 'Pimpinan Tertinggi',
+  ho: 'Head of Operational',
+  lo: 'Lead Operational',
+  sm: 'Sales Manager',
+  hrd: 'HRD',
+  pm: 'Project Manager',
+  finance: 'Finance',
+  developer: 'Developer',
+  creative: 'Creative',
+  distribution: 'Distribution',
+  ads: 'Ads',
+  vmt: 'VMT',
+};
+
+/** Pengelompokan untuk dropdown supaya 21 pilihan tidak jadi daftar panjang. */
+export const TEAM_GROUPS: { label: string; teams: Team[] }[] = [
+  { label: 'Konten', teams: ['creative', 'distribution', 'ads', 'vmt'] },
+  { label: 'Unit Bisnis', teams: ['pimpinan', 'ho', 'lo', 'sm', 'hrd', 'pm', 'finance', 'developer'] },
+  { label: 'PT Kahfi Indo Group', teams: ['ceo', 'komisaris', 'coo', 'cfo', 'cpo', 'ia', 'staff', 'ga', 'delta'] },
+];
+
+/**
+ * Tim apa saja yang masuk akal untuk sebuah unit bisnis.
+ * Ini hanya penyaring TAMPILAN — tembok akses yang sebenarnya tetap di RLS
+ * lewat kolom `vertical`, bukan di sini.
+ */
+export function teamsForVertical(vertical: string | null | undefined): Team[] {
+  const konten = TEAM_GROUPS[0].teams;
+  const unit = TEAM_GROUPS[1].teams;
+  const holding = TEAM_GROUPS[2].teams;
+  if (vertical === 'KIG' || vertical === 'ALL') return [...konten, ...unit, ...holding];
+  if (vertical === 'KC' || vertical === 'GME') return [...konten, ...unit];
+  // Belum diatur — tampilkan semua supaya tidak ada yang tidak bisa dipilih.
+  return [...konten, ...unit, ...holding];
+}
 export type ContentStatus =
   | 'drafting' | 'review'
   | 'siap_upload' | 'terjadwal'
@@ -324,15 +383,29 @@ export const TEAM_EDITABLE: Record<Team, ContentStatus[]> = {
   distribution: ['siap_upload', 'terjadwal', 'published', 'pelanggaran'],
   // Ads perlu bisa menyentuhnya untuk menghentikan iklan konten bermasalah.
   ads: ['published', 'diiklankan', 'pelanggaran'],
+  // VMT sejajar dengan Creative di bagan CV KahfiCorp — menggarap materi,
+  // bukan menayangkan. Kalau ternyata VMT ikut menayangkan, ganti barisnya
+  // jadi: ['siap_upload', 'terjadwal', 'published', 'pelanggaran'].
+  vmt: ['drafting', 'review', 'pelanggaran'],
+
+  // --- Jabatan yang tidak menggarap konten ---
+  // Boleh melihat dan memakai modul pengajuan, tidak memindahkan status.
+  pimpinan: [],
+  ho: [],
+  lo: [],
+  sm: [],
+  hrd: [],
   pm: [],
   finance: [],
-  // GA (General Affairs) — urusan umum/operasional kantor, tidak menyentuh
-  // alur konten. Sama seperti pm & finance: boleh melihat, tidak boleh
-  // memindahkan status konten.
+  developer: [],
+  ceo: [],
+  komisaris: [],
+  coo: [],
+  cfo: [],
+  cpo: [],
+  ia: [],
+  staff: [],
   ga: [],
-  // HO (Head Office) — peran pengawasan lintas unit. Melihat semuanya,
-  // tidak ikut memindahkan status konten.
-  ho: [],
 };
 
 export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
@@ -340,24 +413,41 @@ export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
   creative: ['drafting', 'review', 'pelanggaran'],
   distribution: ['siap_upload', 'terjadwal', 'published', 'pelanggaran'],
   ads: ['published', 'diiklankan', 'pelanggaran'],
+  vmt: ['drafting', 'review', 'pelanggaran'],
+
+  pimpinan: [],
+  ho: [],
+  lo: [],
+  sm: [],
+  hrd: [],
   pm: [],
   finance: [],
+  developer: [],
+  ceo: [],
+  komisaris: [],
+  coo: [],
+  cfo: [],
+  cpo: [],
+  ia: [],
+  staff: [],
   ga: [],
-  ho: [],
 };
 
 export function canEditRow(profile: Profile | null, status: ContentStatus): boolean {
   if (!profile || !profile.is_active) return false;
   if (profile.role === 'superadmin' || profile.role === 'manager') return true;
   if (!profile.team) return false;
-  return TEAM_EDITABLE[profile.team].includes(status);
+  // `?? []` penting: kalau ada nilai enum baru ditambahkan di database tapi
+  // file ini belum ikut ter-deploy, tanpa ini barisnya jadi undefined.includes()
+  // dan seluruh Board error untuk pemilik tim tersebut.
+  return (TEAM_EDITABLE[profile.team] ?? []).includes(status);
 }
 
 export function targetableStatuses(profile: Profile | null, current: ContentStatus): ContentStatus[] {
   if (!profile) return [current];
   if (profile.role === 'superadmin' || profile.role === 'manager') return STATUSES.map((s) => s.key);
   if (!profile.team) return [current];
-  const targets = TEAM_TARGETABLE[profile.team];
+  const targets = TEAM_TARGETABLE[profile.team] ?? [];
   return targets.includes(current) ? targets : [current];
 }
 
