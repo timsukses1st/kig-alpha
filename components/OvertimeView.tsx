@@ -58,8 +58,13 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   const [form, setForm] = useState({
     work_date: todayLocal(),
     start_time: '17:00', end_time: '20:00',
-    description: '', project_id: '',
+    description: '', project_ids: [] as string[],
   });
+  /** Foto bukti. Maks 5 MB — storage Supabase gratis cuma 1 GB dan sudah
+      dipakai bersama bukti Sebaran Harian. */
+  const MAX_MB = 5;
+  const [file, setFile] = useState<File | null>(null);
+  const [proofUrl, setProofUrl] = useState<string | null>(null);
 
   const canApprove = profile?.role === 'manager' || profile?.role === 'superadmin';
   /** Hanya superadmin yang boleh menghapus pengajuan milik orang lain. */
@@ -89,7 +94,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     let q = supabase.from('overtime_requests').select('*').order('work_date', { ascending: false });
-    if (projectFilter !== 'all') q = q.eq('project_id', projectFilter);
+    // `contains` supaya lembur yang mencakup beberapa project ikut muncul di
+    // tiap project-nya, bukan cuma di project utama.
+    if (projectFilter !== 'all') q = q.contains('project_ids', [projectFilter]);
     const { data } = await q;
     setRows((data as OvertimeRequest[]) || []);
 
@@ -146,8 +153,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     setForm({
       work_date: todayLocal(),
       start_time: '17:00', end_time: '20:00', description: '',
-      project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || ''),
+      project_ids: projectFilter !== 'all' ? [projectFilter] : [],
     });
+    setFile(null);
     setError('');
     setOpen(true);
   };
@@ -160,8 +168,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
       start_time: o.start_time.slice(0, 5),
       end_time: o.end_time.slice(0, 5),
       description: o.description,
-      project_id: o.project_id || '',
+      project_ids: idsProject(o),
     });
+    setFile(null);
     setError('');
     setOpen(true);
   };
@@ -170,14 +179,31 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     if (!profile) return;
     if (!form.description.trim()) { setError('Isi dulu apa yang dikerjakan.'); return; }
     if (form.start_time === form.end_time) { setError('Jam mulai dan selesai tidak boleh sama.'); return; }
+    if (file && file.size > MAX_MB * 1024 * 1024) { setError(`Foto maksimal ${MAX_MB} MB.`); return; }
     setBusy(true); setError('');
-    const payload = {
-      project_id: form.project_id || null,
+
+    let bukti: { path: string; name: string } | null = null;
+    if (file) {
+      const aman = file.name.replace(/[^\w.\-]+/g, '_');
+      const path = `${profile.id}/${Date.now()}_${aman}`;
+      const up = await supabase.storage.from('lembur').upload(path, file);
+      if (up.error) { setBusy(false); setError('Gagal mengunggah foto.'); return; }
+      bukti = { path, name: file.name };
+    }
+
+    const payload: Record<string, unknown> = {
+      // project_id tetap diisi project pertama: policy RLS lama masih
+      // memakainya, jadi kalau dikosongkan pengajuannya bisa ditolak database.
+      project_id: form.project_ids[0] || null,
+      project_ids: form.project_ids,
       work_date: form.work_date,
       start_time: form.start_time,
       end_time: form.end_time,
       description: form.description.trim(),
     };
+    // Saat mengedit, foto lama dipertahankan kalau tidak memilih foto baru.
+    if (bukti) { payload.proof_path = bukti.path; payload.proof_name = bukti.name; }
+
     let err;
     if (editId) {
       ({ error: err } = await supabase.from('overtime_requests').update(payload).eq('id', editId));
@@ -189,6 +215,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     setBusy(false);
     if (err) { setError('Gagal menyimpan pengajuan.'); return; }
     setOpen(false);
+    setFile(null);
     load(true);
   };
 
@@ -216,8 +243,21 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   };
 
   /** Penghapusan sebenarnya. Konfirmasinya ditangani modal confirmDel. */
+  /** URL foto bukti berumur pendek; diambil ulang tiap modal detail dibuka. */
+  useEffect(() => {
+    let batal = false;
+    setProofUrl(null);
+    if (!detail?.proof_path) return;
+    supabase.storage.from('lembur').createSignedUrl(detail.proof_path, 300).then(({ data }) => {
+      if (!batal) setProofUrl(data?.signedUrl || null);
+    });
+    return () => { batal = true; };
+  }, [detail]);
+
   const doDelete = async (o: OvertimeRequest) => {
     setActBusy(true);
+    // Buang fotonya lebih dulu supaya tidak jadi sampah yang tetap makan kuota.
+    if (o.proof_path) await supabase.storage.from('lembur').remove([o.proof_path]);
     const { error: err } = await supabase.from('overtime_requests').delete().eq('id', o.id);
     setActBusy(false);
     setConfirmDel(null);
@@ -236,6 +276,18 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     isSuper || (o.status === 'diajukan' && o.requester_id === profile?.id);
 
   const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
+
+  /** Larik project sebuah pengajuan. Baris lama yang belum sempat terisi
+      larik tetap terbaca lewat project_id-nya. */
+  const idsProject = (o: OvertimeRequest): string[] =>
+    (o.project_ids && o.project_ids.length ? o.project_ids : (o.project_id ? [o.project_id] : []));
+
+  /** Semua nama project dirangkai jadi satu teks. */
+  const namaProject = (o: OvertimeRequest): string => {
+    const ids = idsProject(o);
+    if (!ids.length) return '— umum —';
+    return ids.map((id) => projName(id)).join(', ');
+  };
   const fmtDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
 
   /**
@@ -389,7 +441,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                     <td><b>{fmtDate(o.work_date)}</b></td>
                     <td>{o.start_time.slice(0, 5)}–{o.end_time.slice(0, 5)}</td>
                     <td><b>{fmtDur(durationHours(o.start_time, o.end_time))}</b></td>
-                    <td>{projName(o.project_id)}</td>
+                    <td>{namaProject(o)}</td>
                     <td>
                       <span className="ot-desc-clip">{o.description}</span>
                       {o.reject_reason && <div className="sub" style={{ color: 'var(--red)' }}>Ditolak: {o.reject_reason}</div>}
@@ -492,7 +544,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                                       {o.description}
                                     </div>
                                     <div className="sub" style={{ fontSize: 11, marginTop: 2 }}>
-                                      {projName(o.project_id)}
+                                      {namaProject(o)}
                                       {o.approver_name ? ` · disetujui ${o.approver_name}` : ''}
                                     </div>
                                   </div>
@@ -526,7 +578,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                 </div>
                 <div className="modal-title">{fmtDate(detail.work_date)}</div>
                 <div className="modal-sub">
-                  {detail.start_time.slice(0,5)}–{detail.end_time.slice(0,5)} · {fmtDur(durationHours(detail.start_time, detail.end_time))} · {projName(detail.project_id)}
+                  {detail.start_time.slice(0,5)}–{detail.end_time.slice(0,5)} · {fmtDur(durationHours(detail.start_time, detail.end_time))} · {namaProject(detail)}
                 </div>
               </div>
               <button className="btn ghost modal-close" onClick={() => setDetail(null)}>✕</button>
@@ -534,6 +586,15 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
             <div style={{ padding: '16px 24px' }}>
               <div className="budget-detail-label">Yang dikerjakan</div>
               <p className="thread-detail" style={{ whiteSpace: 'pre-wrap' }}>{detail.description}</p>
+              {detail.proof_path && (
+                <>
+                  <div className="budget-detail-label" style={{ marginTop: 16 }}>Foto bukti</div>
+                  {proofUrl
+                    ? <img className="budget-qr" src={proofUrl} alt="Bukti lembur" style={{ maxWidth: 340 }} />
+                    : <div className="notes-empty">Memuat foto…</div>}
+                </>
+              )}
+
               <div className="budget-detail-label" style={{ marginTop: 16 }}>Riwayat</div>
               <div className="budget-trace">
                 <div><b>Diajukan</b> oleh {detail.requester_name}</div>
@@ -678,11 +739,43 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                 </div>
               </div>
               <div className="field">
-                <label>Project terkait</label>
-                <select value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
-                  <option value="">— umum —</option>
-                  {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
+                <label>
+                  Project terkait <span style={{ color: 'var(--text-3)' }}>(boleh lebih dari satu)</span>
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                  {projects.map((p) => {
+                    const dipilih = form.project_ids.includes(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`chip-btn ${dipilih ? 'active' : ''}`}
+                        onClick={() => setForm({
+                          ...form,
+                          project_ids: dipilih
+                            ? form.project_ids.filter((x) => x !== p.id)
+                            : [...form.project_ids, p.id],
+                        })}
+                      >
+                        {p.name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="hint">
+                  {form.project_ids.length
+                    ? `${form.project_ids.length} project dipilih`
+                    : 'Belum ada yang dipilih — akan dicatat sebagai lembur umum'}
+                </div>
+              </div>
+
+              <div className="field">
+                <label>Foto bukti <span style={{ color: 'var(--text-3)' }}>(opsional)</span></label>
+                <input type="file" accept=".png,.jpg,.jpeg,.webp"
+                  onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                <div className="hint">
+                  {file ? file.name : (editId ? `Kosongkan bila tidak ingin mengganti foto lama · maks ${MAX_MB} MB` : `Opsional · maks ${MAX_MB} MB`)}
+                </div>
               </div>
               <div className="field">
                 <label>Apa saja yang dikerjakan</label>
