@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { downloadXlsx, type XlsxSheet } from '@/lib/xlsx';
 import {
-  PILLAR_LABEL, platformDef, statusDef,
+  PILLAR_LABEL, platformDef, statusDef, TEAM_LABEL,
   type Account, type ContentCategory, type ContentStatus, type Profile, type Project,
+  type Team, type TeamMember,
 } from '@/lib/types';
 
 /**
@@ -243,6 +244,22 @@ export default function ExportView({ profile, projects, accounts, projectFilter 
       const catName = (id: string | null) =>
         id ? (cats.find((c) => c.id === id)?.name ?? '(kategori terhapus)') : '';
 
+      // Kolom pic_* di tabel contents menyimpan UUID dari team_members, bukan
+      // nama. Tanpa peta ini, kolom PIC di Excel keluar sebagai deretan UUID
+      // yang tidak berarti apa-apa buat yang membaca laporannya.
+      //
+      // Diambil TANPA saringan is_active — anggota yang sudah dinonaktifkan
+      // tetap harus terbaca namanya di konten lama, sama seperti di Board.
+      const { data: memData } = await supabase.from('team_members').select('*');
+      const mems = (memData as TeamMember[]) || [];
+      const picById = new Map(mems.map((x) => [x.id, x]));
+      const picName = (id: string | null) => {
+        if (!id) return '';
+        const m = picById.get(id);
+        if (!m) return '(anggota terhapus)';
+        return m.is_active ? m.name : `${m.name} (nonaktif)`;
+      };
+
       const sheets: XlsxSheet[] = [];
       const gagal: string[] = [];
 
@@ -251,7 +268,7 @@ export default function ExportView({ profile, projects, accounts, projectFilter 
         const { data, error } = await buildQuery(m, false);
         if (error) { gagal.push(`${m.label} (${error.message})`); continue; }
         const rows = (data as Record<string, unknown>[]) || [];
-        sheets.push(sheetFor(m, rows, { projName, accHandle, catName }));
+        sheets.push(sheetFor(m, rows, { projName, accHandle, catName, picName }));
       }
 
       if (!sheets.length) {
@@ -415,6 +432,8 @@ interface Lookups {
   projName: (id: string | null) => string;
   accHandle: (id: string | null) => string;
   catName: (id: string | null) => string;
+  /** Kolom pic_* menyimpan UUID team_members, bukan nama. Ini penerjemahnya. */
+  picName: (id: string | null) => string;
 }
 
 /** Ambil nilai apa adanya, ubah null jadi string kosong biar sel Excel bersih. */
@@ -464,10 +483,10 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
           kategori: L.catName(r.category_id as string | null),
           status: statusDef(r.status as ContentStatus).label,
           tayang: v(r, 'publish_date'),
-          pic_cw: v(r, 'pic_copywriter'),
-          pic_cr: v(r, 'pic_creative'),
-          pic_ds: v(r, 'pic_distribution'),
-          pic_ad: v(r, 'pic_ads'),
+          pic_cw: L.picName(r.pic_copywriter as string | null),
+          pic_cr: L.picName(r.pic_creative as string | null),
+          pic_ds: L.picName(r.pic_distribution as string | null),
+          pic_ad: L.picName(r.pic_ads as string | null),
           drive: v(r, 'asset_url'),
           post: v(r, 'post_url'),
           ads: v(r, 'ads_code'),
@@ -682,7 +701,8 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
         ],
         rows: rows.map((r) => ({
           nama: v(r, 'name'),
-          tim: v(r, 'team'),
+          // Label manusiawi, bukan kode enum — 'Head of Operational', bukan 'ho'.
+          tim: TEAM_LABEL[r.team as Team] ?? v(r, 'team'),
           aktif: ya(r.is_active),
           dibuat: tglJam(r.created_at),
         })),
