@@ -357,18 +357,33 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
     }
   };
 
-  const resetPw = async (u: Profile) => {
-    const pw = window.prompt(`Password baru untuk ${u.email} (min. 6 karakter):`);
-    if (!pw) return;
+  /**
+   * Reset password, hapus user, dan hapus akun media dulu memakai
+   * window.prompt / window.confirm — dua-duanya DIBLOKIR di lingkungan ini,
+   * jadi tombolnya diklik tanpa reaksi apa pun. Sekarang semuanya lewat modal.
+   */
+  const doResetPw = async () => {
+    if (!pwUser) return;
+    const pw = pwValue.trim();
     if (pw.length < 6) { flash('Password minimal 6 karakter.'); return; }
-    const d = await callUserApi({ action: 'reset_password', user_id: u.id, password: pw });
-    if (d) flash('Password direset.');
+    setPwBusy(true);
+    const d = await callUserApi({ action: 'reset_password', user_id: pwUser.id, password: pw });
+    setPwBusy(false);
+    if (!d) return;
+    setPwUser(null);
+    setPwValue('');
+    flash('Password direset. Sampaikan ke orangnya, minta segera diganti.');
   };
 
-  const deleteUser = async (u: Profile) => {
-    if (!window.confirm(`Hapus user ${u.email}? Tindakan ini permanen.`)) return;
-    const d = await callUserApi({ action: 'delete', user_id: u.id });
-    if (d) { flash('User dihapus.'); load(); }
+  const confirmDeleteUser = async () => {
+    if (!delUser) return;
+    setDelUserBusy(true);
+    const d = await callUserApi({ action: 'delete', user_id: delUser.id });
+    setDelUserBusy(false);
+    if (!d) return;
+    setDelUser(null);
+    flash('User dihapus.');
+    load();
   };
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
@@ -377,6 +392,29 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   const [newLabel, setNewLabel] = useState('');
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberTeam, setNewMemberTeam] = useState<Team>('creative');
+
+  // Ubah anggota PIC. Sengaja lewat modal, bukan dropdown langsung di tabel —
+  // dropdown di baris tabel gampang tergeser tanpa sengaja waktu men-scroll,
+  // dan salah pindah tim berarti orangnya hilang dari dropdown PIC-nya sendiri.
+  const [editMember, setEditMember] = useState<TeamMember | null>(null);
+  const [editMemberName, setEditMemberName] = useState('');
+  const [editMemberTeam, setEditMemberTeam] = useState<Team>('creative');
+  const [editMemberBusy, setEditMemberBusy] = useState(false);
+
+  // Hapus anggota PIC. Dulu memakai window.confirm — diblokir di lingkungan ini,
+  // jadi tombolnya diam saja tanpa pesan apa pun. Sekarang pakai modal sendiri.
+  const [delMember, setDelMember] = useState<TeamMember | null>(null);
+  const [delMemberBusy, setDelMemberBusy] = useState(false);
+
+  // Tiga tombol lain yang dulu bernasib sama.
+  const [pwUser, setPwUser] = useState<Profile | null>(null);
+  const [pwValue, setPwValue] = useState('');
+  const [pwLihat, setPwLihat] = useState(false);
+  const [pwBusy, setPwBusy] = useState(false);
+  const [delUser, setDelUser] = useState<Profile | null>(null);
+  const [delUserBusy, setDelUserBusy] = useState(false);
+  const [delAcc, setDelAcc] = useState<Account | null>(null);
+  const [delAccBusy, setDelAccBusy] = useState(false);
 
   const askDeleteProject = async (pr: Project) => {
     const countIn = async (table: string): Promise<number> => {
@@ -600,11 +638,19 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
     load(); onAccountsChanged?.();
   };
 
-  const deleteAccount = async (a: Account) => {
-    if (!window.confirm(`Hapus akun ${a.handle}?`)) return;
+  const confirmDeleteAccount = async () => {
+    if (!delAcc) return;
     setMsg('');
-    const { error } = await supabase.from('accounts').delete().eq('id', a.id);
+    setDelAccBusy(true);
+    const { data, error } = await supabase
+      .from('accounts').delete().eq('id', delAcc.id).select('id');
+    setDelAccBusy(false);
     if (error) { flash('Tidak bisa dihapus — akun sudah dipakai konten. Gunakan Nonaktif.'); return; }
+    if (!data || data.length === 0) {
+      flash('Tidak ada yang terhapus — wewenang akunmu tidak mencukupi.');
+      return;
+    }
+    setDelAcc(null);
     flash('Akun dihapus.');
     load(); onAccountsChanged?.();
   };
@@ -689,11 +735,58 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
     load();
   };
 
-  const deleteMember = async (m: TeamMember) => {
-    if (!window.confirm(`Hapus ${m.name} dari daftar PIC?`)) return;
+  /** Buka modal ubah. Nilai awal disalin ke state terpisah supaya batal = benar-benar batal. */
+  const openEditMember = (m: TeamMember) => {
+    setEditMember(m);
+    setEditMemberName(m.name);
+    setEditMemberTeam(m.team);
+  };
+
+  /**
+   * Simpan perubahan nama/tim anggota PIC.
+   *
+   * Memakai UPDATE, bukan hapus-lalu-tambah — ini penting. `contents.pic_*`
+   * menyimpan UUID baris ini. Kalau barisnya dibuat ulang, UUID-nya berubah dan
+   * semua konten lama kehilangan nama PIC-nya. Dengan UPDATE, id-nya tetap dan
+   * riwayat tetap utuh.
+   */
+  const saveMember = async () => {
+    if (!editMember) return;
+    const nama = editMemberName.trim();
+    if (!nama) return;
     setMsg('');
-    const { error } = await supabase.from('team_members').delete().eq('id', m.id);
+    setEditMemberBusy(true);
+    const { data, error } = await supabase
+      .from('team_members')
+      .update({ name: nama, team: editMemberTeam })
+      .eq('id', editMember.id)
+      .select('id');
+    setEditMemberBusy(false);
+    if (error) { flash('Gagal menyimpan perubahan anggota.'); return; }
+    // RLS yang menolak UPDATE mengubah 0 baris tanpa memunculkan error sama
+    // sekali. Tanpa pemeriksaan ini, layarnya bilang "tersimpan" padahal tidak.
+    if (!data || data.length === 0) {
+      flash('Tidak ada yang tersimpan — wewenang akunmu tidak mencukupi.');
+      return;
+    }
+    setEditMember(null);
+    flash('Anggota diperbarui.');
+    load();
+  };
+
+  const confirmDeleteMember = async () => {
+    if (!delMember) return;
+    setMsg('');
+    setDelMemberBusy(true);
+    const { data, error } = await supabase
+      .from('team_members').delete().eq('id', delMember.id).select('id');
+    setDelMemberBusy(false);
     if (error) { flash('Tidak bisa dihapus — masih jadi PIC konten. Gunakan Nonaktif.'); return; }
+    if (!data || data.length === 0) {
+      flash('Tidak ada yang terhapus — wewenang akunmu tidak mencukupi.');
+      return;
+    }
+    setDelMember(null);
     flash('Anggota dihapus.');
     load();
   };
@@ -779,9 +872,9 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                       </td>
                       <td>
                         <div className="recap-actions">
-                          <button className="btn act" onClick={() => resetPw(u)}>Reset PW</button>
+                          <button className="btn act" onClick={() => { setPwUser(u); setPwValue(''); setPwLihat(false); }}>Reset PW</button>
                           {u.id !== selfId && (
-                            <button className="icon-del" title="Hapus user" onClick={() => deleteUser(u)}>
+                            <button className="icon-del" title="Hapus user" onClick={() => setDelUser(u)}>
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                                 <polyline points="3 6 5 6 21 6" />
@@ -917,7 +1010,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                           {a.is_active ? 'Aktif' : 'Nonaktif'}
                         </button>
                       </td>
-                      <td><button className="btn ghost danger-text" onClick={() => deleteAccount(a)}>Hapus</button></td>
+                      <td><button className="btn ghost danger-text" onClick={() => setDelAcc(a)}>Hapus</button></td>
                     </tr>
                   ))}
                   {shownAccounts.length === 0 && <tr><td colSpan={5} className="empty">{activeProjectName ? `Belum ada akun di project ${activeProjectName}.` : 'Belum ada akun.'}</td></tr>}
@@ -985,7 +1078,9 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
             {/* ================= ANGGOTA TIM (PIC) ================= */}
             <div className="section-title">Anggota Tim (opsi PIC)</div>
             <p className="section-hint">
-              Opsi dropdown PIC di form konten — tidak wajib punya akun login. Anggota yang masih jadi PIC konten tidak bisa dihapus — nonaktifkan saja.
+              Opsi dropdown PIC di form konten — tidak wajib punya akun login. Daftar ini <b>terpisah dari tab Akun</b>:
+              mengubah tim seseorang di sana tidak mengubah timnya di sini, jadi kalau ada yang pindah tim, ubah di dua-duanya.
+              Anggota yang masih jadi PIC konten tidak bisa dihapus — nonaktifkan saja.
             </p>
             <div className="add-row">
               <input placeholder="Nama anggota" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)}
@@ -998,20 +1093,23 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Nama</th><th>Tim</th><th>Status</th><th style={{ width: 90 }}></th></tr>
+                  <tr><th>Nama</th><th>Tim</th><th>Status</th><th style={{ width: 150 }}></th></tr>
                 </thead>
                 <tbody>
                   {members.map((m) => (
                     <tr key={m.id}>
                       <td><span className="row-avatar">{initials(m.name)}</span><b>{m.name}</b></td>
-                      <td>{m.team}</td>
+                      <td>{TEAM_LABEL[m.team] || m.team}</td>
                       <td>
                         <button className="btn ghost" onClick={() => toggleMember(m)}>
                           <span className="status-dot" style={{ background: m.is_active ? 'var(--green)' : 'var(--text-3)' }} />
                           {m.is_active ? 'Aktif' : 'Nonaktif'}
                         </button>
                       </td>
-                      <td><button className="btn ghost danger-text" onClick={() => deleteMember(m)}>Hapus</button></td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        <button className="btn ghost" onClick={() => openEditMember(m)}>✎ Ubah</button>
+                        <button className="btn ghost danger-text" onClick={() => setDelMember(m)}>Hapus</button>
+                      </td>
                     </tr>
                   ))}
                   {members.length === 0 && <tr><td colSpan={4} className="empty">Belum ada anggota.</td></tr>}
@@ -1078,6 +1176,240 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
         </div>
         );
       })()}
+
+      {pwUser && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !pwBusy && setPwUser(null)}>
+          <div className="modal" style={{ maxWidth: 440 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--amber, #d9a441)' }} />
+                  Reset password
+                </div>
+                <div className="modal-title">{pwUser.full_name || pwUser.email}</div>
+                <div className="modal-sub">{pwUser.email}</div>
+              </div>
+              <button className="btn ghost modal-close" disabled={pwBusy} onClick={() => setPwUser(null)}>&#10005;</button>
+            </div>
+            <div style={{ padding: '10px 24px 0', display: 'grid', gap: 10 }}>
+              <label style={{ display: 'grid', gap: 5 }}>
+                <span className="section-hint" style={{ margin: 0 }}>Password baru — minimal 6 karakter</span>
+                <input
+                  type={pwLihat ? 'text' : 'password'}
+                  value={pwValue}
+                  disabled={pwBusy}
+                  autoComplete="new-password"
+                  onChange={(e) => setPwValue(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && pwValue.trim().length >= 6 && doResetPw()}
+                />
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
+                <input type="checkbox" checked={pwLihat} onChange={(e) => setPwLihat(e.target.checked)} />
+                Tampilkan password
+              </label>
+              <div className="hint">
+                <b>Catat dulu passwordnya sebelum menyimpan</b> — setelah jendela ini ditutup, tidak bisa dilihat lagi.
+                Sampaikan ke orangnya dan minta segera diganti sendiri.
+              </div>
+              {pwValue.length > 0 && pwValue.trim().length < 6 && (
+                <div className="hint">Masih kurang {6 - pwValue.trim().length} karakter.</div>
+              )}
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={pwBusy} onClick={() => setPwUser(null)}>Batal</button>
+                <button
+                  className="btn primary"
+                  disabled={pwBusy || pwValue.trim().length < 6}
+                  onClick={doResetPw}
+                >
+                  {pwBusy ? 'Menyimpan\u2026' : 'Simpan password'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {delUser && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !delUserBusy && setDelUser(null)}>
+          <div className="modal" style={{ maxWidth: 440 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--red)' }} />
+                  Hapus user
+                </div>
+                <div className="modal-title">Hapus &ldquo;{delUser.full_name || delUser.email}&rdquo;?</div>
+                <div className="modal-sub">{delUser.email}</div>
+              </div>
+              <button className="btn ghost modal-close" disabled={delUserBusy} onClick={() => setDelUser(null)}>&#10005;</button>
+            </div>
+            <div style={{ padding: '4px 24px 0' }}>
+              <div className="hint">
+                <b>Permanen dan tidak bisa dibatalkan.</b> Akunnya hilang dari sistem login, tapi jejak
+                pekerjaannya di konten, pengajuan, dan lembur <b>tetap tercatat</b>.
+                Kalau orangnya cuma keluar atau pindah, lebih baik <b>nonaktifkan</b> saja.
+              </div>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={delUserBusy} onClick={() => setDelUser(null)}>Batal</button>
+                <button
+                  className="btn danger"
+                  disabled={delUserBusy}
+                  onClick={confirmDeleteUser}
+                  style={{ background: 'var(--red)', borderColor: 'var(--red)', color: '#fff' }}
+                >
+                  {delUserBusy ? 'Menghapus\u2026' : 'Hapus permanen'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {delAcc && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !delAccBusy && setDelAcc(null)}>
+          <div className="modal" style={{ maxWidth: 440 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--red)' }} />
+                  Hapus akun media
+                </div>
+                <div className="modal-title">Hapus &ldquo;{delAcc.handle}&rdquo;?</div>
+                <div className="modal-sub">{delAcc.label || 'Tanpa label'}</div>
+              </div>
+              <button className="btn ghost modal-close" disabled={delAccBusy} onClick={() => setDelAcc(null)}>&#10005;</button>
+            </div>
+            <div style={{ padding: '4px 24px 0' }}>
+              <div className="hint">
+                Kalau akun ini sudah pernah dipakai konten, penghapusan akan ditolak database.
+                Untuk akun yang sudah tidak dipakai lagi, pakai <b>Nonaktif</b> — konten lama tetap
+                menampilkan akunnya dengan benar.
+              </div>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={delAccBusy} onClick={() => setDelAcc(null)}>Batal</button>
+                <button
+                  className="btn danger"
+                  disabled={delAccBusy}
+                  onClick={confirmDeleteAccount}
+                  style={{ background: 'var(--red)', borderColor: 'var(--red)', color: '#fff' }}
+                >
+                  {delAccBusy ? 'Menghapus\u2026' : 'Hapus permanen'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editMember && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !editMemberBusy && setEditMember(null)}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--blue, #2f6fd0)' }} />
+                  Ubah anggota
+                </div>
+                <div className="modal-title">{editMember.name}</div>
+                <div className="modal-sub">
+                  Nama dan tim diubah di tempat, jadi konten lama yang PIC-nya orang ini <b>tetap utuh</b>.
+                </div>
+              </div>
+              <button className="btn ghost modal-close" disabled={editMemberBusy} onClick={() => setEditMember(null)}>✕</button>
+            </div>
+            <div style={{ padding: '10px 24px 0', display: 'grid', gap: 12 }}>
+              <label style={{ display: 'grid', gap: 5 }}>
+                <span className="section-hint" style={{ margin: 0 }}>Nama</span>
+                <input
+                  value={editMemberName}
+                  disabled={editMemberBusy}
+                  onChange={(e) => setEditMemberName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && editMemberName.trim() && saveMember()}
+                />
+              </label>
+              <label style={{ display: 'grid', gap: 5 }}>
+                <span className="section-hint" style={{ margin: 0 }}>Tim</span>
+                <select
+                  value={editMemberTeam}
+                  disabled={editMemberBusy}
+                  onChange={(e) => setEditMemberTeam(e.target.value as Team)}
+                >
+                  {MEMBER_TEAMS.map((t) => <option key={t} value={t}>{TEAM_LABEL[t]}</option>)}
+                  {/* Tim di luar daftar PIC tetap ditampilkan kalau kebetulan
+                      terpasang, supaya tidak diam-diam tertimpa saat menyimpan. */}
+                  {!MEMBER_TEAMS.includes(editMemberTeam) && (
+                    <option value={editMemberTeam}>{TEAM_LABEL[editMemberTeam] || editMemberTeam}</option>
+                  )}
+                </select>
+              </label>
+              {editMemberTeam !== editMember.team && (
+                <div className="hint">
+                  Pindah dari <b>{TEAM_LABEL[editMember.team] || editMember.team}</b> ke <b>{TEAM_LABEL[editMemberTeam] || editMemberTeam}</b>.
+                  Namanya akan hilang dari dropdown PIC tim lama dan muncul di tim baru.
+                  Hak aksesnya <b>tidak</b> ikut berubah — itu diatur di tab <b>Akun</b>.
+                </div>
+              )}
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={editMemberBusy} onClick={() => setEditMember(null)}>Batal</button>
+                <button
+                  className="btn primary"
+                  disabled={editMemberBusy || !editMemberName.trim()}
+                  onClick={saveMember}
+                >
+                  {editMemberBusy ? 'Menyimpan…' : 'Simpan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {delMember && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !delMemberBusy && setDelMember(null)}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--red)' }} />
+                  Hapus anggota PIC
+                </div>
+                <div className="modal-title">Hapus &ldquo;{delMember.name}&rdquo;?</div>
+                <div className="modal-sub">
+                  Kalau orangnya masih tercatat sebagai PIC di konten mana pun, penghapusan akan ditolak database.
+                </div>
+              </div>
+              <button className="btn ghost modal-close" disabled={delMemberBusy} onClick={() => setDelMember(null)}>✕</button>
+            </div>
+            <div style={{ padding: '4px 24px 0' }}>
+              <div className="hint">
+                Untuk orang yang keluar atau pindah divisi, pakai <b>Nonaktif</b> — namanya hilang dari dropdown
+                tapi riwayat konten lama tetap menampilkan siapa yang dulu mengerjakan.
+              </div>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={delMemberBusy} onClick={() => setDelMember(null)}>Batal</button>
+                <button
+                  className="btn danger"
+                  disabled={delMemberBusy}
+                  onClick={confirmDeleteMember}
+                  style={{ background: 'var(--red)', borderColor: 'var(--red)', color: '#fff' }}
+                >
+                  {delMemberBusy ? 'Menghapus…' : 'Hapus permanen'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {delCat && (
         <div className="overlay" onClick={(e) => e.target === e.currentTarget && !delCatBusy && setDelCat(null)}>
