@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
   PLATFORMS, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses,
-  type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type TeamMember, type ContentNote, type ContentRequest, type Project,
+  type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type Team, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
 interface Props {
@@ -117,6 +117,37 @@ const PIC_SLOTS: {
   { field: 'pic_distribution', label: 'PIC Distribution', team: 'distribution', desc: 'menayangkan', solid: true },
   { field: 'pic_ads', label: 'PIC Ads', team: 'ads', desc: 'mengiklankan', solid: true },
 ];
+
+/**
+ * Tim mana saja yang boleh mengisi tiap slot PIC.
+ *
+ * Slot Creative juga menampung **VMT**, karena VMT ikut memproduksi konten —
+ * trending topic di X dan postingan Threads. Tanpa ini, Rafa, Hanif, dan Alvira
+ * (dipindah ke tim `vmt` pada 19 Agustus) hilang dari seluruh dropdown PIC.
+ *
+ * Tim `delta` sengaja tidak ditulis di sini karena berlaku untuk semua slot —
+ * lihat `anggotaUntuk()` di bawah.
+ */
+const TIM_PENGISI: Record<string, Team[]> = {
+  creative: ['creative', 'vmt'],
+  distribution: ['distribution'],
+  ads: ['ads'],
+};
+
+/**
+ * Daftar orang yang boleh dipilih untuk satu slot PIC.
+ *
+ * `delta` adalah wildcard: muncul di keempat slot. Ini warisan dari masa
+ * Delta jadi satu-satunya pengisi data. Kalau suatu saat wildcard-nya dicabut,
+ * cukup hapus klausa `m.team === 'delta'` di sini — satu tempat, dua pemanggil.
+ *
+ * `?? [team]` menjaga kalau ada slot baru ditambahkan ke PIC_SLOTS tapi lupa
+ * didaftarkan di TIM_PENGISI: perilakunya jatuh ke cocok-persis, bukan kosong.
+ */
+const anggotaUntuk = (members: TeamMember[], team: string) => {
+  const boleh = TIM_PENGISI[team] ?? [team as Team];
+  return members.filter((m) => boleh.includes(m.team) || m.team === 'delta');
+};
 
 /** Sel teks: satu baris, dipotong dengan elipsis — jangan pernah pecah per huruf. */
 const CLIP: React.CSSProperties = {
@@ -266,7 +297,7 @@ function PicCell({ row, members, disabled, onSave }: {
   const boxRef = useRef<HTMLDivElement | null>(null);
 
   const nameOf = (id: string | null) => members.find((m) => m.id === id)?.name || null;
-  const optionsFor = (team: string) => members.filter((m) => m.team === team || m.team === 'delta');
+  const optionsFor = (team: string) => anggotaUntuk(members, team);
   const filled = PIC_SLOTS.map((sl) => ({ sl, name: nameOf(row[sl.field]) })).filter((x) => x.name);
 
   const openPanel = () => {
@@ -643,7 +674,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const accountsOfProject = (projId: string) =>
     projId ? accounts.filter((a) => a.project_id === projId) : accounts;
   const membersOf = (team: 'creative' | 'distribution' | 'ads') =>
-    members.filter((m) => m.team === team || m.team === 'delta');
+    anggotaUntuk(members, team);
   const canCreate =
     !!profile &&
     (profile.role === 'superadmin' || profile.role === 'manager' ||
