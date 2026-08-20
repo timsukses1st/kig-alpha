@@ -138,46 +138,33 @@ export const PLATFORMS: { key: string; label: string; color: string }[] = [
 export const platformDef = (k: string | null) => PLATFORMS.find((p) => p.key === k) || null;
 
 /**
- * Pola alamat profil per platform. `{h}` diganti handle tanpa tanda '@'.
+ * Alamat profil akun untuk satu platform — **dibaca, bukan ditebak**.
  *
- * Threads memakai domain **threads.com** — Meta memindahkannya dari
- * threads.net pada April 2025. threads.net masih dialihkan, tapi kita pakai
- * yang resmi supaya tidak ada lompatan pengalihan.
- */
-const URL_PROFIL: Record<string, string> = {
-  instagram: 'https://www.instagram.com/{h}/',
-  tiktok: 'https://www.tiktok.com/@{h}',
-  youtube: 'https://www.youtube.com/@{h}',
-  threads: 'https://www.threads.com/@{h}',
-  facebook: 'https://www.facebook.com/{h}',
-};
-
-/**
- * Alamat profil akun media, dirakit dari platform + handle.
+ * Versi pertama fungsi ini merakit alamat dari platform + handle. Itu salah:
+ * handle di Alpha tidak selalu sama dengan username asli di platformnya, dan
+ * satu akun dipakai di beberapa platform dengan username berbeda. Akibatnya
+ * sebagian tautan menuju akun milik orang lain. (20 Agustus 2026)
  *
- * Tabel `accounts` tidak menyimpan URL — cuma `handle`. Jadi alamatnya
- * disusun di sini, dan platformnya diambil dari baris kontennya.
+ * Sekarang alamatnya disimpan per akun per platform di Kelola Akses.
+ * Kalau belum diisi, fungsi ini mengembalikan `null` dan pemanggilnya wajib
+ * menampilkan teks biasa — **jangan pernah menambal dengan tebakan.**
  *
- * Handle di lapangan tidak selalu bersih: ada yang ditulis `@akunku`,
- * ada yang `@akunku (KAHFI)` dengan keterangan pemilik di belakangnya.
- * Karena itu yang diambil hanya potongan pertama yang sah sebagai nama
- * pengguna — huruf, angka, titik, garis bawah, dan strip.
- *
- * Mengembalikan `null` kalau platform tidak dikenali atau handle tidak
- * menyisakan apa pun yang masuk akal. Pemanggilnya wajib menangani null
- * dengan menampilkan teks biasa, bukan tautan yang menuju halaman salah.
+ * Alamat yang tidak diawali http:// atau https:// juga ditolak, supaya salah
+ * ketik tidak berubah jadi tautan relatif yang menuju ke dalam Alpha sendiri.
  */
 export function accountUrl(
+  account: Account | null | undefined,
   platform: string | null | undefined,
-  handle: string | null | undefined,
 ): string | null {
-  if (!platform || !handle) return null;
-  const pola = URL_PROFIL[platform];
-  if (!pola) return null;
-  const cocok = handle.trim().match(/^@?([A-Za-z0-9._-]+)/);
-  const nama = cocok ? cocok[1] : '';
-  if (!nama) return null;
-  return pola.replace('{h}', nama);
+  if (!account || !platform) return null;
+  const kolom = KOLOM_URL_AKUN[platform];
+  if (!kolom) return null;
+  const nilai = account[kolom];
+  if (typeof nilai !== 'string') return null;
+  const bersih = nilai.trim();
+  if (!bersih) return null;
+  if (!/^https?:\/\//i.test(bersih)) return null;
+  return bersih;
 }
 
 /** Kategori konten — dikelola per project lewat Kelola Akses. */
@@ -195,7 +182,30 @@ export interface Account {
   label: string | null;
   is_active: boolean;
   project_id: string | null;
+  /**
+   * Alamat profil per platform. Satu baris akun dipakai lintas platform —
+   * `@mediaruangfilm` ada di Instagram, TikTok, dan YouTube — dan username
+   * aslinya bisa berbeda di tiap tempat, jadi tiap platform punya kolomnya
+   * sendiri. Boleh kosong; yang kosong tidak ditautkan.
+   *
+   * Opsional di TypeScript supaya komponen yang memakai `select()` terbatas
+   * tidak ikut rusak.
+   */
+  url_instagram?: string | null;
+  url_tiktok?: string | null;
+  url_youtube?: string | null;
+  url_threads?: string | null;
+  url_facebook?: string | null;
 }
+
+/** Platform -> nama kolom penyimpan alamatnya di tabel `accounts`. */
+export const KOLOM_URL_AKUN: Record<string, keyof Account> = {
+  instagram: 'url_instagram',
+  tiktok: 'url_tiktok',
+  youtube: 'url_youtube',
+  threads: 'url_threads',
+  facebook: 'url_facebook',
+};
 
 export interface ContentRow {
   id: string;
