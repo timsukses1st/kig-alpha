@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
-  PLATFORMS, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses,
+  PLATFORMS, accountUrl, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses,
   type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type Team, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
@@ -687,6 +687,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   }, [baseRows]);
 
   const accName = (id: string | null) => accounts.find((a) => a.id === id)?.handle || 'Akun belum ditentukan';
+  const accOf = (id: string | null) => accounts.find((a) => a.id === id) || null;
   /**
    * Akun yang boleh dipilih untuk sebuah project.
    *
@@ -1780,34 +1781,48 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       {shownCols.map((c) => {
                         if (c.key === 'akun') {
                           const h = accName(row.account_id);
-                          // TAUTAN PROFIL SENGAJA DIMATIKAN (20 Agustus 2026).
-                          //
-                          // Sebelumnya alamat profil dirakit dari platform + handle.
-                          // Itu salah: handle di Alpha tidak selalu sama dengan username
-                          // asli di platformnya, jadi sebagian tautan menuju akun milik
-                          // orang lain. Menebak alamat tidak pernah bisa aman.
-                          //
-                          // Penggantinya: alamat disimpan per akun di Kelola Akses,
-                          // dan hanya akun yang alamatnya sudah diisi yang ditautkan.
-                          //
+                          // Alamat DIBACA dari kolom akun sesuai platform baris ini —
+                          // tidak pernah ditebak dari handle. Kalau linknya belum diisi
+                          // di Kelola Akses, sel ini tetap teks biasa. Lihat catatan
+                          // panjang di accountUrl() pada lib/types.ts.
+                          const url = accountUrl(accOf(row.account_id), row.platform);
                           // Dulu pakai className="sub" — 11,5px dengan warna --text-3
                           // yang paling pudar. Di layar terang hampir tidak terbaca,
                           // padahal nama akun ini yang paling sering dicari mata.
+                          const gaya: React.CSSProperties = {
+                            ...CLIP,
+                            fontFamily: 'var(--mono)',
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                            letterSpacing: '.01em',
+                            color: row.account_id ? 'var(--text-2)' : 'var(--text-3)',
+                            fontStyle: row.account_id ? undefined : 'italic',
+                          };
+                          if (!url) {
+                            return <td key={c.key} style={gaya} title={h}>{h}</td>;
+                          }
+                          // Padding & tinggi baris dibiarkan milik <td> supaya sejajar
+                          // dengan kolom lain; <a> cuma membungkus teksnya.
                           return (
-                            <td
-                              key={c.key}
-                              style={{
-                                ...CLIP,
-                                fontFamily: 'var(--mono)',
-                                fontSize: 12.5,
-                                fontWeight: 600,
-                                letterSpacing: '.01em',
-                                color: row.account_id ? 'var(--text-2)' : 'var(--text-3)',
-                                fontStyle: row.account_id ? undefined : 'italic',
-                              }}
-                              title={h}
-                            >
-                              {h}
+                            <td key={c.key} style={gaya} title={`${h} — klik untuk buka profil di tab baru`}>
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                // Klik di sini tidak boleh ikut membuka brief kontennya.
+                                onClick={(e) => e.stopPropagation()}
+                                style={{ color: 'inherit', textDecoration: 'none', textUnderlineOffset: 3 }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.textDecoration = 'underline';
+                                  e.currentTarget.style.color = 'var(--accent)';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.textDecoration = 'none';
+                                  e.currentTarget.style.color = 'var(--text-2)';
+                                }}
+                              >
+                                {h}
+                              </a>
                             </td>
                           );
                         }
