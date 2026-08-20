@@ -228,6 +228,8 @@ export default function App() {
   const [newProjLabel, setNewProjLabel] = useState('');
   const [newProjVertical, setNewProjVertical] = useState<Vertical>('KC');
   const [addingProj, setAddingProj] = useState(false);
+  /** Pesan gagal tambah project. Dulu window.alert — diblokir, jadi gagalnya diam. */
+  const [projErr, setProjErr] = useState('');
   const [view, setView] = useState<View>('board');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [collapsed, setCollapsed] = useState(false);
@@ -289,13 +291,17 @@ export default function App() {
   const addProject = async () => {
     if (!newProjName.trim()) return;
     setAddingProj(true);
+    setProjErr('');
     const { error } = await supabase.from('projects').insert({
       name: newProjName.trim(),
       label: newProjLabel.trim() || null,
       vertical: newProjVertical,
     });
     setAddingProj(false);
-    if (error) { window.alert('Gagal menambah project — hanya lead/superadmin yang bisa.'); return; }
+    if (error) {
+      setProjErr('Gagal menambah project — hanya lead/superadmin yang bisa.');
+      return;
+    }
     setNewProjName(''); setNewProjLabel('');
     loadProjects();
   };
@@ -427,7 +433,7 @@ export default function App() {
                     <input
                       placeholder="Nama project baru"
                       value={newProjName}
-                      onChange={(e) => setNewProjName(e.target.value)}
+                      onChange={(e) => { setNewProjName(e.target.value); if (projErr) setProjErr(''); }}
                       onKeyDown={(e) => e.key === 'Enter' && addProject()}
                     />
                     <input
@@ -442,6 +448,19 @@ export default function App() {
                     <button className="btn primary" onClick={addProject} disabled={addingProj || !newProjName.trim()}>
                       {addingProj ? 'Menyimpan…' : '+ Project baru'}
                     </button>
+                    {projErr && (
+                      <div
+                        style={{
+                          background: 'color-mix(in srgb, var(--red) 12%, transparent)',
+                          borderLeft: '2px solid var(--red)',
+                          borderRadius: '0 6px 6px 0',
+                          padding: '7px 10px', marginTop: 2,
+                          fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-2)',
+                        }}
+                      >
+                        {projErr}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
