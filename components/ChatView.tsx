@@ -331,7 +331,10 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
   const timKandidat = useMemo(() => {
     const set = new Set<string>();
     for (const p of addCandidates) if (p.team) set.add(p.team);
-    return [...set].sort((a, b) =>
+    // Array.from, bukan [...set]: tsconfig repo tidak menetapkan `target`,
+    // jadi TypeScript memakai ES5 dan menolak penyebaran Set. Array.from
+    // aman di semua target.
+    return Array.from(set).sort((a, b) =>
       (TEAM_LABEL[a as Team] || a).localeCompare(TEAM_LABEL[b as Team] || b, 'id'));
   }, [addCandidates]);
 
