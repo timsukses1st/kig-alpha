@@ -110,6 +110,8 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [kickM, setKickM] = useState<Member | null>(null);
+  const [kickBusy, setKickBusy] = useState(false);
 
   const [showNew, setShowNew] = useState(false);
   const [showMembers, setShowMembers] = useState(false);
@@ -406,17 +408,33 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
     openGroup(g);
   };
 
-  const kick = async (m: Member) => {
-    const person = peopleMap.get(m.user_id);
-    if (!window.confirm(`Keluarkan ${nameOf(person)} dari grup ini?`)) return;
-    const { error } = await supabase
+  /**
+   * Keluarkan anggota dari grup. Konfirmasinya dulu memakai window.confirm —
+   * diblokir di lingkungan ini, jadi tombolnya diklik tanpa reaksi apa pun.
+   */
+  const kick = async () => {
+    const m = kickM;
+    if (!m) return;
+    setKickBusy(true);
+    setErr(null);
+    const { data, error } = await supabase
       .from('project_group_members')
       .update({ removed_at: new Date().toISOString(), removed_by: profile?.id })
-      .eq('id', m.id);
+      .eq('id', m.id)
+      .select('id');
+    setKickBusy(false);
     if (error) {
       setErr('Gagal mengeluarkan anggota — hanya admin grup yang bisa.');
+      setKickM(null);
       return;
     }
+    // UPDATE yang ditolak RLS mengubah 0 baris tanpa error.
+    if (!data || data.length === 0) {
+      setErr('Tidak ada yang berubah — wewenang akunmu tidak mencukupi.');
+      setKickM(null);
+      return;
+    }
+    setKickM(null);
     loadMembers();
   };
 
@@ -630,7 +648,7 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
                               <button title="Jadikan/lepas admin" onClick={() => toggleAdmin(m)}>
                                 ★
                               </button>
-                              <button title="Keluarkan dari grup" onClick={() => kick(m)}>
+                              <button title="Keluarkan dari grup" onClick={() => setKickM(m)}>
                                 ✕
                               </button>
                             </div>
@@ -713,6 +731,46 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
       </div>
 
       {/* ================= MODAL BUAT GRUP ================= */}
+      {kickM && (
+        <div className="cv-ovl" onClick={() => !kickBusy && setKickM(null)}>
+          <div className="cv-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
+            <div className="cv-modal-h">
+              <div>
+                <div className="cv-modal-t">
+                  Keluarkan {nameOf(peopleMap.get(kickM.user_id))}?
+                </div>
+                <div className="cv-modal-s">
+                  Dia tidak lagi bisa membuka grup ini dan tidak menerima pesan barunya.
+                </div>
+              </div>
+              <button className="cv-x" disabled={kickBusy} onClick={() => setKickM(null)}>&#10005;</button>
+            </div>
+
+            <div className="cv-modal-b">
+              <div
+                style={{
+                  background: 'color-mix(in srgb, var(--amber) 10%, transparent)',
+                  borderLeft: '2px solid var(--amber)',
+                  borderRadius: '0 6px 6px 0',
+                  padding: '9px 12px',
+                  fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-2)',
+                }}
+              >
+                Pesan yang sudah dia kirim <b style={{ color: 'var(--text)' }}>tetap ada</b> di grup.
+                Kalau nanti perlu, dia bisa dimasukkan lagi.
+              </div>
+            </div>
+
+            <div className="cv-modal-f">
+              <button className="btn" disabled={kickBusy} onClick={() => setKickM(null)}>Batal</button>
+              <button className="btn primary" disabled={kickBusy} onClick={kick}>
+                {kickBusy ? 'Mengeluarkan\u2026' : 'Keluarkan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showNew && (
         <div className="cv-ovl" onClick={() => setShowNew(false)}>
           <div className="cv-modal" onClick={(e) => e.stopPropagation()}>
