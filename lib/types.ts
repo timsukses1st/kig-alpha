@@ -137,6 +137,49 @@ export const PLATFORMS: { key: string; label: string; color: string }[] = [
 
 export const platformDef = (k: string | null) => PLATFORMS.find((p) => p.key === k) || null;
 
+/**
+ * Pola alamat profil per platform. `{h}` diganti handle tanpa tanda '@'.
+ *
+ * Threads memakai domain **threads.com** — Meta memindahkannya dari
+ * threads.net pada April 2025. threads.net masih dialihkan, tapi kita pakai
+ * yang resmi supaya tidak ada lompatan pengalihan.
+ */
+const URL_PROFIL: Record<string, string> = {
+  instagram: 'https://www.instagram.com/{h}/',
+  tiktok: 'https://www.tiktok.com/@{h}',
+  youtube: 'https://www.youtube.com/@{h}',
+  threads: 'https://www.threads.com/@{h}',
+  facebook: 'https://www.facebook.com/{h}',
+};
+
+/**
+ * Alamat profil akun media, dirakit dari platform + handle.
+ *
+ * Tabel `accounts` tidak menyimpan URL — cuma `handle`. Jadi alamatnya
+ * disusun di sini, dan platformnya diambil dari baris kontennya.
+ *
+ * Handle di lapangan tidak selalu bersih: ada yang ditulis `@akunku`,
+ * ada yang `@akunku (KAHFI)` dengan keterangan pemilik di belakangnya.
+ * Karena itu yang diambil hanya potongan pertama yang sah sebagai nama
+ * pengguna — huruf, angka, titik, garis bawah, dan strip.
+ *
+ * Mengembalikan `null` kalau platform tidak dikenali atau handle tidak
+ * menyisakan apa pun yang masuk akal. Pemanggilnya wajib menangani null
+ * dengan menampilkan teks biasa, bukan tautan yang menuju halaman salah.
+ */
+export function accountUrl(
+  platform: string | null | undefined,
+  handle: string | null | undefined,
+): string | null {
+  if (!platform || !handle) return null;
+  const pola = URL_PROFIL[platform];
+  if (!pola) return null;
+  const cocok = handle.trim().match(/^@?([A-Za-z0-9._-]+)/);
+  const nama = cocok ? cocok[1] : '';
+  if (!nama) return null;
+  return pola.replace('{h}', nama);
+}
+
 /** Kategori konten — dikelola per project lewat Kelola Akses. */
 export interface ContentCategory {
   id: string;
