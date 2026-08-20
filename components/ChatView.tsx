@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { initials, type Profile, type Project } from '@/lib/types';
+import { initials, TEAM_LABEL, type Profile, type Project, type Team } from '@/lib/types';
 
 interface Props {
   profile: Profile | null;
@@ -118,6 +118,11 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
   const [form, setForm] = useState({ project_id: '', name: '', description: '' });
   const [picked, setPicked] = useState<string[]>([]);
   const [search, setSearch] = useState('');
+  /** Pencarian pada panel "Tambah anggota" grup aktif. Sengaja terpisah dari
+   *  `search` milik modal Buat grup baru — dua-duanya bisa terbuka bergantian
+   *  dan saling menghapus isian kalau dipakai bersama. */
+  const [cariAnggota, setCariAnggota] = useState('');
+  const [timAnggota, setTimAnggota] = useState('');
 
   const endRef = useRef<HTMLDivElement>(null);
 
@@ -310,14 +315,40 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
     const proj = projectMap.get(activeGroup.project_id);
     const v = proj?.vertical;
     const already = new Set(activeMembers.map((m) => m.user_id));
-    return people.filter((p) => {
-      if (already.has(p.id)) return false;
-      if (!v) return true;
-      if (p.role === 'superadmin') return true;
-      if (p.vertical === 'KIG' || p.vertical === 'ALL') return true;
-      return p.vertical === v;
-    });
+    return people
+      .filter((p) => {
+        if (already.has(p.id)) return false;
+        if (!v) return true;
+        if (p.role === 'superadmin') return true;
+        if (p.vertical === 'KIG' || p.vertical === 'ALL') return true;
+        return p.vertical === v;
+      })
+      .sort((a, b) => nameOf(a).localeCompare(nameOf(b), 'id'));
   }, [people, activeGroup, projectMap, activeMembers]);
+
+  /** Tim yang benar-benar ada di antara kandidat — bukan seluruh 21 jabatan,
+   *  supaya penyaringnya tidak penuh pilihan yang hasilnya nol. */
+  const timKandidat = useMemo(() => {
+    const set = new Set<string>();
+    for (const p of addCandidates) if (p.team) set.add(p.team);
+    return [...set].sort((a, b) =>
+      (TEAM_LABEL[a as Team] || a).localeCompare(TEAM_LABEL[b as Team] || b, 'id'));
+  }, [addCandidates]);
+
+  /** Hasil setelah disaring nama/email dan tim. */
+  const addTersaring = useMemo(() => {
+    const q = cariAnggota.trim().toLowerCase();
+    return addCandidates.filter((p) => {
+      if (timAnggota && p.team !== timAnggota) return false;
+      if (!q) return true;
+      return (
+        (p.full_name || '').toLowerCase().includes(q) ||
+        (p.email || '').toLowerCase().includes(q) ||
+        (p.team || '').toLowerCase().includes(q) ||
+        (TEAM_LABEL[p.team as Team] || '').toLowerCase().includes(q)
+      );
+    });
+  }, [addCandidates, cariAnggota, timAnggota]);
 
   /* ---------- actions ---------- */
   const openGroup = async (g: Group) => {
@@ -440,13 +471,22 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
 
   const addMember = async (uid: string) => {
     if (!activeGroup || !profile) return;
+    setErr(null);
     const existing = members.find((m) => m.group_id === activeGroup.id && m.user_id === uid);
     if (existing) {
-      const { error } = await supabase
+      // Orangnya pernah ada di grup ini lalu dikeluarkan — barisnya dihidupkan
+      // lagi, bukan dibuat baru, supaya tidak ada baris kembar.
+      const { data, error } = await supabase
         .from('project_group_members')
         .update({ removed_at: null, removed_by: null, added_by: profile.id })
-        .eq('id', existing.id);
-      if (error) setErr('Gagal menambah anggota.');
+        .eq('id', existing.id)
+        .select('id');
+      if (error) { setErr('Gagal menambah anggota.'); return; }
+      // UPDATE yang ditolak RLS mengubah 0 baris tanpa error.
+      if (!data || data.length === 0) {
+        setErr('Tidak ada yang berubah — hanya admin grup yang bisa menambah anggota.');
+        return;
+      }
     } else {
       const { error } = await supabase.from('project_group_members').insert({
         group_id: activeGroup.id,
@@ -454,7 +494,7 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
         is_admin: false,
         added_by: profile.id,
       });
-      if (error) setErr('Gagal menambah anggota — hanya admin grup yang bisa.');
+      if (error) { setErr('Gagal menambah anggota — hanya admin grup yang bisa.'); return; }
     }
     loadMembers();
   };
@@ -683,20 +723,86 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
 
                     {iAmAdmin && addCandidates.length > 0 && (
                       <>
-                        <div className="cv-side-t muted">Tambah anggota</div>
-                        <select
-                          className="cv-add"
-                          value=""
-                          onChange={(e) => e.target.value && addMember(e.target.value)}
-                        >
-                          <option value="">+ Pilih orang…</option>
-                          {addCandidates.map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {nameOf(p)}
-                              {p.team ? ` · ${p.team}` : ''}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="cv-side-t muted">
+                          Tambah anggota
+                          <span style={{ opacity: 0.7, textTransform: 'none', letterSpacing: 0 }}>
+                            {' '}· {addTersaring.length} dari {addCandidates.length}
+                          </span>
+                        </div>
+
+                        {/* Dulu ini satu <select> panjang berisi semua orang. Dengan
+                            35+ akun, mencari satu nama di situ menyiksa. Sekarang
+                            ada pencarian nama/email/tim dan penyaring tim. */}
+                        <input
+                          className="cv-search"
+                          value={cariAnggota}
+                          onChange={(e) => setCariAnggota(e.target.value)}
+                          placeholder="Cari nama, email, atau tim…"
+                        />
+
+                        {timKandidat.length > 1 && (
+                          <select
+                            className="cv-add"
+                            style={{ marginTop: 0, marginBottom: 8 }}
+                            value={timAnggota}
+                            onChange={(e) => setTimAnggota(e.target.value)}
+                          >
+                            <option value="">Semua tim</option>
+                            {timKandidat.map((t) => (
+                              <option key={t} value={t}>{TEAM_LABEL[t as Team] || t}</option>
+                            ))}
+                          </select>
+                        )}
+
+                        <div className="cv-picker">
+                          {addTersaring.length === 0 ? (
+                            <div className="cv-note" style={{ padding: '8px 8px' }}>
+                              Tidak ada yang cocok.
+                              {(cariAnggota || timAnggota) && (
+                                <>
+                                  {' '}
+                                  <button
+                                    type="button"
+                                    onClick={() => { setCariAnggota(''); setTimAnggota(''); }}
+                                    style={{
+                                      background: 'transparent', border: 0, padding: 0,
+                                      font: 'inherit', color: 'var(--accent)', cursor: 'pointer',
+                                      textDecoration: 'underline', textUnderlineOffset: 3,
+                                    }}
+                                  >
+                                    Kosongkan penyaring
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            addTersaring.map((p) => (
+                              <div
+                                key={p.id}
+                                className="cv-pick"
+                                role="button"
+                                tabIndex={0}
+                                title={p.email}
+                                onClick={() => addMember(p.id)}
+                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') addMember(p.id); }}
+                              >
+                                <div className="cv-mav sm">{initials(nameOf(p))}</div>
+                                <div style={{ minWidth: 0, flex: 1 }}>
+                                  <div className="cv-mname">{nameOf(p)}</div>
+                                  <div
+                                    style={{
+                                      fontSize: 11, color: 'var(--muted, #8b8d92)',
+                                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                    }}
+                                  >
+                                    {p.team ? (TEAM_LABEL[p.team as Team] || p.team) : 'Tanpa tim'}
+                                  </div>
+                                </div>
+                                <span style={{ color: 'var(--accent)', fontSize: 15, lineHeight: 1 }}>+</span>
+                              </div>
+                            ))
+                          )}
+                        </div>
                       </>
                     )}
                   </div>
