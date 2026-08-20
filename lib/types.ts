@@ -486,9 +486,44 @@ export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
   ga: [],
 };
 
+/**
+ * Tim yang memang menggarap konten. Anggotanya — termasuk Lead-nya —
+ * berurusan dengan status konten. Tim di luar daftar ini tidak, seberapa pun
+ * tinggi perannya.
+ *
+ * Dipakai untuk menutup temuan yang terverifikasi 20 Agustus 2026: peran
+ * `manager` melewati seluruh batasan tim, sehingga PM, Finance, HO, dan GA
+ * bisa memindahkan status konten — bertentangan dengan panduan yang sudah
+ * dibagikan ke tim. Cerminannya di database adalah fungsi `can_move_content()`.
+ *
+ * Keputusan Mas Dik: Lead tim konten TETAP bebas lintas tahap (supaya bisa
+ * menolong saat anggotanya berhalangan). Yang ditutup hanya tim non-konten.
+ */
+export const TIM_KONTEN: Team[] = ['creative', 'distribution', 'ads', 'vmt', 'delta'];
+
+/** Peran yang bebas memindahkan status apa pun. */
+function bebasPindahStatus(profile: Profile): boolean {
+  if (profile.role === 'superadmin') return true;
+  if (profile.role !== 'manager') return false;
+  return !!profile.team && TIM_KONTEN.includes(profile.team);
+}
+
+/**
+ * Boleh membuat konten baru (termasuk mengangkat request jadi konten).
+ *
+ * Cerminan dari policy `contents_insert` di database. Dua-duanya harus selalu
+ * diubah berbarengan — kalau layar menawarkan tombol yang ditolak database,
+ * pengguna cuma melihat kegagalan tanpa tahu sebabnya.
+ */
+export function canCreateContent(profile: Profile | null): boolean {
+  if (!profile || !profile.is_active) return false;
+  if (bebasPindahStatus(profile)) return true;
+  return profile.role === 'tim' && (profile.team === 'creative' || profile.team === 'delta');
+}
+
 export function canEditRow(profile: Profile | null, status: ContentStatus): boolean {
   if (!profile || !profile.is_active) return false;
-  if (profile.role === 'superadmin' || profile.role === 'manager') return true;
+  if (bebasPindahStatus(profile)) return true;
   if (!profile.team) return false;
   // `?? []` penting: kalau ada nilai enum baru ditambahkan di database tapi
   // file ini belum ikut ter-deploy, tanpa ini barisnya jadi undefined.includes()
@@ -498,7 +533,7 @@ export function canEditRow(profile: Profile | null, status: ContentStatus): bool
 
 export function targetableStatuses(profile: Profile | null, current: ContentStatus): ContentStatus[] {
   if (!profile) return [current];
-  if (profile.role === 'superadmin' || profile.role === 'manager') return STATUSES.map((s) => s.key);
+  if (bebasPindahStatus(profile)) return STATUSES.map((s) => s.key);
   if (!profile.team) return [current];
   const targets = TEAM_TARGETABLE[profile.team] ?? [];
   return targets.includes(current) ? targets : [current];
