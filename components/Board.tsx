@@ -143,10 +143,23 @@ const TIM_PENGISI: Record<string, Team[]> = {
  *
  * `?? [team]` menjaga kalau ada slot baru ditambahkan ke PIC_SLOTS tapi lupa
  * didaftarkan di TIM_PENGISI: perilakunya jatuh ke cocok-persis, bukan kosong.
+ *
+ * Anggota nonaktif disaring **di sini**, bukan saat memuat data — supaya nama
+ * mereka tetap terbaca di konten lama yang sudah terlanjur memakai mereka.
+ * Yang sudah terlanjur terpasang tetap ditawarkan, supaya kalau ada yang
+ * membuka panel PIC konten lama, isian yang ada tidak terlihat kosong.
  */
-const anggotaUntuk = (members: TeamMember[], team: string) => {
+/** Label opsi dropdown. Yang sudah dinonaktifkan diberi tanda supaya tidak
+ *  dikira masih bertugas — muncul hanya kalau memang sudah terpasang. */
+const labelAnggota = (m: TeamMember) => (m.is_active ? m.name : `${m.name} (nonaktif)`);
+
+const anggotaUntuk = (members: TeamMember[], team: string, terpasang?: string | null) => {
   const boleh = TIM_PENGISI[team] ?? [team as Team];
-  return members.filter((m) => boleh.includes(m.team) || m.team === 'delta');
+  return members.filter(
+    (m) =>
+      (m.is_active || m.id === terpasang) &&
+      (boleh.includes(m.team) || m.team === 'delta' || m.id === terpasang)
+  );
 };
 
 /** Sel teks: satu baris, dipotong dengan elipsis — jangan pernah pecah per huruf. */
@@ -296,9 +309,16 @@ function PicCell({ row, members, disabled, onSave }: {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
 
-  const nameOf = (id: string | null) => members.find((m) => m.id === id)?.name || null;
-  const optionsFor = (team: string) => anggotaUntuk(members, team);
-  const filled = PIC_SLOTS.map((sl) => ({ sl, name: nameOf(row[sl.field]) })).filter((x) => x.name);
+  const anggotaOf = (id: string | null) => members.find((m) => m.id === id) || null;
+  const optionsFor = (team: string, terpasang: string | null) => anggotaUntuk(members, team, terpasang);
+  // `aktif` dipakai untuk menandai PIC yang sudah dinonaktifkan — namanya tetap
+  // ditampilkan (itu memang yang terjadi dulu), cuma diberi tanda supaya jelas.
+  const filled = PIC_SLOTS
+    .map((sl) => {
+      const m = anggotaOf(row[sl.field]);
+      return { sl, name: m ? m.name : null, aktif: m ? m.is_active : true };
+    })
+    .filter((x) => x.name);
 
   const openPanel = () => {
     const r = boxRef.current ? boxRef.current.getBoundingClientRect() : null;
@@ -333,7 +353,7 @@ function PicCell({ row, members, disabled, onSave }: {
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
         title={filled.length
-          ? filled.map((x) => `${x.sl.label} (${x.sl.desc}): ${x.name}`).join('\n')
+          ? filled.map((x) => `${x.sl.label} (${x.sl.desc}): ${x.name}${x.aktif ? '' : ' — nonaktif'}`).join('\n')
           : 'Belum ada PIC — klik untuk menunjuk'}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', gap: 4,
@@ -360,6 +380,7 @@ function PicCell({ row, members, disabled, onSave }: {
                     background: x.sl.solid ? `color-mix(in srgb, ${col} 22%, transparent)` : 'transparent',
                     border: '1px solid ' + col,
                     color: col, fontSize: 10.5, fontWeight: 700,
+                    opacity: x.aktif ? 1 : 0.45,
                   }}
                 >
                   {initials(x.name)}
@@ -412,8 +433,8 @@ function PicCell({ row, members, disabled, onSave }: {
                     style={{ width: '100%' }}
                   >
                     <option value="">—</option>
-                    {optionsFor(sl.team).map((m) => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
+                    {optionsFor(sl.team, row[sl.field]).map((m) => (
+                      <option key={m.id} value={m.id}>{labelAnggota(m)}</option>
                     ))}
                   </select>
                 </div>
@@ -494,7 +515,11 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
       // Urut created_at, BUKAN updated_at: kalau pakai updated_at, baris yang
       // baru diketik langsung melompat ke atas dan bikin kacau saat input massal.
       supabase.from('contents').select('*').order('created_at', { ascending: false }),
-      supabase.from('team_members').select('*').eq('is_active', true).order('name'),
+      // Sengaja memuat anggota nonaktif juga. Kalau disaring di sini, nama PIC
+      // pada konten lama ikut hilang begitu orangnya dinonaktifkan — padahal
+      // maksud tombol Nonaktif cuma menyembunyikannya dari pilihan, bukan
+      // menghapus jejaknya. Penyaringan aktif/tidak dilakukan di anggotaUntuk().
+      supabase.from('team_members').select('*').order('name'),
       supabase.from('content_requests').select('*').eq('status', 'pending').order('requested_date', { ascending: true }),
       supabase.from('content_categories').select('*').order('name'),
     ]);
@@ -673,8 +698,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
    */
   const accountsOfProject = (projId: string) =>
     projId ? accounts.filter((a) => a.project_id === projId) : accounts;
-  const membersOf = (team: 'creative' | 'distribution' | 'ads') =>
-    anggotaUntuk(members, team);
+  const membersOf = (team: 'creative' | 'distribution' | 'ads', terpasang?: string | null) =>
+    anggotaUntuk(members, team, terpasang);
   const canCreate =
     !!profile &&
     (profile.role === 'superadmin' || profile.role === 'manager' ||
@@ -2404,14 +2429,14 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     <label>PIC Copywriter{noteBtn('pic')}</label>
                     <select value={form.pic_copywriter} disabled={readOnly} onChange={(e) => setForm({ ...form, pic_copywriter: e.target.value })}>
                       <option value="">—</option>
-                      {membersOf('creative').map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      {membersOf('creative', form.pic_copywriter).map((m) => <option key={m.id} value={m.id}>{labelAnggota(m)}</option>)}
                     </select>
                   </div>
                   <div className="field">
                     <label>PIC Content</label>
                     <select value={form.pic_creative} disabled={readOnly} onChange={(e) => setForm({ ...form, pic_creative: e.target.value })}>
                       <option value="">—</option>
-                      {membersOf('creative').map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      {membersOf('creative', form.pic_creative).map((m) => <option key={m.id} value={m.id}>{labelAnggota(m)}</option>)}
                     </select>
                   </div>
                 </div>
@@ -2420,14 +2445,14 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     <label>PIC Distribution</label>
                     <select value={form.pic_distribution} disabled={readOnly} onChange={(e) => setForm({ ...form, pic_distribution: e.target.value })}>
                       <option value="">—</option>
-                      {membersOf('distribution').map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      {membersOf('distribution', form.pic_distribution).map((m) => <option key={m.id} value={m.id}>{labelAnggota(m)}</option>)}
                     </select>
                   </div>
                   <div className="field">
                     <label>PIC Ads</label>
                     <select value={form.pic_ads} disabled={readOnly} onChange={(e) => setForm({ ...form, pic_ads: e.target.value })}>
                       <option value="">—</option>
-                      {membersOf('ads').map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      {membersOf('ads', form.pic_ads).map((m) => <option key={m.id} value={m.id}>{labelAnggota(m)}</option>)}
                     </select>
                   </div>
                 </div>
