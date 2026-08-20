@@ -409,8 +409,10 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   // Tiga tombol lain yang dulu bernasib sama.
   const [pwUser, setPwUser] = useState<Profile | null>(null);
   const [pwValue, setPwValue] = useState('');
+  /** Sisa karakter yang masih kurang. 0 = sudah cukup. */
   const [pwLihat, setPwLihat] = useState(false);
   const [pwBusy, setPwBusy] = useState(false);
+  const kurangPw = Math.max(0, 6 - pwValue.trim().length);
   const [delUser, setDelUser] = useState<Profile | null>(null);
   const [delUserBusy, setDelUserBusy] = useState(false);
   const [delAcc, setDelAcc] = useState<Account | null>(null);
@@ -1191,29 +1193,63 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
               </div>
               <button className="btn ghost modal-close" disabled={pwBusy} onClick={() => setPwUser(null)}>&#10005;</button>
             </div>
-            <div style={{ padding: '10px 24px 0', display: 'grid', gap: 10 }}>
-              <label style={{ display: 'grid', gap: 5 }}>
-                <span className="section-hint" style={{ margin: 0 }}>Password baru — minimal 6 karakter</span>
+            <div style={{ padding: '18px 24px' }}>
+              <div className="field" style={{ marginBottom: 10 }}>
+                <label>Password baru</label>
                 <input
                   type={pwLihat ? 'text' : 'password'}
                   value={pwValue}
                   disabled={pwBusy}
                   autoComplete="new-password"
+                  placeholder="minimal 6 karakter"
                   onChange={(e) => setPwValue(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && pwValue.trim().length >= 6 && doResetPw()}
                 />
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5 }}>
-                <input type="checkbox" checked={pwLihat} onChange={(e) => setPwLihat(e.target.checked)} />
-                Tampilkan password
-              </label>
-              <div className="hint">
-                <b>Catat dulu passwordnya sebelum menyimpan</b> — setelah jendela ini ditutup, tidak bisa dilihat lagi.
-                Sampaikan ke orangnya dan minta segera diganti sendiri.
+                <div className="hint" style={{ color: kurangPw > 0 ? 'var(--amber)' : 'var(--green)' }}>
+                  {pwValue.length === 0
+                    ? 'Belum diisi.'
+                    : kurangPw > 0
+                      ? `Kurang ${kurangPw} karakter lagi.`
+                      : 'Panjangnya sudah cukup.'}
+                </div>
               </div>
-              {pwValue.length > 0 && pwValue.trim().length < 6 && (
-                <div className="hint">Masih kurang {6 - pwValue.trim().length} karakter.</div>
-              )}
+
+              <button
+                type="button"
+                onClick={() => setPwLihat(!pwLihat)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                  background: 'transparent', border: 0, padding: '2px 0 14px',
+                  font: 'inherit', fontSize: 12.5, color: 'var(--text-2)',
+                  cursor: 'pointer', textAlign: 'left',
+                }}
+              >
+                <span
+                  style={{
+                    width: 15, height: 15, borderRadius: 4, flexShrink: 0,
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    border: '1px solid ' + (pwLihat ? 'var(--accent)' : 'var(--border)'),
+                    background: pwLihat ? 'var(--accent)' : 'transparent',
+                    color: '#fff', fontSize: 10, lineHeight: 1, fontWeight: 700,
+                  }}
+                >
+                  {pwLihat ? '\u2713' : ''}
+                </span>
+                Tampilkan password
+              </button>
+
+              <div
+                style={{
+                  background: 'color-mix(in srgb, var(--amber) 10%, transparent)',
+                  borderLeft: '2px solid var(--amber)',
+                  borderRadius: '0 6px 6px 0',
+                  padding: '9px 12px',
+                  fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-2)',
+                }}
+              >
+                <b style={{ color: 'var(--text)' }}>Catat dulu sebelum menyimpan.</b> Setelah jendela ini ditutup,
+                passwordnya tidak bisa dilihat lagi. Sampaikan ke orangnya dan minta segera diganti sendiri.
+              </div>
             </div>
             <div className="modal-foot">
               <div className="right">
@@ -1245,11 +1281,20 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
               </div>
               <button className="btn ghost modal-close" disabled={delUserBusy} onClick={() => setDelUser(null)}>&#10005;</button>
             </div>
-            <div style={{ padding: '4px 24px 0' }}>
-              <div className="hint">
-                <b>Permanen dan tidak bisa dibatalkan.</b> Akunnya hilang dari sistem login, tapi jejak
-                pekerjaannya di konten, pengajuan, dan lembur <b>tetap tercatat</b>.
-                Kalau orangnya cuma keluar atau pindah, lebih baik <b>nonaktifkan</b> saja.
+            <div style={{ padding: '18px 24px 4px' }}>
+              <div
+                style={{
+                  background: 'color-mix(in srgb, var(--red) 10%, transparent)',
+                  borderLeft: '2px solid var(--red)',
+                  borderRadius: '0 6px 6px 0',
+                  padding: '9px 12px',
+                  fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-2)',
+                }}
+              >
+                <b style={{ color: 'var(--text)' }}>Permanen dan tidak bisa dibatalkan.</b> Akunnya hilang dari
+                sistem login, tapi jejak pekerjaannya di konten, pengajuan, dan lembur{' '}
+                <b style={{ color: 'var(--text)' }}>tetap tercatat</b>. Kalau orangnya cuma keluar atau pindah,
+                lebih baik <b style={{ color: 'var(--text)' }}>nonaktifkan</b> saja.
               </div>
             </div>
             <div className="modal-foot">
@@ -1283,11 +1328,19 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
               </div>
               <button className="btn ghost modal-close" disabled={delAccBusy} onClick={() => setDelAcc(null)}>&#10005;</button>
             </div>
-            <div style={{ padding: '4px 24px 0' }}>
-              <div className="hint">
+            <div style={{ padding: '18px 24px 4px' }}>
+              <div
+                style={{
+                  background: 'color-mix(in srgb, var(--red) 10%, transparent)',
+                  borderLeft: '2px solid var(--red)',
+                  borderRadius: '0 6px 6px 0',
+                  padding: '9px 12px',
+                  fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-2)',
+                }}
+              >
                 Kalau akun ini sudah pernah dipakai konten, penghapusan akan ditolak database.
-                Untuk akun yang sudah tidak dipakai lagi, pakai <b>Nonaktif</b> — konten lama tetap
-                menampilkan akunnya dengan benar.
+                Untuk akun yang sudah tidak dipakai lagi, pakai <b style={{ color: 'var(--text)' }}>Nonaktif</b> —
+                konten lama tetap menampilkan akunnya dengan benar.
               </div>
             </div>
             <div className="modal-foot">
@@ -1323,18 +1376,18 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
               </div>
               <button className="btn ghost modal-close" disabled={editMemberBusy} onClick={() => setEditMember(null)}>✕</button>
             </div>
-            <div style={{ padding: '10px 24px 0', display: 'grid', gap: 12 }}>
-              <label style={{ display: 'grid', gap: 5 }}>
-                <span className="section-hint" style={{ margin: 0 }}>Nama</span>
+            <div style={{ padding: '18px 24px' }}>
+              <div className="field">
+                <label>Nama</label>
                 <input
                   value={editMemberName}
                   disabled={editMemberBusy}
                   onChange={(e) => setEditMemberName(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && editMemberName.trim() && saveMember()}
                 />
-              </label>
-              <label style={{ display: 'grid', gap: 5 }}>
-                <span className="section-hint" style={{ margin: 0 }}>Tim</span>
+              </div>
+              <div className="field" style={{ marginBottom: editMemberTeam !== editMember.team ? 12 : 0 }}>
+                <label>Tim</label>
                 <select
                   value={editMemberTeam}
                   disabled={editMemberBusy}
@@ -1347,12 +1400,21 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                     <option value={editMemberTeam}>{TEAM_LABEL[editMemberTeam] || editMemberTeam}</option>
                   )}
                 </select>
-              </label>
+              </div>
               {editMemberTeam !== editMember.team && (
-                <div className="hint">
-                  Pindah dari <b>{TEAM_LABEL[editMember.team] || editMember.team}</b> ke <b>{TEAM_LABEL[editMemberTeam] || editMemberTeam}</b>.
-                  Namanya akan hilang dari dropdown PIC tim lama dan muncul di tim baru.
-                  Hak aksesnya <b>tidak</b> ikut berubah — itu diatur di tab <b>Akun</b>.
+                <div
+                  style={{
+                    background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
+                    borderLeft: '2px solid var(--accent)',
+                    borderRadius: '0 6px 6px 0',
+                    padding: '9px 12px',
+                    fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-2)',
+                  }}
+                >
+                  Pindah dari <b style={{ color: 'var(--text)' }}>{TEAM_LABEL[editMember.team] || editMember.team}</b> ke{' '}
+                  <b style={{ color: 'var(--text)' }}>{TEAM_LABEL[editMemberTeam] || editMemberTeam}</b>.
+                  Namanya hilang dari dropdown PIC tim lama dan muncul di tim baru.
+                  Hak aksesnya <b style={{ color: 'var(--text)' }}>tidak</b> ikut berubah — itu diatur di tab <b style={{ color: 'var(--text)' }}>Akun</b>.
                 </div>
               )}
             </div>
@@ -1388,10 +1450,18 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
               </div>
               <button className="btn ghost modal-close" disabled={delMemberBusy} onClick={() => setDelMember(null)}>✕</button>
             </div>
-            <div style={{ padding: '4px 24px 0' }}>
-              <div className="hint">
-                Untuk orang yang keluar atau pindah divisi, pakai <b>Nonaktif</b> — namanya hilang dari dropdown
-                tapi riwayat konten lama tetap menampilkan siapa yang dulu mengerjakan.
+            <div style={{ padding: '18px 24px 4px' }}>
+              <div
+                style={{
+                  background: 'color-mix(in srgb, var(--red) 10%, transparent)',
+                  borderLeft: '2px solid var(--red)',
+                  borderRadius: '0 6px 6px 0',
+                  padding: '9px 12px',
+                  fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-2)',
+                }}
+              >
+                Untuk orang yang keluar atau pindah divisi, pakai <b style={{ color: 'var(--text)' }}>Nonaktif</b> —
+                namanya hilang dari dropdown tapi riwayat konten lama tetap menampilkan siapa yang dulu mengerjakan.
               </div>
             </div>
             <div className="modal-foot">
