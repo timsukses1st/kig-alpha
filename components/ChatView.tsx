@@ -37,6 +37,8 @@ type Msg = {
   body: string;
   created_at: string;
   deleted_at: string | null;
+  /** Pesan yang dibalas. Null untuk pesan biasa. */
+  parent_id?: string | null;
 };
 
 type Person = {
@@ -121,16 +123,43 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
   /** Pencarian pada panel "Tambah anggota" grup aktif. Sengaja terpisah dari
    *  `search` milik modal Buat grup baru — dua-duanya bisa terbuka bergantian
    *  dan saling menghapus isian kalau dipakai bersama. */
+  /** Pesan yang sedang dibalas. Null = sedang menulis pesan biasa. */
+  const [balasKe, setBalasKe] = useState<Msg | null>(null);
+  /** Pesan yang sedang disorot sesudah lompat dari kutipan. */
+  const [sorot, setSorot] = useState<string | null>(null);
   const [cariAnggota, setCariAnggota] = useState('');
   const [timAnggota, setTimAnggota] = useState('');
 
   const endRef = useRef<HTMLDivElement>(null);
+  /** Kotak tulis pesan — difokuskan otomatis begitu tombol Balas ditekan. */
+  const komposerRef = useRef<HTMLInputElement>(null);
 
   const peopleMap = useMemo(() => {
     const m = new Map<string, Person>();
     people.forEach((p) => m.set(p.id, p));
     return m;
   }, [people]);
+
+  /** Peta id -> pesan, untuk mencari induk sebuah balasan tanpa memindai ulang. */
+  const msgMap = useMemo(() => {
+    const m = new Map<string, Msg>();
+    for (const x of messages) m.set(x.id, x);
+    return m;
+  }, [messages]);
+
+  /**
+   * Lompat ke pesan asli lalu menyorotnya sebentar.
+   *
+   * Memakai id elemen, bukan ref — jumlah pesan berubah-ubah dan menyimpan
+   * satu ref per pesan lebih repot daripada manfaatnya.
+   */
+  const lompatKePesan = useCallback((id: string) => {
+    const el = document.getElementById('pesan-' + id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setSorot(id);
+    window.setTimeout(() => setSorot((v) => (v === id ? null : v)), 1600);
+  }, []);
 
   const projectMap = useMemo(() => {
     const m = new Map<string, Project>();
@@ -358,6 +387,10 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
     setActiveId(g.id);
     setShowMembers(false);
     setErr(null);
+    // Balasan yang menggantung dari grup sebelumnya harus dibatalkan —
+    // kalau tidak, pesan berikutnya menunjuk induk dari grup lain.
+    setBalasKe(null);
+    setSorot(null);
     const { data, error } = await supabase
       .from('project_group_messages')
       .select('*')
@@ -384,7 +417,12 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
     setBusy(true);
     const { data, error } = await supabase
       .from('project_group_messages')
-      .insert({ group_id: activeGroup.id, sender_id: profile.id, body })
+      .insert({
+        group_id: activeGroup.id,
+        sender_id: profile.id,
+        body,
+        parent_id: balasKe ? balasKe.id : null,
+      })
       .select()
       .single();
     setBusy(false);
@@ -393,6 +431,7 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
       return;
     }
     setDraft('');
+    setBalasKe(null);
     const nm = data as Msg;
     setMessages((prev) => (prev.some((x) => x.id === nm.id) ? prev : [...prev, nm]));
     setActivity((prev) => ({ ...prev, [nm.group_id]: nm.created_at }));
@@ -619,14 +658,16 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
                       const sameSender = prev && prev.sender_id === m.sender_id && !newDay;
                       const person = peopleMap.get(m.sender_id);
                       const tint = userTint(m.sender_id);
+                      const induk = m.parent_id ? msgMap.get(m.parent_id) : undefined;
+                      const indukOrang = induk ? peopleMap.get(induk.sender_id) : undefined;
                       return (
-                        <div key={m.id}>
+                        <div key={m.id} id={'pesan-' + m.id}>
                           {newDay && (
                             <div className="cv-daysep">
                               <span>{fmtDay(m.created_at)}</span>
                             </div>
                           )}
-                          <div className={`cv-row ${mine ? 'me' : ''}`}>
+                          <div className={`cv-row ${mine ? 'me' : ''} ${sorot === m.id ? 'sorot' : ''}`}>
                             {!mine && (
                               <div
                                 className={`cv-av ${sameSender ? 'ghost' : ''}`}
@@ -653,9 +694,50 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
                                   {person?.team ? <span> · {person.team}</span> : null}
                                 </div>
                               )}
+
+                              {/* Kutipan pesan yang dibalas. Kalau pesan aslinya
+                                  sudah dihapus atau tidak ikut termuat, kutipannya
+                                  tetap ditampilkan sebagai keterangan — jangan
+                                  dihilangkan diam-diam, karena balasannya jadi
+                                  tidak jelas menanggapi apa. */}
+                              {m.parent_id && (
+                                induk && !induk.deleted_at ? (
+                                  <button
+                                    type="button"
+                                    className="cv-quote"
+                                    onClick={() => lompatKePesan(induk.id)}
+                                    title="Lihat pesan aslinya"
+                                  >
+                                    <span className="cv-quote-name">{nameOf(indukOrang)}</span>
+                                    <span className="cv-quote-text">{induk.body}</span>
+                                  </button>
+                                ) : (
+                                  <div className="cv-quote mati">
+                                    <span className="cv-quote-text">
+                                      {induk ? 'Pesan asli sudah dihapus' : 'Pesan asli tidak ditemukan'}
+                                    </span>
+                                  </div>
+                                )
+                              )}
+
                               <div className="cv-text">{m.body}</div>
                               <div className="cv-time">{fmtTime(m.created_at)}</div>
                             </div>
+
+                            {iAmMember && !m.deleted_at && (
+                              <button
+                                type="button"
+                                className="cv-reply-btn"
+                                title={`Balas pesan ${nameOf(person)}`}
+                                aria-label="Balas pesan ini"
+                                onClick={() => {
+                                  setBalasKe(m);
+                                  window.setTimeout(() => komposerRef.current?.focus(), 30);
+                                }}
+                              >
+                                &#8617;
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -813,22 +895,53 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
               </div>
 
               {iAmMember ? (
-                <div className="cv-compose">
-                  <input
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        send();
+                <>
+                  {balasKe && (
+                    <div className="cv-replybar">
+                      <div className="cv-replybar-body">
+                        <div className="cv-quote-name">
+                          Membalas {nameOf(peopleMap.get(balasKe.sender_id))}
+                        </div>
+                        <div className="cv-quote-text">{balasKe.body}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="cv-replybar-x"
+                        onClick={() => setBalasKe(null)}
+                        title="Batal membalas"
+                        aria-label="Batal membalas"
+                      >
+                        &#10005;
+                      </button>
+                    </div>
+                  )}
+                  <div className="cv-compose">
+                    <input
+                      ref={komposerRef}
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          send();
+                        }
+                        // Esc membatalkan balasan, bukan menutup grup.
+                        if (e.key === 'Escape' && balasKe) {
+                          e.preventDefault();
+                          setBalasKe(null);
+                        }
+                      }}
+                      placeholder={
+                        balasKe
+                          ? `Balas ${nameOf(peopleMap.get(balasKe.sender_id))}…`
+                          : `Tulis pesan ke ${activeGroup.name}…`
                       }
-                    }}
-                    placeholder={`Tulis pesan ke ${activeGroup.name}…`}
-                  />
-                  <button onClick={send} disabled={busy || !draft.trim()}>
-                    ➤
-                  </button>
-                </div>
+                    />
+                    <button onClick={send} disabled={busy || !draft.trim()}>
+                      ➤
+                    </button>
+                  </div>
+                </>
               ) : (
                 <div className="cv-readonly">
                   Kamu bukan anggota grup ini — hanya bisa membaca.
@@ -1057,6 +1170,36 @@ const CSS = `
 .cv-sender{font-size:11.5px;font-weight:600;margin-bottom:3px;color:var(--accent,#2f7cf6)}
 .cv-sender span{font-weight:400;opacity:.6;color:var(--muted,#8b8d92)}
 .cv-time{font-size:10px;opacity:.55;margin-top:4px;text-align:right}
+
+/* ---------- balas pesan ---------- */
+.cv-quote{display:block;width:100%;text-align:left;font:inherit;cursor:pointer;
+  margin:0 0 6px;padding:5px 9px;border:0;border-left:2px solid currentColor;
+  border-radius:0 7px 7px 0;background:rgba(255,255,255,.07);opacity:.85}
+.cv-quote:hover{opacity:1;background:rgba(255,255,255,.12)}
+.cv-quote.mati{cursor:default;opacity:.55;font-style:italic}
+.cv-bub.me .cv-quote{background:rgba(255,255,255,.18)}
+.cv-bub.me .cv-quote:hover{background:rgba(255,255,255,.26)}
+.cv-quote-name{display:block;font-size:11px;font-weight:600;margin-bottom:1px;opacity:.9}
+.cv-quote-text{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;font-size:11.5px;line-height:1.45;opacity:.75;word-break:break-word}
+.cv-reply-btn{align-self:center;flex:0 0 auto;background:transparent;border:0;
+  padding:2px 5px;line-height:1;font-size:14px;cursor:pointer;
+  color:var(--muted,#8b8d92);opacity:0;transition:opacity .12s}
+.cv-row:hover .cv-reply-btn{opacity:.8}
+.cv-reply-btn:hover{opacity:1;color:var(--text,#e8e9ea)}
+.cv-reply-btn:focus-visible{opacity:1}
+/* Di layar sentuh tidak ada hover — tombolnya dibuat selalu terlihat samar. */
+@media (hover:none){.cv-reply-btn{opacity:.55}}
+.cv-row.sorot .cv-bub{outline:2px solid var(--accent,#2f7cf6);outline-offset:2px;
+  transition:outline-color .3s}
+.cv-replybar{display:flex;align-items:flex-start;gap:9px;padding:9px 16px 0;
+  border-top:1px solid var(--border,rgba(255,255,255,.07))}
+.cv-replybar-body{flex:1;min-width:0;border-left:2px solid var(--accent,#2f7cf6);
+  padding:3px 0 3px 9px}
+.cv-replybar-x{flex:0 0 auto;background:transparent;border:0;cursor:pointer;
+  color:var(--muted,#8b8d92);font-size:13px;line-height:1;padding:4px 6px}
+.cv-replybar-x:hover{color:var(--text,#e8e9ea)}
+.cv-replybar + .cv-compose{border-top:0;padding-top:9px}
 .cv-side{width:250px;flex:0 0 250px;border-left:1px solid var(--border,rgba(255,255,255,.07));
   overflow-y:auto;padding:14px}
 .cv-side-t{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b8d92);margin:4px 0 10px}
