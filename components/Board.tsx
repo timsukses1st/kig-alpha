@@ -1274,15 +1274,31 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
         .eq('id', rq.id);
     }
     setReqBusy(null);
-    if (ins.error) window.alert('Gagal mengangkat request — cek wewenang.');
+    // Dulu window.alert — diblokir di lingkungan ini, jadi kegagalannya diam.
+    if (ins.error) setToast('Gagal mengangkat request — cek wewenang akunmu.');
     load(true);
   };
 
-  const rejectRequest = async (rq: ContentRequest) => {
-    if (!window.confirm(`Tolak request "${rq.title}"?`)) return;
+  /**
+   * Tolak request. Konfirmasinya dulu memakai window.confirm yang diblokir,
+   * jadi tombol Tolak diklik tanpa reaksi apa pun. Sekarang pakai modal.
+   */
+  const [rejReq, setRejReq] = useState<ContentRequest | null>(null);
+
+  const confirmRejectRequest = async () => {
+    const rq = rejReq;
+    if (!rq) return;
     setReqBusy(rq.id);
-    await supabase.from('content_requests').update({ status: 'ditolak' }).eq('id', rq.id);
+    const { data, error } = await supabase
+      .from('content_requests').update({ status: 'ditolak' }).eq('id', rq.id).select('id');
     setReqBusy(null);
+    if (error) { setToast('Gagal menolak request.'); return; }
+    // UPDATE yang ditolak RLS mengubah 0 baris tanpa error.
+    if (!data || data.length === 0) {
+      setToast('Tidak ada yang berubah — wewenang akunmu tidak mencukupi.');
+      return;
+    }
+    setRejReq(null);
     load(true);
   };
 
@@ -1657,7 +1673,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                     </button>
                   )}
                   {canAcc && (
-                    <button className="btn ghost danger-text" disabled={reqBusy === rq.id} onClick={() => rejectRequest(rq)}>
+                    <button className="btn ghost danger-text" disabled={reqBusy === rq.id} onClick={() => setRejReq(rq)}>
                       Tolak
                     </button>
                   )}
@@ -2684,6 +2700,49 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                   onClick={runDuplicate}
                 >
                   {dupBusy ? 'Menduplikat…' : 'Duplikat'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Konfirmasi tolak request — dulu window.confirm yang diblokir browser */}
+      {rejReq && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !reqBusy && setRejReq(null)}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--amber)' }} />
+                  Tolak request
+                </div>
+                <div className="modal-title">Tolak &ldquo;{rejReq.title}&rdquo;?</div>
+                <div className="modal-sub">
+                  Request ditandai ditolak dan tidak lagi muncul di daftar yang perlu ditindak.
+                </div>
+              </div>
+              <button className="btn ghost modal-close" disabled={!!reqBusy} onClick={() => setRejReq(null)}>&#10005;</button>
+            </div>
+            <div style={{ padding: '18px 24px 4px' }}>
+              <div
+                style={{
+                  background: 'color-mix(in srgb, var(--amber) 10%, transparent)',
+                  borderLeft: '2px solid var(--amber)',
+                  borderRadius: '0 6px 6px 0',
+                  padding: '9px 12px',
+                  fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-2)',
+                }}
+              >
+                Requestnya <b style={{ color: 'var(--text)' }}>tidak terhapus</b> — hanya berganti status,
+                jadi pengajunya tetap bisa melihat bahwa requestnya sudah ditindak.
+              </div>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={!!reqBusy} onClick={() => setRejReq(null)}>Batal</button>
+                <button className="btn primary" disabled={!!reqBusy} onClick={confirmRejectRequest}>
+                  {reqBusy ? 'Menolak\u2026' : 'Tolak request'}
                 </button>
               </div>
             </div>
