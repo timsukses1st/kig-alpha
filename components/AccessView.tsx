@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { initials, tagColor, TEAM_GROUPS, TEAM_LABEL, teamsForVertical, VERTICALS, type Account, type ContentCategory, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
+import { initials, KOLOM_URL_AKUN, PLATFORMS, tagColor, TEAM_GROUPS, TEAM_LABEL, teamsForVertical, VERTICALS, type Account, type ContentCategory, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
 import { sigma, type SigmaProject } from '@/lib/sigma';
 
 const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
@@ -418,6 +418,12 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   const [delAcc, setDelAcc] = useState<Account | null>(null);
   const [delAccBusy, setDelAccBusy] = useState(false);
 
+  // Alamat profil per platform. Disimpan, bukan ditebak — lihat catatan di
+  // accountUrl() pada lib/types.ts.
+  const [linkAcc, setLinkAcc] = useState<Account | null>(null);
+  const [linkVal, setLinkVal] = useState<Record<string, string>>({});
+  const [linkBusy, setLinkBusy] = useState(false);
+
   const askDeleteProject = async (pr: Project) => {
     const countIn = async (table: string): Promise<number> => {
       try {
@@ -637,6 +643,44 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
     setMsg('');
     const { error } = await supabase.from('accounts').update({ is_active: !a.is_active }).eq('id', a.id);
     flash(error ? 'Gagal mengubah status akun.' : 'Status akun diubah.');
+    load(); onAccountsChanged?.();
+  };
+
+  const openLinkAcc = (a: Account) => {
+    setLinkAcc(a);
+    const awal: Record<string, string> = {};
+    for (const pf of PLATFORMS) {
+      const k = KOLOM_URL_AKUN[pf.key];
+      awal[pf.key] = ((a[k] as string | null) ?? '');
+    }
+    setLinkVal(awal);
+  };
+
+  /** Alamat harus lengkap dengan http:// atau https://, kalau tidak ditolak. */
+  const linkSalah = PLATFORMS.filter((pf) => {
+    const v = (linkVal[pf.key] || '').trim();
+    return v !== '' && !/^https?:\/\//i.test(v);
+  });
+
+  const saveLinkAcc = async () => {
+    if (!linkAcc || linkSalah.length) return;
+    setMsg('');
+    setLinkBusy(true);
+    const patch: Record<string, string | null> = {};
+    for (const pf of PLATFORMS) {
+      const v = (linkVal[pf.key] || '').trim();
+      patch[KOLOM_URL_AKUN[pf.key] as string] = v || null;
+    }
+    const { data, error } = await supabase
+      .from('accounts').update(patch).eq('id', linkAcc.id).select('id');
+    setLinkBusy(false);
+    if (error) { flash('Gagal menyimpan alamat profil.'); return; }
+    if (!data || data.length === 0) {
+      flash('Tidak ada yang tersimpan — wewenang akunmu tidak mencukupi.');
+      return;
+    }
+    setLinkAcc(null);
+    flash('Alamat profil tersimpan.');
     load(); onAccountsChanged?.();
   };
 
@@ -964,6 +1008,9 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
               {activeProjectName
                 ? <>Menampilkan akun project <b>{activeProjectName}</b> — ganti lewat selector Project di sidebar. Akun yang belum punya project ikut ditampilkan di sini supaya bisa ditugaskan; selama project-nya kosong, akun itu tidak bisa dipilih di Board. Akun yang dipakai konten tidak bisa dihapus, nonaktifkan saja.</>
                 : <>Semua akun media. Pilih project di sidebar untuk menyaring. Akun yang dipakai konten tidak bisa dihapus — nonaktifkan saja.</>}
+              {' '}Kolom <b>Link</b> menyimpan alamat profil per platform — satu akun bisa dipakai di beberapa
+              platform dengan username berbeda, jadi alamatnya diisi sendiri-sendiri. Yang belum diisi
+              tidak akan ditautkan di Board.
             </p>
             {/* Daftar pilihan Label — dipakai bersama oleh form tambah & kolom tabel */}
             <datalist id="acc-label-options">
@@ -984,7 +1031,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Akun</th><th>Project</th><th>Label</th><th>Status</th><th style={{ width: 90 }}></th></tr>
+                  <tr><th>Akun</th><th>Project</th><th>Label</th><th>Link</th><th>Status</th><th style={{ width: 90 }}></th></tr>
                 </thead>
                 <tbody>
                   {shownAccounts.map((a) => (
@@ -1006,6 +1053,22 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                           onSave={(v) => updateAccountLabel(a, v)}
                         />
                       </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {(() => {
+                          const isi = PLATFORMS.filter(
+                            (pf) => ((a[KOLOM_URL_AKUN[pf.key]] as string | null) ?? '').trim() !== ''
+                          );
+                          return (
+                            <button className="btn ghost" onClick={() => openLinkAcc(a)} title="Atur alamat profil per platform">
+                              <span
+                                className="status-dot"
+                                style={{ background: isi.length ? 'var(--green)' : 'var(--text-3)' }}
+                              />
+                              {isi.length ? `${isi.length} platform` : 'Belum diisi'}
+                            </button>
+                          );
+                        })()}
+                      </td>
                       <td>
                         <button className="btn ghost" onClick={() => toggleAccount(a)}>
                           <span className="status-dot" style={{ background: a.is_active ? 'var(--green)' : 'var(--text-3)' }} />
@@ -1015,7 +1078,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                       <td><button className="btn ghost danger-text" onClick={() => setDelAcc(a)}>Hapus</button></td>
                     </tr>
                   ))}
-                  {shownAccounts.length === 0 && <tr><td colSpan={5} className="empty">{activeProjectName ? `Belum ada akun di project ${activeProjectName}.` : 'Belum ada akun.'}</td></tr>}
+                  {shownAccounts.length === 0 && <tr><td colSpan={6} className="empty">{activeProjectName ? `Belum ada akun di project ${activeProjectName}.` : 'Belum ada akun.'}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -1178,6 +1241,78 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
         </div>
         );
       })()}
+
+      {linkAcc && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !linkBusy && setLinkAcc(null)}>
+          <div className="modal" style={{ maxWidth: 480 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--accent)' }} />
+                  Alamat profil
+                </div>
+                <div className="modal-title">{linkAcc.handle}</div>
+                <div className="modal-sub">
+                  Tempel alamat profilnya untuk tiap platform yang dipakai. Yang tidak dipakai biarkan kosong.
+                </div>
+              </div>
+              <button className="btn ghost modal-close" disabled={linkBusy} onClick={() => setLinkAcc(null)}>&#10005;</button>
+            </div>
+            <div style={{ padding: '18px 24px 6px', maxHeight: '52vh', overflowY: 'auto' }}>
+              {PLATFORMS.map((pf) => {
+                const v = linkVal[pf.key] || '';
+                const salah = v.trim() !== '' && !/^https?:\/\//i.test(v.trim());
+                return (
+                  <div className="field" key={pf.key}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: pf.color, flexShrink: 0 }} />
+                      {pf.label}
+                    </label>
+                    <input
+                      value={v}
+                      disabled={linkBusy}
+                      placeholder="https://…"
+                      spellCheck={false}
+                      onChange={(e) => setLinkVal({ ...linkVal, [pf.key]: e.target.value })}
+                      style={salah ? { borderColor: 'var(--red)' } : undefined}
+                    />
+                    {salah && (
+                      <div className="hint" style={{ color: 'var(--red)' }}>
+                        Harus diawali http:// atau https://
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <div
+                style={{
+                  background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
+                  borderLeft: '2px solid var(--accent)',
+                  borderRadius: '0 6px 6px 0',
+                  padding: '9px 12px', marginTop: 4,
+                  fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-2)',
+                }}
+              >
+                Buka profilnya di browser, <b style={{ color: 'var(--text)' }}>salin alamat dari bilah alamat</b>,
+                lalu tempel di sini. Jangan diketik ulang dari ingatan — beda satu huruf, tautannya menuju akun
+                orang lain.
+              </div>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={linkBusy} onClick={() => setLinkAcc(null)}>Batal</button>
+                <button
+                  className="btn primary"
+                  disabled={linkBusy || linkSalah.length > 0}
+                  onClick={saveLinkAcc}
+                >
+                  {linkBusy ? 'Menyimpan\u2026' : 'Simpan alamat'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {pwUser && (
         <div className="overlay" onClick={(e) => e.target === e.currentTarget && !pwBusy && setPwUser(null)}>
