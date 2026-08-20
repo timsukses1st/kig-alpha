@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
-  PLATFORMS, accountUrl, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses,
+  PLATFORMS, accountUrl, canCreateContent, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses,
   type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type Team, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
@@ -701,10 +701,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     projId ? accounts.filter((a) => a.project_id === projId) : accounts;
   const membersOf = (team: 'creative' | 'distribution' | 'ads', terpasang?: string | null) =>
     anggotaUntuk(members, team, terpasang);
-  const canCreate =
-    !!profile &&
-    (profile.role === 'superadmin' || profile.role === 'manager' ||
-      profile.team === 'creative' || profile.team === 'delta');
+  // Cerminan policy `contents_insert`. Sengaja lewat satu fungsi bersama di
+  // lib/types.ts supaya layar dan database tidak pernah berbeda pendapat.
+  const canCreate = canCreateContent(profile);
 
   const openCreate = () => {
     setEditing(null);
@@ -1206,7 +1205,8 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   };
 
   const canRequest = canAcc || profile?.team === 'pm';
-  const canLift = canAcc || profile?.team === 'creative' || profile?.team === 'delta';
+  // Mengangkat request = membuat konten baru, jadi syaratnya sama persis.
+  const canLift = canCreateContent(profile);
   const [reqModalOpen, setReqModalOpen] = useState(false);
   const [reqForm, setReqForm] = useState({ title: '', account_id: '', requested_date: '', note: '' });
   const [reqBusy, setReqBusy] = useState<string | null>(null);
