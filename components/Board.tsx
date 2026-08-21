@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
-  PLATFORMS, accountUrl, canCreateContent, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses,
+  PLATFORMS, accountUrl, canCreateContent, canDeleteContent, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses,
   type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type Team, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
@@ -1329,7 +1329,16 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     if (!sedangSibuk && tertundaRef.current) serapPerubahan();
   }, [sedangSibuk, serapPerubahan]);
 
-  const canDelete = profile?.role === 'superadmin' || profile?.role === 'manager';
+  // Cerminan policy `contents_delete`. Sejak 21 Agustus disamakan dengan aturan
+  // memindahkan status — jadi PM, Finance, HO, GA, HRD tidak lagi bisa menghapus
+  // konten, sama seperti mereka tidak bisa menggesernya.
+  const canDelete = canDeleteContent(profile);
+
+  // Menghapus CATATAN konten aturannya berbeda dan sengaja tidak ikut diubah:
+  // policy `notes_delete` masih `author_id = auth.uid() OR is_privileged()`.
+  // Kalau layar dibuat lebih ketat dari database, tombolnya hilang padahal
+  // sebenarnya diizinkan — itu membingungkan tanpa alasan.
+  const bisaHapusCatatan = profile?.role === 'superadmin' || profile?.role === 'manager';
   const nextStep = editing ? nextActionFor(editing.status) : null;
   const prevIdx = editing ? ORDER.indexOf(editing.status) : -1;
   const prevStep = editing && prevIdx > 0 ? ORDER[prevIdx - 1] : null;
@@ -1426,7 +1435,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                 </div>
                 <div className="note-text">{n.note}</div>
               </div>
-              {(profile?.id === n.author_id || canDelete) && (
+              {(profile?.id === n.author_id || bisaHapusCatatan) && (
                 <button className="note-del" title="Hapus catatan" onClick={() => deleteNote(n)}>✕</button>
               )}
             </div>
