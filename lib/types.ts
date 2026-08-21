@@ -521,6 +521,18 @@ export function canCreateContent(profile: Profile | null): boolean {
   return profile.role === 'tim' && (profile.team === 'creative' || profile.team === 'delta');
 }
 
+/**
+ * Boleh menghapus konten, dan boleh menarik status mundur.
+ *
+ * Disamakan dengan aturan memindahkan status (keputusan Mas Dik 21 Agustus):
+ * janggal kalau seseorang tidak boleh menggeser status tapi boleh menghapus
+ * barisnya sekalian. Cerminan dari policy `contents_delete`.
+ */
+export function canDeleteContent(profile: Profile | null): boolean {
+  if (!profile || !profile.is_active) return false;
+  return bebasPindahStatus(profile);
+}
+
 export function canEditRow(profile: Profile | null, status: ContentStatus): boolean {
   if (!profile || !profile.is_active) return false;
   if (bebasPindahStatus(profile)) return true;
