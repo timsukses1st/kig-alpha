@@ -303,6 +303,10 @@ function LabelCell({ value, options, onSave }: {
 
 export default function AccessView({ selfId, onAccountsChanged, activeProjectId = 'all', activeProjectName = null }: Props) {
   const [users, setUsers] = useState<Profile[]>([]);
+  /** Penyaring unit di tab User Login. '' = tampilkan semua. */
+  const [saringVertical, setSaringVertical] = useState('');
+  /** Pencarian nama/email di tab User Login. */
+  const [cariUser, setCariUser] = useState('');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [newAccProject, setNewAccProject] = useState('');
@@ -684,6 +688,48 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
     load(); onAccountsChanged?.();
   };
 
+  /**
+   * Jumlah akun per unit. Dihitung dari data yang ada, bukan dari daftar tetap —
+   * supaya tidak muncul chip yang isinya nol. Akun tanpa unit dikelompokkan
+   * sendiri, karena mereka justru yang paling perlu diperhatikan.
+   */
+  const jumlahPerVertical = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const u of users) {
+      const k = (u.vertical || '').trim() || 'KOSONG';
+      m[k] = (m[k] || 0) + 1;
+    }
+    return m;
+  }, [users]);
+
+  const chipVertical = useMemo(() => {
+    const urutan = ['KC', 'GME', 'KIG', 'ALL', 'KOSONG'];
+    return urutan
+      .filter((k) => (jumlahPerVertical[k] || 0) > 0)
+      .map((k) => ({
+        value: k,
+        label: k === 'KOSONG' ? 'Belum diatur' : k,
+        jumlah: jumlahPerVertical[k],
+      }));
+  }, [jumlahPerVertical]);
+
+  const usersTersaring = useMemo(() => {
+    const q = cariUser.trim().toLowerCase();
+    return users.filter((u) => {
+      if (saringVertical) {
+        const k = (u.vertical || '').trim() || 'KOSONG';
+        if (k !== saringVertical) return false;
+      }
+      if (!q) return true;
+      return (
+        (u.full_name || '').toLowerCase().includes(q) ||
+        (u.email || '').toLowerCase().includes(q) ||
+        (u.team || '').toLowerCase().includes(q) ||
+        (TEAM_LABEL[u.team as Team] || '').toLowerCase().includes(q)
+      );
+    });
+  }, [users, saringVertical, cariUser]);
+
   const confirmDeleteAccount = async () => {
     if (!delAcc) return;
     setMsg('');
@@ -869,13 +915,55 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
             <p className="section-hint">
               Akun dibuat dengan password sementara — minta orangnya login lalu ganti lewat <b>Reset PW</b>.
             </p>
+
+            {/* Penyaring unit. Dengan 35+ akun, satu daftar panjang bikin susah
+                menemukan orang — apalagi kalau nanti GME ikut masuk. */}
+            <div className="add-row" style={{ alignItems: 'center' }}>
+              <button
+                className={`chip-btn ${saringVertical === '' ? 'active' : ''}`}
+                onClick={() => setSaringVertical('')}
+              >
+                Semua <span style={{ opacity: 0.6 }}>{users.length}</span>
+              </button>
+              {chipVertical.map((c) => (
+                <button
+                  key={c.value}
+                  className={`chip-btn ${saringVertical === c.value ? 'active' : ''}`}
+                  onClick={() => setSaringVertical(saringVertical === c.value ? '' : c.value)}
+                >
+                  {c.label} <span style={{ opacity: 0.6 }}>{c.jumlah}</span>
+                </button>
+              ))}
+              <input
+                style={{ minWidth: 190 }}
+                placeholder="Cari nama, email, atau tim…"
+                value={cariUser}
+                onChange={(e) => setCariUser(e.target.value)}
+              />
+              {(saringVertical || cariUser) && (
+                <button
+                  className="btn ghost"
+                  onClick={() => { setSaringVertical(''); setCariUser(''); }}
+                >
+                  Kosongkan
+                </button>
+              )}
+            </div>
+
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr><th>User</th><th>Role</th><th>Team</th><th>Vertical</th><th>Status</th><th style={{ width: 150 }}></th></tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
+                  {usersTersaring.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="empty">
+                        Tidak ada akun yang cocok dengan penyaring ini.
+                      </td>
+                    </tr>
+                  )}
+                  {usersTersaring.map((u) => (
                     <tr key={u.id}>
                       <td>
                         <span className="row-avatar">{initials(u.full_name || u.email)}</span>
