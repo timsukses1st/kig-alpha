@@ -151,6 +151,9 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
   const [sorot, setSorot] = useState<string | null>(null);
   const [cariAnggota, setCariAnggota] = useState('');
   const [timAnggota, setTimAnggota] = useState('');
+  /** Centang di panel Tambah anggota — supaya bisa memasukkan banyak orang sekaligus. */
+  const [pilihTambah, setPilihTambah] = useState<string[]>([]);
+  const [tambahBusy, setTambahBusy] = useState(false);
 
   const endRef = useRef<HTMLDivElement>(null);
   /** Kotak tulis pesan — difokuskan otomatis begitu tombol Balas ditekan. */
@@ -485,6 +488,11 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
     // kalau tidak, pesan berikutnya menunjuk induk dari grup lain.
     setBalasKe(null);
     setSorot(null);
+    // Centang tambah-anggota milik grup sebelumnya harus dikosongkan —
+    // kalau tidak, orang-orang itu bisa masuk ke grup yang salah.
+    setPilihTambah([]);
+    setCariAnggota('');
+    setTimAnggota('');
     const { data, error } = await supabase
       .from('project_group_messages')
       .select('*')
@@ -707,6 +715,66 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
     setTolakReq(null);
     setAlasanTolak('');
     loadJoinReqs();
+  };
+
+  /**
+   * Masukkan banyak orang sekaligus.
+   *
+   * Dipisah dua jalur: yang belum pernah jadi anggota di-INSERT sekali jalan
+   * (satu perjalanan ke server, bukan satu per orang), sedangkan yang pernah
+   * dikeluarkan barisnya dihidupkan lagi lewat UPDATE — supaya tidak ada baris
+   * kembar di daftar anggota.
+   */
+  const tambahBanyak = async () => {
+    if (!activeGroup || !profile || pilihTambah.length === 0) return;
+    setErr(null);
+    setTambahBusy(true);
+
+    const lamaMap = new Map<string, Member>();
+    for (const m of members) {
+      if (m.group_id === activeGroup.id) lamaMap.set(m.user_id, m);
+    }
+    const baru = pilihTambah.filter((uid) => !lamaMap.has(uid));
+    const hidupkan = pilihTambah.filter((uid) => lamaMap.has(uid));
+
+    let gagal = 0;
+
+    if (baru.length) {
+      const { data, error } = await supabase
+        .from('project_group_members')
+        .insert(baru.map((uid) => ({
+          group_id: activeGroup.id,
+          user_id: uid,
+          is_admin: false,
+          added_by: profile.id,
+        })))
+        .select('id');
+      if (error) gagal += baru.length;
+      else gagal += baru.length - ((data && data.length) || 0);
+    }
+
+    for (const uid of hidupkan) {
+      const lama = lamaMap.get(uid);
+      if (!lama) continue;
+      const { data, error } = await supabase
+        .from('project_group_members')
+        .update({ removed_at: null, removed_by: null, added_by: profile.id })
+        .eq('id', lama.id)
+        .select('id');
+      if (error || !data || data.length === 0) gagal += 1;
+    }
+
+    setTambahBusy(false);
+    const berhasil = pilihTambah.length - gagal;
+    if (gagal > 0) {
+      setErr(
+        berhasil > 0
+          ? `${berhasil} orang ditambahkan, ${gagal} gagal — hanya admin grup yang bisa menambah anggota.`
+          : 'Gagal menambah anggota — hanya admin grup yang bisa.'
+      );
+    }
+    setPilihTambah([]);
+    loadMembers();
   };
 
   const addMember = async (uid: string) => {
@@ -1184,33 +1252,77 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
                               )}
                             </div>
                           ) : (
-                            addTersaring.map((p) => (
-                              <div
-                                key={p.id}
-                                className="cv-pick"
-                                role="button"
-                                tabIndex={0}
-                                title={p.email}
-                                onClick={() => addMember(p.id)}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') addMember(p.id); }}
-                              >
-                                <div className="cv-mav sm">{initials(nameOf(p))}</div>
-                                <div style={{ minWidth: 0, flex: 1 }}>
-                                  <div className="cv-mname">{nameOf(p)}</div>
-                                  <div
-                                    style={{
-                                      fontSize: 11, color: 'var(--muted, #8b8d92)',
-                                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                                    }}
-                                  >
-                                    {p.team ? (TEAM_LABEL[p.team as Team] || p.team) : 'Tanpa tim'}
+                            addTersaring.map((p) => {
+                              const dipilih = pilihTambah.includes(p.id);
+                              return (
+                                <label key={p.id} className="cv-pick" title={p.email}>
+                                  <input
+                                    type="checkbox"
+                                    checked={dipilih}
+                                    disabled={tambahBusy}
+                                    onChange={(e) =>
+                                      setPilihTambah(
+                                        e.target.checked
+                                          ? pilihTambah.concat(p.id)
+                                          : pilihTambah.filter((x) => x !== p.id)
+                                      )
+                                    }
+                                  />
+                                  <div className="cv-mav sm">{initials(nameOf(p))}</div>
+                                  <div style={{ minWidth: 0, flex: 1 }}>
+                                    <div className="cv-mname">{nameOf(p)}</div>
+                                    <div
+                                      style={{
+                                        fontSize: 11, color: 'var(--muted, #8b8d92)',
+                                        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                                      }}
+                                    >
+                                      {p.team ? (TEAM_LABEL[p.team as Team] || p.team) : 'Tanpa tim'}
+                                    </div>
                                   </div>
-                                </div>
-                                <span style={{ color: 'var(--accent)', fontSize: 15, lineHeight: 1 }}>+</span>
-                              </div>
-                            ))
+                                </label>
+                              );
+                            })
                           )}
                         </div>
+
+                        {addTersaring.length > 0 && (
+                          <div className="cv-massal">
+                            {/* Dulu tiap nama diklik satu-satu dan langsung tersimpan.
+                                Untuk memasukkan 20 orang itu 20 kali perjalanan ke
+                                server. Sekarang dicentang dulu, sekali simpan. */}
+                            <button
+                              type="button"
+                              className="cv-massal-semua"
+                              disabled={tambahBusy}
+                              onClick={() => {
+                                const tampil = addTersaring.map((p) => p.id);
+                                const semuaSudah = tampil.every((id) => pilihTambah.includes(id));
+                                setPilihTambah(
+                                  semuaSudah
+                                    ? pilihTambah.filter((id) => tampil.indexOf(id) === -1)
+                                    : pilihTambah.concat(tampil.filter((id) => pilihTambah.indexOf(id) === -1))
+                                );
+                              }}
+                            >
+                              {addTersaring.every((p) => pilihTambah.includes(p.id))
+                                ? 'Batal pilih semua'
+                                : `Pilih semua (${addTersaring.length})`}
+                            </button>
+                            <button
+                              type="button"
+                              className="cv-massal-tambah"
+                              disabled={tambahBusy || pilihTambah.length === 0}
+                              onClick={tambahBanyak}
+                            >
+                              {tambahBusy
+                                ? 'Menambahkan\u2026'
+                                : pilihTambah.length === 0
+                                  ? 'Tambahkan'
+                                  : `Tambahkan ${pilihTambah.length} orang`}
+                            </button>
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
@@ -1507,6 +1619,32 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
                       onChange={(e) => setSearch(e.target.value)}
                       placeholder="Cari nama, email, atau tim…"
                     />
+                    {candidates.length > 0 && (
+                      <div className="cv-massal" style={{ marginBottom: 8 }}>
+                        <button
+                          type="button"
+                          className="cv-massal-semua"
+                          onClick={() => {
+                            const tampil = candidates.map((p) => p.id);
+                            const semuaSudah = tampil.every((id) => picked.includes(id));
+                            setPicked(
+                              semuaSudah
+                                ? picked.filter((id) => tampil.indexOf(id) === -1)
+                                : picked.concat(tampil.filter((id) => picked.indexOf(id) === -1))
+                            );
+                          }}
+                        >
+                          {candidates.every((p) => picked.includes(p.id))
+                            ? 'Batal pilih semua'
+                            : `Pilih semua (${candidates.length})`}
+                        </button>
+                        {picked.length > 0 && (
+                          <button type="button" className="cv-massal-kosong" onClick={() => setPicked([])}>
+                            Kosongkan
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <div className="cv-picker">
                       {candidates.length === 0 ? (
                         <div className="cv-note">Tidak ada orang yang cocok.</div>
@@ -1681,6 +1819,17 @@ const CSS = `
 .cv-minta-aksi button:hover{color:var(--text,#e8e9ea)}
 .cv-minta-aksi button.setuju{border-color:transparent;background:var(--accent,#2f7cf6);color:#fff}
 .cv-minta-aksi button:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---------- pilih banyak orang sekaligus ---------- */
+.cv-massal{display:flex;gap:7px;align-items:center;margin-top:8px}
+.cv-massal-semua,.cv-massal-kosong{background:transparent;border:0;padding:0;cursor:pointer;
+  font:inherit;font-size:11px;color:var(--accent,#2f7cf6);white-space:nowrap}
+.cv-massal-semua:hover,.cv-massal-kosong:hover{text-decoration:underline;text-underline-offset:3px}
+.cv-massal-kosong{color:var(--muted,#8b8d92)}
+.cv-massal-tambah{margin-left:auto;padding:5px 11px;border-radius:8px;cursor:pointer;
+  font:inherit;font-size:11.5px;border:0;background:var(--accent,#2f7cf6);color:#fff;white-space:nowrap}
+.cv-massal-tambah:disabled{opacity:.45;cursor:not-allowed}
+.cv-massal-semua:disabled{opacity:.45;cursor:not-allowed}
 .cv-side{width:250px;flex:0 0 250px;border-left:1px solid var(--border,rgba(255,255,255,.07));
   overflow-y:auto;padding:14px}
 .cv-side-t{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b8d92);margin:4px 0 10px}
