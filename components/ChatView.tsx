@@ -21,6 +21,19 @@ type Group = {
   is_archived: boolean;
 };
 
+/** Pengajuan bergabung ke grup. Tabel project_group_join_requests. */
+type JoinReq = {
+  id: string;
+  group_id: string;
+  user_id: string;
+  pesan: string | null;
+  status: 'menunggu' | 'disetujui' | 'ditolak' | 'dibatalkan';
+  diputus_oleh: string | null;
+  diputus_pada: string | null;
+  catatan: string | null;
+  created_at: string;
+};
+
 type Member = {
   id: string;
   group_id: string;
@@ -101,6 +114,15 @@ const fmtRelative = (iso: string | undefined) => {
 
 export default function ChatView({ profile, projects, projectFilter }: Props) {
   const [groups, setGroups] = useState<Group[]>([]);
+  const [joinReqs, setJoinReqs] = useState<JoinReq[]>([]);
+  /** Grup yang sedang diajukan (modal terbuka). */
+  const [ajukanGrup, setAjukanGrup] = useState<Group | null>(null);
+  const [pesanAjuan, setPesanAjuan] = useState('');
+  const [ajuanBusy, setAjuanBusy] = useState(false);
+  /** Pengajuan yang sedang ditolak — Lead menulis alasannya. */
+  const [tolakReq, setTolakReq] = useState<JoinReq | null>(null);
+  const [alasanTolak, setAlasanTolak] = useState('');
+  const [putusBusy, setPutusBusy] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -194,6 +216,19 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
     setMembers((data as Member[]) || []);
   }, []);
 
+  /**
+   * Pengajuan bergabung. RLS sudah menyaring sendiri — yang terbaca hanya
+   * pengajuan milik sendiri, atau pengajuan ke grup yang kita jadi adminnya.
+   * Jadi di sini tidak perlu penyaring tambahan.
+   */
+  const loadJoinReqs = useCallback(async () => {
+    const { data } = await supabase
+      .from('project_group_join_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
+    setJoinReqs((data as JoinReq[]) || []);
+  }, []);
+
   const loadActivity = useCallback(async () => {
     const { data } = await supabase
       .from('project_group_messages')
@@ -219,7 +254,7 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.all([loadPeople(), loadGroups(), loadMembers(), loadActivity(), loadReads()]);
+      await Promise.all([loadPeople(), loadGroups(), loadMembers(), loadActivity(), loadReads(), loadJoinReqs()]);
       setLoading(false);
     })();
   }, [loadPeople, loadGroups, loadMembers, loadActivity, loadReads]);
@@ -263,6 +298,21 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
     };
   }, [loadMembers, loadGroups]);
 
+  /* ---------- realtime: pengajuan bergabung ---------- */
+  useEffect(() => {
+    const ch = supabase
+      .channel('cv-joinreq')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'project_group_join_requests' },
+        () => { loadJoinReqs(); }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [loadJoinReqs]);
+
   /* ---------- derived ---------- */
   const visibleGroups = useMemo(() => {
     const list =
@@ -273,6 +323,42 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
       return tb.localeCompare(ta);
     });
   }, [groups, projectFilter, activity]);
+
+  /** Grup yang aku ikuti. Dipakai untuk memisah daftar di bilah kiri. */
+  const idGrupSaya = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of members) {
+      if (m.user_id === profile?.id && !m.removed_at) set.add(m.group_id);
+    }
+    return set;
+  }, [members, profile]);
+
+  const grupSaya = useMemo(
+    () => visibleGroups.filter((g) => idGrupSaya.has(g.id)),
+    [visibleGroups, idGrupSaya]
+  );
+
+  /**
+   * Grup se-unit yang belum kuikuti. Baru bisa terlihat sejak 20 Agustus 2026,
+   * waktu policy `pg_select` dibuka supaya pengajuan bergabung mungkin
+   * dilakukan. Nama & keterangannya terlihat; daftar anggota dan isi
+   * percakapannya tetap tertutup oleh policy masing-masing.
+   */
+  const grupLain = useMemo(
+    () => visibleGroups.filter((g) => !idGrupSaya.has(g.id)),
+    [visibleGroups, idGrupSaya]
+  );
+
+  /** Pengajuanku sendiri per grup — yang terbaru saja. */
+  const ajuanSaya = useMemo(() => {
+    const m = new Map<string, JoinReq>();
+    for (const r of joinReqs) {
+      if (r.user_id !== profile?.id) continue;
+      const ada = m.get(r.group_id);
+      if (!ada || r.created_at > ada.created_at) m.set(r.group_id, r);
+    }
+    return m;
+  }, [joinReqs, profile]);
 
   const activeGroup = useMemo(
     () => groups.find((g) => g.id === activeId) || null,
@@ -297,6 +383,14 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
   const iAmMember = useMemo(
     () => activeMembers.some((m) => m.user_id === profile?.id),
     [activeMembers, profile]
+  );
+
+  /** Jumlah pengajuan yang masih menunggu di sebuah grup. Hanya terisi untuk
+   *  grup yang aku jadi adminnya — RLS yang menyaring, bukan kode ini. */
+  const menungguDiGrup = useCallback(
+    (gid: string) =>
+      joinReqs.filter((r) => r.group_id === gid && r.status === 'menunggu' && r.user_id !== profile?.id).length,
+    [joinReqs, profile]
   );
 
   const memberCount = useCallback(
@@ -511,6 +605,110 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
     loadMembers();
   };
 
+  /* ---------- pengajuan bergabung ---------- */
+
+  const kirimAjuan = async () => {
+    if (!ajukanGrup || !profile) return;
+    setErr(null);
+    setAjuanBusy(true);
+    const { error } = await supabase.from('project_group_join_requests').insert({
+      group_id: ajukanGrup.id,
+      user_id: profile.id,
+      pesan: pesanAjuan.trim() || null,
+    });
+    setAjuanBusy(false);
+    if (error) {
+      // Index unik parsial menolak pengajuan kedua yang masih menggantung.
+      setErr(
+        error.code === '23505'
+          ? 'Kamu sudah punya pengajuan yang menunggu di grup ini.'
+          : 'Gagal mengirim pengajuan.'
+      );
+      return;
+    }
+    setAjukanGrup(null);
+    setPesanAjuan('');
+    loadJoinReqs();
+  };
+
+  const batalkanAjuan = async (r: JoinReq) => {
+    setErr(null);
+    setPutusBusy(r.id);
+    const { data, error } = await supabase
+      .from('project_group_join_requests')
+      .update({ status: 'dibatalkan' })
+      .eq('id', r.id)
+      .select('id');
+    setPutusBusy(null);
+    if (error) { setErr('Gagal membatalkan pengajuan.'); return; }
+    if (!data || data.length === 0) { setErr('Tidak ada yang berubah — pengajuan ini bukan milikmu.'); return; }
+    loadJoinReqs();
+  };
+
+  /**
+   * Menyetujui = DUA penulisan: status pengajuan diubah, lalu orangnya
+   * dimasukkan sebagai anggota. Statusnya diubah lebih dulu — kalau urutannya
+   * dibalik dan penulisan kedua gagal, orangnya sudah masuk grup sementara
+   * pengajuannya masih menggantung, dan Lead akan menyetujuinya dua kali.
+   */
+  const setujuiAjuan = async (r: JoinReq) => {
+    if (!profile) return;
+    setErr(null);
+    setPutusBusy(r.id);
+    const { data, error } = await supabase
+      .from('project_group_join_requests')
+      .update({ status: 'disetujui', diputus_oleh: profile.id, diputus_pada: new Date().toISOString() })
+      .eq('id', r.id)
+      .select('id');
+    if (error || !data || data.length === 0) {
+      setPutusBusy(null);
+      setErr(error ? 'Gagal menyetujui pengajuan.' : 'Tidak ada yang berubah — hanya admin grup yang bisa memutuskan.');
+      return;
+    }
+
+    // Orangnya mungkin pernah jadi anggota lalu dikeluarkan — barisnya
+    // dihidupkan kembali, bukan dibuat baru, supaya tidak ada baris kembar.
+    const lama = members.find((m) => m.group_id === r.group_id && m.user_id === r.user_id);
+    const hasil = lama
+      ? await supabase
+          .from('project_group_members')
+          .update({ removed_at: null, removed_by: null, added_by: profile.id })
+          .eq('id', lama.id)
+          .select('id')
+      : await supabase
+          .from('project_group_members')
+          .insert({ group_id: r.group_id, user_id: r.user_id, is_admin: false, added_by: profile.id })
+          .select('id');
+    setPutusBusy(null);
+    if (hasil.error || !hasil.data || hasil.data.length === 0) {
+      setErr('Pengajuan sudah ditandai disetujui, tapi orangnya GAGAL dimasukkan. Tambahkan manual lewat panel anggota.');
+    }
+    await Promise.all([loadJoinReqs(), loadMembers()]);
+  };
+
+  const kirimTolak = async () => {
+    const r = tolakReq;
+    if (!r || !profile) return;
+    setErr(null);
+    setPutusBusy(r.id);
+    const { data, error } = await supabase
+      .from('project_group_join_requests')
+      .update({
+        status: 'ditolak',
+        diputus_oleh: profile.id,
+        diputus_pada: new Date().toISOString(),
+        catatan: alasanTolak.trim() || null,
+      })
+      .eq('id', r.id)
+      .select('id');
+    setPutusBusy(null);
+    if (error) { setErr('Gagal menolak pengajuan.'); return; }
+    if (!data || data.length === 0) { setErr('Tidak ada yang berubah — hanya admin grup yang bisa memutuskan.'); return; }
+    setTolakReq(null);
+    setAlasanTolak('');
+    loadJoinReqs();
+  };
+
   const addMember = async (uid: string) => {
     if (!activeGroup || !profile) return;
     setErr(null);
@@ -581,32 +779,104 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
             ) : visibleGroups.length === 0 ? (
               <div className="cv-empty">
                 Belum ada grup.
-                {canCreate ? ' Klik + untuk membuat grup pertama.' : ' Kamu belum dimasukkan ke grup mana pun.'}
+                {canCreate ? ' Klik + untuk membuat grup pertama.' : ' Belum ada grup di project ini.'}
               </div>
             ) : (
-              visibleGroups.map((g) => {
-                const proj = projectMap.get(g.project_id);
-                const unread = hasUnread(g.id) && g.id !== activeId;
-                return (
-                  <button
-                    key={g.id}
-                    className={`cv-item ${activeId === g.id ? 'active' : ''}`}
-                    onClick={() => openGroup(g)}
-                  >
-                    <div className="cv-item-av">{initials(g.name)}</div>
-                    <div className="cv-item-body">
-                      <div className="cv-item-top">
-                        <span className="cv-item-name">{g.name}</span>
-                        <span className="cv-item-time">{fmtRelative(activity[g.id])}</span>
-                      </div>
-                      <div className="cv-item-meta">
-                        {proj?.name || 'Project'} · {memberCount(g.id)} anggota
-                      </div>
+              <>
+                {grupSaya.length > 0 && (
+                  <>
+                    <div className="cv-grup-sep">Grup saya</div>
+                    {grupSaya.map((g) => {
+                      const proj = projectMap.get(g.project_id);
+                      const unread = hasUnread(g.id) && g.id !== activeId;
+                      const nMinta = menungguDiGrup(g.id);
+                      return (
+                        <button
+                          key={g.id}
+                          className={`cv-item ${activeId === g.id ? 'active' : ''}`}
+                          onClick={() => openGroup(g)}
+                        >
+                          <div className="cv-item-av">{initials(g.name)}</div>
+                          <div className="cv-item-body">
+                            <div className="cv-item-top">
+                              <span className="cv-item-name">{g.name}</span>
+                              <span className="cv-item-time">{fmtRelative(activity[g.id])}</span>
+                            </div>
+                            <div className="cv-item-meta cv-meta-row">
+                              <span className="cv-meta-teks">
+                                {proj?.name || 'Project'} · {memberCount(g.id)} anggota
+                              </span>
+                              {nMinta > 0 && <span className="cv-badge-minta">{nMinta} minta gabung</span>}
+                            </div>
+                          </div>
+                          {unread && <span className="cv-dot" />}
+                        </button>
+                      );
+                    })}
+                  </>
+                )}
+
+                {grupLain.length > 0 && (
+                  <>
+                    <div className="cv-grup-sep">
+                      Grup lain di project ini
+                      <span className="cv-grup-sep-note">belum kamu ikuti</span>
                     </div>
-                    {unread && <span className="cv-dot" />}
-                  </button>
-                );
-              })
+                    {grupLain.map((g) => {
+                      const proj = projectMap.get(g.project_id);
+                      const r = ajuanSaya.get(g.id);
+                      return (
+                        <div
+                          key={g.id}
+                          className={`cv-item luar ${activeId === g.id ? 'active' : ''}`}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => openGroup(g)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') openGroup(g); }}
+                        >
+                          <div className="cv-item-av">{initials(g.name)}</div>
+                          <div className="cv-item-body">
+                            <div className="cv-item-top">
+                              <span className="cv-item-name">{g.name}</span>
+                            </div>
+                            <div className="cv-item-meta">{proj?.name || 'Project'}</div>
+                            {r && r.status === 'menunggu' ? (
+                              <div className="cv-ajuan-status">
+                                Menunggu persetujuan
+                                <button
+                                  type="button"
+                                  disabled={putusBusy === r.id}
+                                  onClick={(e) => { e.stopPropagation(); batalkanAjuan(r); }}
+                                >
+                                  Batalkan
+                                </button>
+                              </div>
+                            ) : r && r.status === 'ditolak' ? (
+                              <div className="cv-ajuan-status tolak">
+                                Pengajuanmu ditolak{r.catatan ? ' \u2014 ' + r.catatan : ''}
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setAjukanGrup(g); setPesanAjuan(''); }}
+                                >
+                                  Ajukan lagi
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                className="cv-ajukan-btn"
+                                onClick={(e) => { e.stopPropagation(); setAjukanGrup(g); setPesanAjuan(''); }}
+                              >
+                                + Ajukan gabung
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -646,7 +916,11 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
               <div className="cv-main">
                 <div className="cv-msgs">
                   {messages.length === 0 ? (
-                    <div className="cv-empty">Belum ada pesan. Mulai percakapan.</div>
+                    <div className="cv-empty">
+                      {iAmMember
+                        ? 'Belum ada pesan. Mulai percakapan.'
+                        : 'Isi percakapan grup ini tidak terbuka untuk yang belum jadi anggota.'}
+                    </div>
                   ) : (
                     messages.map((m, i) => {
                       const mine = m.sender_id === profile.id;
@@ -749,6 +1023,55 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
                 {/* ---------- panel anggota ---------- */}
                 {showMembers && (
                   <div className="cv-side">
+                    {iAmAdmin && (() => {
+                      const antre = joinReqs.filter(
+                        (r) => r.group_id === activeGroup.id && r.status === 'menunggu'
+                      );
+                      if (antre.length === 0) return null;
+                      return (
+                        <>
+                          <div className="cv-side-t">Permintaan bergabung ({antre.length})</div>
+                          {antre.map((r) => {
+                            const p = peopleMap.get(r.user_id);
+                            const t = userTint(r.user_id);
+                            return (
+                              <div key={r.id} className="cv-minta">
+                                <div className="cv-mrow" style={{ padding: 0 }}>
+                                  <div className="cv-mav" style={{ background: t.avBg, color: t.text }}>
+                                    {initials(nameOf(p))}
+                                  </div>
+                                  <div style={{ minWidth: 0, flex: 1 }}>
+                                    <div className="cv-mname">{nameOf(p)}</div>
+                                    <div className="cv-minta-tim">
+                                      {p?.team ? (TEAM_LABEL[p.team as Team] || p.team) : 'Tanpa tim'}
+                                    </div>
+                                  </div>
+                                </div>
+                                {r.pesan && <div className="cv-minta-pesan">&ldquo;{r.pesan}&rdquo;</div>}
+                                <div className="cv-minta-aksi">
+                                  <button
+                                    type="button"
+                                    className="setuju"
+                                    disabled={putusBusy === r.id}
+                                    onClick={() => setujuiAjuan(r)}
+                                  >
+                                    {putusBusy === r.id ? 'Memproses\u2026' : 'Setujui'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={putusBusy === r.id}
+                                    onClick={() => { setTolakReq(r); setAlasanTolak(''); }}
+                                  >
+                                    Tolak
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </>
+                      );
+                    })()}
+
                     <div className="cv-side-t">Anggota aktif ({activeMembers.length})</div>
                     {activeMembers.map((m) => {
                       const p = peopleMap.get(m.user_id);
@@ -943,9 +1266,54 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
                   </div>
                 </>
               ) : (
-                <div className="cv-readonly">
-                  Kamu bukan anggota grup ini — hanya bisa membaca.
-                </div>
+                (() => {
+                  // Keterangan lama berbunyi "hanya bisa membaca" — itu keliru:
+                  // policy pesan memang menutup isinya untuk non-anggota, jadi
+                  // yang terbaca selalu kosong. Sekarang dijelaskan apa adanya,
+                  // sekaligus jadi jalan masuk untuk mengajukan diri.
+                  const r = ajuanSaya.get(activeGroup.id);
+                  if (r && r.status === 'menunggu') {
+                    return (
+                      <div className="cv-readonly">
+                        Pengajuanmu sudah terkirim dan <b>menunggu persetujuan</b> admin grup.
+                        <button
+                          type="button"
+                          className="cv-readonly-btn"
+                          disabled={putusBusy === r.id}
+                          onClick={() => batalkanAjuan(r)}
+                        >
+                          Batalkan pengajuan
+                        </button>
+                      </div>
+                    );
+                  }
+                  if (r && r.status === 'ditolak') {
+                    return (
+                      <div className="cv-readonly">
+                        Pengajuanmu ditolak{r.catatan ? ' \u2014 ' + r.catatan : '.'}
+                        <button
+                          type="button"
+                          className="cv-readonly-btn"
+                          onClick={() => { setAjukanGrup(activeGroup); setPesanAjuan(''); }}
+                        >
+                          Ajukan lagi
+                        </button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="cv-readonly">
+                      Kamu belum jadi anggota grup ini, jadi isi percakapannya tidak terbuka.
+                      <button
+                        type="button"
+                        className="cv-readonly-btn"
+                        onClick={() => { setAjukanGrup(activeGroup); setPesanAjuan(''); }}
+                      >
+                        + Ajukan gabung
+                      </button>
+                    </div>
+                  );
+                })()
               )}
             </>
           )}
@@ -953,6 +1321,82 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
       </div>
 
       {/* ================= MODAL BUAT GRUP ================= */}
+      {ajukanGrup && (
+        <div className="cv-ovl" onClick={() => !ajuanBusy && setAjukanGrup(null)}>
+          <div className="cv-modal" style={{ maxWidth: 430 }} onClick={(e) => e.stopPropagation()}>
+            <div className="cv-modal-h">
+              <div>
+                <div className="cv-modal-t">Ajukan gabung &ldquo;{ajukanGrup.name}&rdquo;</div>
+                <div className="cv-modal-s">
+                  Permintaanmu dikirim ke admin grup. Kamu baru bisa membaca percakapannya setelah disetujui.
+                </div>
+              </div>
+              <button className="cv-x" disabled={ajuanBusy} onClick={() => setAjukanGrup(null)}>&#10005;</button>
+            </div>
+            <div className="cv-modal-b">
+              <div className="field">
+                <label>Alasan singkat (opsional)</label>
+                <input
+                  value={pesanAjuan}
+                  disabled={ajuanBusy}
+                  maxLength={200}
+                  placeholder="mis. ikut menggarap konten project ini"
+                  onChange={(e) => setPesanAjuan(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') kirimAjuan(); }}
+                />
+                <div className="hint">Alasan memudahkan Lead memutuskan, tapi boleh dikosongkan.</div>
+              </div>
+            </div>
+            <div className="cv-modal-f">
+              <button className="btn" disabled={ajuanBusy} onClick={() => setAjukanGrup(null)}>Batal</button>
+              <button className="btn primary" disabled={ajuanBusy} onClick={kirimAjuan}>
+                {ajuanBusy ? 'Mengirim\u2026' : 'Kirim pengajuan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {tolakReq && (
+        <div className="cv-ovl" onClick={() => !putusBusy && setTolakReq(null)}>
+          <div className="cv-modal" style={{ maxWidth: 430 }} onClick={(e) => e.stopPropagation()}>
+            <div className="cv-modal-h">
+              <div>
+                <div className="cv-modal-t">
+                  Tolak permintaan {nameOf(peopleMap.get(tolakReq.user_id))}?
+                </div>
+                <div className="cv-modal-s">
+                  Dia akan melihat penolakannya beserta alasan yang kamu tulis, dan boleh mengajukan lagi.
+                </div>
+              </div>
+              <button className="cv-x" disabled={!!putusBusy} onClick={() => setTolakReq(null)}>&#10005;</button>
+            </div>
+            <div className="cv-modal-b">
+              <div className="field">
+                <label>Alasan (opsional)</label>
+                <input
+                  value={alasanTolak}
+                  disabled={!!putusBusy}
+                  maxLength={200}
+                  placeholder="mis. grup ini khusus tim Distribution"
+                  onChange={(e) => setAlasanTolak(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') kirimTolak(); }}
+                />
+                <div className="hint">
+                  Alasan yang jelas menghemat satu putaran tanya-jawab. Kalau dikosongkan, dia hanya melihat bahwa pengajuannya ditolak.
+                </div>
+              </div>
+            </div>
+            <div className="cv-modal-f">
+              <button className="btn" disabled={!!putusBusy} onClick={() => setTolakReq(null)}>Batal</button>
+              <button className="btn primary" disabled={!!putusBusy} onClick={kirimTolak}>
+                {putusBusy ? 'Memproses\u2026' : 'Tolak permintaan'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {kickM && (
         <div className="cv-ovl" onClick={() => !kickBusy && setKickM(null)}>
           <div className="cv-modal" style={{ maxWidth: 420 }} onClick={(e) => e.stopPropagation()}>
@@ -1200,6 +1644,43 @@ const CSS = `
   color:var(--muted,#8b8d92);font-size:13px;line-height:1;padding:4px 6px}
 .cv-replybar-x:hover{color:var(--text,#e8e9ea)}
 .cv-replybar + .cv-compose{border-top:0;padding-top:9px}
+
+/* ---------- pengajuan bergabung ---------- */
+.cv-grup-sep{font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted,#8b8d92);padding:12px 10px 6px;display:flex;gap:7px;align-items:baseline}
+.cv-grup-sep-note{text-transform:none;letter-spacing:0;opacity:.65;font-size:10.5px}
+.cv-item.luar{cursor:pointer;align-items:flex-start;opacity:.9}
+.cv-item.luar .cv-item-av{background:transparent;border:1px dashed var(--border,rgba(255,255,255,.18))}
+/* Lencana tidak boleh ikut terpotong elipsis — yang boleh terpotong hanya
+   teks project/jumlah anggota di sebelah kirinya. */
+.cv-meta-row{display:flex;align-items:center;gap:7px;min-width:0}
+.cv-meta-teks{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cv-badge-minta{flex:0 0 auto;padding:1px 6px;border-radius:20px;font-size:10px;white-space:nowrap;
+  background:color-mix(in srgb, var(--amber,#fbbf24) 22%, transparent);color:var(--amber,#fbbf24)}
+.cv-ajukan-btn{margin-top:5px;background:transparent;border:0;padding:0;cursor:pointer;
+  font:inherit;font-size:11.5px;color:var(--accent,#2f7cf6)}
+.cv-ajukan-btn:hover{text-decoration:underline;text-underline-offset:3px}
+.cv-ajuan-status{margin-top:5px;font-size:11px;color:var(--muted,#8b8d92);
+  display:flex;gap:7px;align-items:baseline;flex-wrap:wrap}
+.cv-ajuan-status.tolak{color:var(--red,#f87171)}
+.cv-ajuan-status button{background:transparent;border:0;padding:0;cursor:pointer;
+  font:inherit;font-size:11px;color:var(--accent,#2f7cf6)}
+.cv-ajuan-status button:hover{text-decoration:underline;text-underline-offset:3px}
+.cv-readonly-btn{display:block;margin:7px auto 0;background:transparent;border:0;cursor:pointer;
+  font:inherit;font-size:12px;color:var(--accent,#2f7cf6)}
+.cv-readonly-btn:hover{text-decoration:underline;text-underline-offset:3px}
+.cv-minta{border:1px solid var(--border,rgba(255,255,255,.09));border-radius:10px;
+  padding:9px;margin-bottom:8px;background:rgba(255,255,255,.03)}
+.cv-minta-tim{font-size:11px;color:var(--muted,#8b8d92);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cv-minta-pesan{margin-top:7px;font-size:11.5px;line-height:1.5;color:var(--text-2,#9a9ca4);
+  border-left:2px solid var(--border,rgba(255,255,255,.14));padding-left:8px}
+.cv-minta-aksi{display:flex;gap:7px;margin-top:9px}
+.cv-minta-aksi button{flex:1;padding:5px 8px;border-radius:8px;font:inherit;font-size:11.5px;
+  cursor:pointer;border:1px solid var(--border,rgba(255,255,255,.14));
+  background:transparent;color:var(--text-2,#9a9ca4)}
+.cv-minta-aksi button:hover{color:var(--text,#e8e9ea)}
+.cv-minta-aksi button.setuju{border-color:transparent;background:var(--accent,#2f7cf6);color:#fff}
+.cv-minta-aksi button:disabled{opacity:.5;cursor:not-allowed}
 .cv-side{width:250px;flex:0 0 250px;border-left:1px solid var(--border,rgba(255,255,255,.07));
   overflow-y:auto;padding:14px}
 .cv-side-t{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted,#8b8d92);margin:4px 0 10px}
