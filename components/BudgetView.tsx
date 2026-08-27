@@ -339,7 +339,19 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
     };
   }, [scoped]);
 
-  const fmt = (iso: string) => new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  /**
+   * Tanggal + jam. Kolom created_at/approved_at/paid_at memang menyimpan jam;
+   * sebelumnya jamnya dibuang saat ditampilkan. Untuk pengajuan uang, jam itu
+   * penting — dua pengajuan di hari yang sama jadi bisa dibedakan urutannya.
+   */
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    return (
+      d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ' · ' +
+      d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+    );
+  };
 
   return (
     <>
