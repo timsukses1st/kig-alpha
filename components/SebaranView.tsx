@@ -107,7 +107,13 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
         .select('created_at, reporter_name').eq('proof_hash', h).limit(1);
       if (data && data.length) {
         const d = data[0] as { created_at: string; reporter_name: string | null };
-        const when = new Date(d.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        // Jam ikut ditampilkan: kalau fotonya diunggah dua kali di hari yang
+        // sama, jam yang membedakan mana yang mana.
+        const wd = new Date(d.created_at);
+        const when =
+          wd.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) +
+          ' · ' +
+          wd.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
         setDupWarn(`⚠️ Foto ini identik dengan bukti yang sudah pernah diunggah (${d.reporter_name || '—'} · ${when}). Pastikan ini bukti baru.`);
       }
     } catch { /* hash gagal -> lanjut tanpa cek */ }
