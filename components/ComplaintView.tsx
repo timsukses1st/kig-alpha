@@ -185,8 +185,15 @@ export default function ComplaintView({ profile }: Props) {
     };
   }, [rows]);
 
-  const fmt = (iso: string) =>
-    new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+  /** Tanggal + jam — `created_at` memang menyimpan jamnya. */
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    return (
+      d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) +
+      ' · ' +
+      d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+    );
+  };
 
   return (
     <>
