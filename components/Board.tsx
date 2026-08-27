@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
@@ -186,6 +186,24 @@ const dayStr = (d: Date) => {
 const fmtDate = (iso: string | null) => {
   if (!iso) return '—';
   return new Date(iso + 'T00:00:00').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+};
+
+/** Kunci tanggal hari ini dalam bentuk YYYY-MM-DD menurut waktu setempat. */
+const kunciHariIni = () => {
+  const d = new Date();
+  const b = (n: number) => (n < 10 ? '0' + n : String(n));
+  return d.getFullYear() + '-' + b(d.getMonth() + 1) + '-' + b(d.getDate());
+};
+
+/** Judul kelompok: "Kamis, 21 Agustus 2026". */
+const judulTanggal = (kunci: string) => {
+  if (kunci === 'BELUM') return 'Belum dijadwalkan';
+  const hariIni = kunciHariIni();
+  const nama = new Date(kunci + 'T00:00:00').toLocaleDateString('id-ID', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+  if (kunci === hariIni) return 'Hari ini · ' + nama;
+  return nama;
 };
 
 /**
@@ -489,6 +507,11 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const titleColW = isMobile ? TITLE_COL_W_MOBILE : TITLE_COL_W;
   // ---- duplikat ke platform lain ----
   const [selected, setSelected] = useState<string[]>([]);
+  /** Kelompokkan baris per Tanggal Tayang. Bisa dimatikan — kalau nanti ada
+   *  pengurutan per kolom, kelompok tanggal jadi tidak berarti. */
+  const [kelompokTgl, setKelompokTgl] = useState(true);
+  /** Tanggal yang sedang dilipat. Kunci 'BELUM' untuk yang belum dijadwalkan. */
+  const [tglTertutup, setTglTertutup] = useState<string[]>([]);
   const [dupRows, setDupRows] = useState<ContentRow[] | null>(null);
   const [dupTargets, setDupTargets] = useState<string[]>([]);
   const [dupBusy, setDupBusy] = useState(false);
@@ -668,6 +691,39 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   const filtered = useMemo(
     () => baseRows.filter((r) => activeDiv.statuses.includes(r.status)),
     [baseRows, activeDiv]
+  );
+
+  /**
+   * Baris dikelompokkan per Tanggal Tayang.
+   *
+   * Dipilih tanggal tayang, bukan tanggal dibuat: yang dipakai tim untuk
+   * bekerja adalah "hari ini harus tayang apa saja". Tanggal dibuat cuma
+   * jejak administratif.
+   *
+   * Yang belum dijadwalkan ditaruh PALING ATAS, bukan paling bawah — justru
+   * itu yang butuh perhatian, bukan yang sudah rapi terjadwal.
+   */
+  const grupTanggal = useMemo(() => {
+    if (!kelompokTgl) return null;
+    const peta: Record<string, ContentRow[]> = {};
+    const urut: string[] = [];
+    for (const r of filtered) {
+      const k = r.publish_date ? String(r.publish_date).slice(0, 10) : 'BELUM';
+      if (!peta[k]) { peta[k] = []; urut.push(k); }
+      peta[k].push(r);
+    }
+    urut.sort((a, b) => {
+      if (a === 'BELUM') return -1;
+      if (b === 'BELUM') return 1;
+      return b.localeCompare(a);
+    });
+    return urut.map((k) => ({ kunci: k, baris: peta[k] }));
+  }, [filtered, kelompokTgl]);
+
+  /** Satu bentuk untuk dua mode, supaya bagian render tidak bercabang dua kali. */
+  const daftarTampil = useMemo(
+    () => grupTanggal || [{ kunci: '__semua__', baris: filtered }],
+    [grupTanggal, filtered]
   );
 
   const visibleRequests = useMemo(
@@ -1604,6 +1660,37 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
           ⚑ Perlu ditindak{todoCount > 0 ? ` (${todoCount})` : ''}
         </button>
 
+        {/* Saklar, bukan aturan tetap: kalau nanti ada pengurutan per kolom,
+            kelompok tanggal jadi tidak berarti dan harus bisa dimatikan. */}
+        <button
+          className="btn"
+          onClick={() => { setKelompokTgl((v) => !v); setTglTertutup([]); }}
+          title={kelompokTgl
+            ? 'Tampilkan sebagai satu daftar panjang'
+            : 'Pisahkan baris per Tanggal Tayang'}
+          style={{
+            borderColor: kelompokTgl ? 'var(--accent)' : undefined,
+            color: kelompokTgl ? 'var(--accent)' : undefined,
+            background: kelompokTgl ? 'var(--accent-soft)' : undefined,
+            fontWeight: kelompokTgl ? 600 : undefined,
+          }}
+        >
+          🗓 Per tanggal
+        </button>
+
+        {kelompokTgl && grupTanggal && grupTanggal.length > 1 && (
+          <button
+            className="btn ghost"
+            onClick={() =>
+              setTglTertutup((v) =>
+                v.length >= grupTanggal.length ? [] : grupTanggal.map((g) => g.kunci)
+              )
+            }
+          >
+            {tglTertutup.length >= grupTanggal.length ? 'Buka semua' : 'Tutup semua'}
+          </button>
+        )}
+
         <div className="range-tabs">
           {([['today', 'Hari ini'], ['yesterday', 'Kemarin'], ['week', '7 Hari'], ['all', 'Semua']] as [Range, string][]).map(([k, label]) => (
             <button
@@ -1715,7 +1802,95 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((row) => {
+                {daftarTampil.map((g) => {
+                  const tertutup = tglTertutup.indexOf(g.kunci) !== -1;
+                  const idsGrup = g.baris.map((r) => r.id);
+                  const semuaTerpilih = idsGrup.length > 0 && idsGrup.every((id) => selected.indexOf(id) !== -1);
+                  const nLanggar = g.baris.filter((r) => r.status === 'pelanggaran').length;
+                  const nTanpaDrive = g.baris.filter((r) => r.status !== 'pelanggaran' && !r.asset_url).length;
+                  const iniHariIni = g.kunci === kunciHariIni();
+                  return (
+                <Fragment key={g.kunci}>
+                {grupTanggal && (
+                  <tr>
+                    <td
+                      colSpan={shownCols.length + 2}
+                      style={{
+                        // Menempel tepat di bawah kepala tabel (tinggi th ~36px)
+                        // supaya saat digulir selalu jelas sedang di tanggal mana.
+                        position: 'sticky', top: 36, zIndex: 1,
+                        background: 'var(--panel)',
+                        borderTop: '1px solid var(--border)',
+                        borderBottom: '1px solid var(--border)',
+                        padding: '7px 16px',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <input
+                          type="checkbox"
+                          title="Pilih semua konten di tanggal ini"
+                          checked={semuaTerpilih}
+                          ref={(el) => {
+                            if (el) {
+                              const seb = idsGrup.filter((id) => selected.indexOf(id) !== -1).length;
+                              el.indeterminate = seb > 0 && seb < idsGrup.length;
+                            }
+                          }}
+                          onChange={(e) =>
+                            setSelected((v) =>
+                              e.target.checked
+                                ? v.concat(idsGrup.filter((id) => v.indexOf(id) === -1))
+                                : v.filter((id) => idsGrup.indexOf(id) === -1)
+                            )
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setTglTertutup((v) =>
+                              tertutup ? v.filter((x) => x !== g.kunci) : v.concat(g.kunci)
+                            )
+                          }
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0,
+                            background: 'transparent', border: 0, padding: 0, cursor: 'pointer',
+                            font: 'inherit', textAlign: 'left', color: 'inherit',
+                          }}
+                        >
+                          <span style={{
+                            display: 'inline-block', width: 9, flexShrink: 0,
+                            transform: tertutup ? 'rotate(-90deg)' : 'none',
+                            transition: 'transform .12s', color: 'var(--text-3)', fontSize: 10,
+                          }}>&#9660;</span>
+                          <span style={{
+                            fontSize: 12.5, fontWeight: 700,
+                            color: g.kunci === 'BELUM'
+                              ? 'var(--amber)'
+                              : iniHariIni ? 'var(--accent)' : 'var(--text)',
+                          }}>
+                            {judulTanggal(g.kunci)}
+                          </span>
+                          <span className="sub" style={{ fontSize: 11.5 }}>{g.baris.length} konten</span>
+                          {nLanggar > 0 && (
+                            <span style={{
+                              fontSize: 10.5, padding: '1px 7px', borderRadius: 20, whiteSpace: 'nowrap',
+                              background: 'color-mix(in srgb, var(--st-pelanggaran) 22%, transparent)',
+                              color: 'var(--st-pelanggaran)',
+                            }}>{nLanggar} pelanggaran</span>
+                          )}
+                          {nTanpaDrive > 0 && (
+                            <span style={{
+                              fontSize: 10.5, padding: '1px 7px', borderRadius: 20, whiteSpace: 'nowrap',
+                              background: 'color-mix(in srgb, var(--amber) 20%, transparent)',
+                              color: 'var(--amber)',
+                            }}>{nTanpaDrive} tanpa link drive</span>
+                          )}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {!tertutup && g.baris.map((row) => {
                   const editable = canEditRow(profile, row.status);
                   const def = statusDef(row.status);
                   const targets = targetableStatuses(profile, row.status);
@@ -1987,6 +2162,9 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                         return <td key={c.key} className="sub" style={CLIP}>{fmtDate(row.publish_date)}</td>;
                       })}
                     </tr>
+                  );
+                })}
+                </Fragment>
                   );
                 })}
                 {filtered.length === 0 && (
