@@ -234,6 +234,8 @@ export default function RecapView({ profile, projects, projectFilter }: Props) {
                       {r.uploader_name}
                       <div className="sub" style={{ marginLeft: 40 }}>
                         {new Date(r.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {' · '}
+                        {new Date(r.created_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
                       </div>
                     </td>
                     <td>
