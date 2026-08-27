@@ -1182,7 +1182,10 @@ export default function ChatView({ profile, projects, projectFilter }: Props) {
                             <div className="cv-mbody">
                               <div className="cv-mname">{nameOf(peopleMap.get(m.user_id))}</div>
                               <div className="cv-mmeta">
-                                keluar {new Date(m.removed_at as string).toLocaleDateString('id-ID')}
+                                keluar {new Date(m.removed_at as string).toLocaleString('id-ID', {
+                                  day: 'numeric', month: 'short', year: 'numeric',
+                                  hour: '2-digit', minute: '2-digit',
+                                })}
                               </div>
                             </div>
                             {iAmAdmin && (
