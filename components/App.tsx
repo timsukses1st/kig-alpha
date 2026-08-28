@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
-import { initials, VERTICALS, type Account, type Profile, type Project, type Vertical } from '@/lib/types';
+import {
+  bebasPilihVertical, canAddProject as bolehTambahProject, initials, VERTICALS,
+  type Account, type Profile, type Project, type Vertical,
+} from '@/lib/types';
 import Login from '@/components/Login';
 import { AlphaBadge } from '@/components/Logo';
 import Board from '@/components/Board';
@@ -288,18 +291,30 @@ export default function App() {
     setProjects((data as Project[]) || []);
   }, []);
 
+  /** Vertical yang benar-benar dipakai saat menyimpan. Yang tidak bebas
+   *  memilih dikunci ke vertical akunnya sendiri — dijaga juga di database,
+   *  jadi mengakali tampilan tidak menolong. */
+  const verticalDipakai = (): Vertical => {
+    if (bebasPilihVertical(profile)) return newProjVertical;
+    const milikku = profile?.vertical;
+    const cocok = VERTICALS.find((v) => v.key === milikku);
+    return cocok ? cocok.key : newProjVertical;
+  };
+
   const addProject = async () => {
     if (!newProjName.trim()) return;
     setAddingProj(true);
     setProjErr('');
-    const { error } = await supabase.from('projects').insert({
+    // .select('id') supaya penolakan RLS — yang mengenai 0 baris TANPA error —
+    // tidak terlihat seperti berhasil.
+    const { data, error } = await supabase.from('projects').insert({
       name: newProjName.trim(),
       label: newProjLabel.trim() || null,
-      vertical: newProjVertical,
-    });
+      vertical: verticalDipakai(),
+    }).select('id');
     setAddingProj(false);
-    if (error) {
-      setProjErr('Gagal menambah project — hanya lead/superadmin yang bisa.');
+    if (error || !data || data.length === 0) {
+      setProjErr('Gagal menambah project — hanya PM dan superadmin yang bisa.');
       return;
     }
     setNewProjName(''); setNewProjLabel('');
@@ -339,7 +354,11 @@ export default function App() {
   });
 
   const activeProj = projects.find((p) => p.id === activeProject) || null;
-  const canAddProject = profile?.role === 'superadmin' || profile?.role === 'manager';
+  // Dulu: superadmin ATAU manager mana pun — 19 orang melihat tombolnya,
+  // padahal database hanya menerima 3 (superadmin atau vertical 'ALL'), dan PM
+  // yang justru berkepentingan malah ditolak. Sekarang keduanya disamakan.
+  const canAddProject = bolehTambahProject(profile);
+  const bebasVertical = bebasPilihVertical(profile);
   const displayName = profile?.full_name || session.user.email?.split('@')[0] || 'User';
   const logout = () => supabase.auth.signOut();
 
@@ -442,9 +461,15 @@ export default function App() {
                       onChange={(e) => setNewProjLabel(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && addProject()}
                     />
-                    <select value={newProjVertical} onChange={(e) => setNewProjVertical(e.target.value as Vertical)}>
-                      {VERTICALS.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}
-                    </select>
+                    {bebasVertical ? (
+                      <select value={newProjVertical} onChange={(e) => setNewProjVertical(e.target.value as Vertical)}>
+                        {VERTICALS.map((v) => <option key={v.key} value={v.key}>{v.key}</option>)}
+                      </select>
+                    ) : (
+                      <select value={verticalDipakai()} disabled title="Project baru mengikuti unit bisnismu">
+                        <option value={verticalDipakai()}>{verticalDipakai()}</option>
+                      </select>
+                    )}
                     <button className="btn primary" onClick={addProject} disabled={addingProj || !newProjName.trim()}>
                       {addingProj ? 'Menyimpan…' : '+ Project baru'}
                     </button>

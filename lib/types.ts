@@ -547,6 +547,33 @@ export function canDeleteContent(profile: Profile | null): boolean {
   return bebasPindahStatus(profile);
 }
 
+/**
+ * Boleh menambah project baru.
+ *
+ * Cerminan fungsi `can_add_project()` dan policy `projects_insert` di database
+ * — **ubah dua-duanya berbarengan**, kalau tidak tombolnya muncul tapi
+ * simpannya ditolak (atau sebaliknya: bisa simpan tapi tombolnya tidak ada).
+ *
+ * Sengaja TIDAK memakai `can_see_all()`. Fungsi itu dipakai 13 policy di 6
+ * tabel (chat grup, log aktivitas, join request); melonggarkannya akan
+ * membuka hal-hal yang sama sekali tidak berhubungan dengan project.
+ */
+export function canAddProject(profile: Profile | null): boolean {
+  if (!profile || !profile.is_active) return false;
+  if (profile.role === 'superadmin') return true;
+  return profile.role === 'manager' && profile.team === 'pm';
+}
+
+/**
+ * Boleh memilih vertical project secara bebas. Yang tidak boleh, project
+ * barunya dikunci ke vertical akunnya sendiri — supaya PM KC tidak membuat
+ * project KIG yang kemudian hilang dari layarnya sendiri.
+ */
+export function bebasPilihVertical(profile: Profile | null): boolean {
+  if (!profile || !profile.is_active) return false;
+  return profile.role === 'superadmin' || profile.vertical === 'ALL';
+}
+
 export function canEditRow(profile: Profile | null, status: ContentStatus): boolean {
   if (!profile || !profile.is_active) return false;
   if (bebasPindahStatus(profile)) return true;
