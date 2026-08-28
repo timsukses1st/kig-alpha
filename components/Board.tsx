@@ -771,7 +771,17 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     // Ikut project yang aktif di sidebar. Kalau sidebar 'Semua project',
     // JANGAN diisi otomatis — dulu jatuh ke projects[0] (project pertama
     // menurut abjad), yang diam-diam bisa memasukkan konten ke klien salah.
-    setForm({ ...EMPTY_FORM, project_id: projectFilter !== 'all' ? projectFilter : '' });
+    setForm({
+      ...EMPTY_FORM,
+      project_id: projectFilter !== 'all' ? projectFilter : '',
+      // Tanggal tayang diisi hari ini. Sebagian besar konten memang dibuat
+      // untuk hari itu juga; yang dijadwalkan ke depan tinggal diganti.
+      //
+      // Dipakai kunciHariIni() — waktu setempat, BUKAN toISOString() yang
+      // memakai UTC dan di Indonesia (UTC+7) bisa memundurkan tanggalnya
+      // satu hari kalau modal dibuka sebelum pukul 07.00.
+      publish_date: kunciHariIni(),
+    });
     setError('');
     setModalOpen(true);
   };
