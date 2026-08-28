@@ -2,7 +2,10 @@
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { initials, type OvertimeRequest, type Profile, type Project } from '@/lib/types';
+import {
+  initials, MAKS_FOTO_LEMBUR,
+  type OvertimeProof, type OvertimeRequest, type Profile, type Project,
+} from '@/lib/types';
 
 interface Props {
   profile: Profile | null;
@@ -60,11 +63,59 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     start_time: '17:00', end_time: '20:00',
     description: '', project_ids: [] as string[],
   });
-  /** Foto bukti. Maks 5 MB — storage Supabase gratis cuma 1 GB dan sudah
-      dipakai bersama bukti Sebaran Harian. */
+  /** Foto bukti. Maks 5 MB per foto — storage Supabase gratis cuma 1 GB dan
+      sudah dipakai bersama bukti Sebaran Harian. Maks 3 foto per pengajuan. */
   const MAX_MB = 5;
-  const [file, setFile] = useState<File | null>(null);
-  const [proofUrl, setProofUrl] = useState<string | null>(null);
+  /** Foto BARU yang dipilih di modal, belum diunggah. */
+  const [fileBaru, setFileBaru] = useState<File[]>([]);
+  /** Foto yang SUDAH tersimpan (hanya terisi saat mengedit). */
+  const [fotoLama, setFotoLama] = useState<OvertimeProof[]>([]);
+  /** Foto lama yang ditandai untuk dibuang saat Simpan ditekan. */
+  const [fotoDibuang, setFotoDibuang] = useState<OvertimeProof[]>([]);
+  /** Signed URL foto di modal detail, per path. Umur pendek, diambil ulang
+      tiap modal detail dibuka. */
+  const [proofUrls, setProofUrls] = useState<Record<string, string>>({});
+  /** Foto yang sedang dibuka besar (lightbox). */
+  const [fotoBesar, setFotoBesar] = useState<string | null>(null);
+
+  /** Pratinjau foto baru: object URL dibuat sekali per file, lalu dilepas
+   *  supaya tidak bocor memori. */
+  const [pratinjau, setPratinjau] = useState<string[]>([]);
+  useEffect(() => {
+    const urls = fileBaru.map((f) => URL.createObjectURL(f));
+    setPratinjau(urls);
+    return () => { urls.forEach((u) => URL.revokeObjectURL(u)); };
+  }, [fileBaru]);
+
+  const sisaSlot = MAKS_FOTO_LEMBUR - (fotoLama.length + fileBaru.length);
+
+  /** Menambahkan file dari input. Dipotong di sisa slot, ditolak kalau
+   *  kebesaran — supaya tidak baru ketahuan saat menekan Simpan. */
+  const pilihFoto = (list: FileList | null) => {
+    if (!list) return;
+    // Array.from — BUKAN [...list]. tsconfig repo target ES5, spread pada
+    // FileList/Set gagal saat build di Vercel.
+    const dipilih = Array.from(list);
+    const kebesaran = dipilih.filter((f) => f.size > MAX_MB * 1024 * 1024);
+    const muat = dipilih.filter((f) => f.size <= MAX_MB * 1024 * 1024).slice(0, Math.max(sisaSlot, 0));
+    if (muat.length) setFileBaru(fileBaru.concat(muat));
+    if (kebesaran.length) {
+      setError(`${kebesaran.length} foto dilewati karena lebih dari ${MAX_MB} MB.`);
+    } else if (dipilih.length > muat.length) {
+      setError(`Maksimal ${MAKS_FOTO_LEMBUR} foto — sisanya tidak ikut.`);
+    } else {
+      setError('');
+    }
+  };
+
+  /** Foto tersimpan milik satu pengajuan, sudah menangani baris lama yang
+   *  masih memakai kolom proof_path tunggal. */
+  const fotoDari = (o: OvertimeRequest): OvertimeProof[] => {
+    const baru = Array.isArray(o.proofs) ? o.proofs : [];
+    if (baru.length) return baru;
+    if (o.proof_path) return [{ path: o.proof_path, name: o.proof_name || 'Foto bukti' }];
+    return [];
+  };
 
   const canApprove = profile?.role === 'manager' || profile?.role === 'superadmin';
   /** Hanya superadmin yang boleh menghapus pengajuan milik orang lain. */
@@ -155,7 +206,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
       start_time: '17:00', end_time: '20:00', description: '',
       project_ids: projectFilter !== 'all' ? [projectFilter] : [],
     });
-    setFile(null);
+    setFileBaru([]);
+    setFotoLama([]);
+    setFotoDibuang([]);
     setError('');
     setOpen(true);
   };
@@ -170,7 +223,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
       description: o.description,
       project_ids: idsProject(o),
     });
-    setFile(null);
+    setFileBaru([]);
+    setFotoLama(fotoDari(o));
+    setFotoDibuang([]);
     setError('');
     setOpen(true);
   };
@@ -179,17 +234,30 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     if (!profile) return;
     if (!form.description.trim()) { setError('Isi dulu apa yang dikerjakan.'); return; }
     if (form.start_time === form.end_time) { setError('Jam mulai dan selesai tidak boleh sama.'); return; }
-    if (file && file.size > MAX_MB * 1024 * 1024) { setError(`Foto maksimal ${MAX_MB} MB.`); return; }
+    if (fotoLama.length + fileBaru.length > MAKS_FOTO_LEMBUR) {
+      setError(`Maksimal ${MAKS_FOTO_LEMBUR} foto per pengajuan.`); return;
+    }
     setBusy(true); setError('');
 
-    let bukti: { path: string; name: string } | null = null;
-    if (file) {
-      const aman = file.name.replace(/[^\w.\-]+/g, '_');
-      const path = `${profile.id}/${Date.now()}_${aman}`;
-      const up = await supabase.storage.from('lembur').upload(path, file);
-      if (up.error) { setBusy(false); setError('Gagal mengunggah foto.'); return; }
-      bukti = { path, name: file.name };
+    // Unggah foto baru satu per satu. Kalau ada yang gagal, yang sudah
+    // terlanjur naik dibuang lagi supaya tidak jadi sampah di storage.
+    const terunggah: OvertimeProof[] = [];
+    for (let i = 0; i < fileBaru.length; i++) {
+      const f = fileBaru[i];
+      const aman = f.name.replace(/[^\w.\-]+/g, '_');
+      const path = `${profile.id}/${Date.now()}_${i}_${aman}`;
+      const up = await supabase.storage.from('lembur').upload(path, f);
+      if (up.error) {
+        if (terunggah.length) {
+          await supabase.storage.from('lembur').remove(terunggah.map((p) => p.path));
+        }
+        setBusy(false);
+        setError(`Gagal mengunggah "${f.name}". Pengajuan belum tersimpan.`);
+        return;
+      }
+      terunggah.push({ path, name: f.name });
     }
+    const bukti: OvertimeProof[] = fotoLama.concat(terunggah);
 
     const payload: Record<string, unknown> = {
       // project_id tetap diisi project pertama: policy RLS lama masih
@@ -201,21 +269,50 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
       end_time: form.end_time,
       description: form.description.trim(),
     };
-    // Saat mengedit, foto lama dipertahankan kalau tidak memilih foto baru.
-    if (bukti) { payload.proof_path = bukti.path; payload.proof_name = bukti.name; }
+    // Daftar foto selalu ditulis apa adanya: gabungan foto lama yang tidak
+    // dibuang + foto baru. Jadi menghapus foto pun tersimpan.
+    payload.proofs = bukti;
+    // Kolom tunggal lama dikosongkan supaya tidak ada foto dobel di tampilan
+    // (fotoDari() memakai proof_path hanya kalau proofs masih kosong).
+    payload.proof_path = null;
+    payload.proof_name = null;
 
     let err;
+    // .select('id') wajib: UPDATE/DELETE yang ditolak RLS mengenai 0 baris
+    // TANPA error. Tanpa ini, gagal simpan terlihat seperti berhasil.
+    let kena = 1;
     if (editId) {
-      ({ error: err } = await supabase.from('overtime_requests').update(payload).eq('id', editId));
+      const r = await supabase.from('overtime_requests').update(payload).eq('id', editId).select('id');
+      err = r.error;
+      kena = r.data ? r.data.length : 0;
     } else {
-      ({ error: err } = await supabase.from('overtime_requests').insert({
+      const r = await supabase.from('overtime_requests').insert({
         ...payload, requester_id: profile.id, requester_name: profile.full_name || profile.email,
-      }));
+      }).select('id');
+      err = r.error;
+      kena = r.data ? r.data.length : 0;
     }
+    if (err || kena === 0) {
+      // Simpan gagal — foto yang baru saja naik dibuang lagi.
+      if (terunggah.length) {
+        await supabase.storage.from('lembur').remove(terunggah.map((p) => p.path));
+      }
+      setBusy(false);
+      setError(err ? 'Gagal menyimpan pengajuan.' : 'Tidak tersimpan — kamu tidak punya izin mengubah pengajuan ini.');
+      return;
+    }
+
+    // Baru sekarang foto yang dibuang benar-benar dihapus dari storage,
+    // supaya kalau simpan gagal fotonya masih utuh.
+    if (fotoDibuang.length) {
+      await supabase.storage.from('lembur').remove(fotoDibuang.map((p) => p.path));
+    }
+
     setBusy(false);
-    if (err) { setError('Gagal menyimpan pengajuan.'); return; }
     setOpen(false);
-    setFile(null);
+    setFileBaru([]);
+    setFotoLama([]);
+    setFotoDibuang([]);
     load(true);
   };
 
@@ -246,18 +343,30 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   /** URL foto bukti berumur pendek; diambil ulang tiap modal detail dibuka. */
   useEffect(() => {
     let batal = false;
-    setProofUrl(null);
-    if (!detail?.proof_path) return;
-    supabase.storage.from('lembur').createSignedUrl(detail.proof_path, 300).then(({ data }) => {
-      if (!batal) setProofUrl(data?.signedUrl || null);
-    });
+    setProofUrls({});
+    setFotoBesar(null);
+    if (!detail) return;
+    const daftar = fotoDari(detail);
+    if (!daftar.length) return;
+    supabase.storage.from('lembur')
+      .createSignedUrls(daftar.map((p) => p.path), 300)
+      .then(({ data }) => {
+        if (batal || !data) return;
+        const peta: Record<string, string> = {};
+        data.forEach((d) => { if (d.path && d.signedUrl) peta[d.path] = d.signedUrl; });
+        setProofUrls(peta);
+      });
     return () => { batal = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail]);
 
   const doDelete = async (o: OvertimeRequest) => {
     setActBusy(true);
     // Buang fotonya lebih dulu supaya tidak jadi sampah yang tetap makan kuota.
-    if (o.proof_path) await supabase.storage.from('lembur').remove([o.proof_path]);
+    const fotoIkut = fotoDari(o);
+    if (fotoIkut.length) {
+      await supabase.storage.from('lembur').remove(fotoIkut.map((p) => p.path));
+    }
     const { error: err } = await supabase.from('overtime_requests').delete().eq('id', o.id);
     setActBusy(false);
     setConfirmDel(null);
@@ -444,6 +553,14 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                     <td>{namaProject(o)}</td>
                     <td>
                       <span className="ot-desc-clip">{o.description}</span>
+                      {fotoDari(o).length > 0 && (
+                        <span
+                          title={`${fotoDari(o).length} foto bukti`}
+                          style={{ marginLeft: 6, fontSize: 11.5, color: 'var(--text-3)', whiteSpace: 'nowrap' }}
+                        >
+                          📎 {fotoDari(o).length}
+                        </span>
+                      )}
                       {o.reject_reason && <div className="sub" style={{ color: 'var(--red)' }}>Ditolak: {o.reject_reason}</div>}
                     </td>
                     <td><span className="row-avatar">{initials(o.requester_name)}</span>{o.requester_name}</td>
@@ -586,12 +703,36 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
             <div style={{ padding: '16px 24px' }}>
               <div className="budget-detail-label">Yang dikerjakan</div>
               <p className="thread-detail" style={{ whiteSpace: 'pre-wrap' }}>{detail.description}</p>
-              {detail.proof_path && (
+              {fotoDari(detail).length > 0 && (
                 <>
-                  <div className="budget-detail-label" style={{ marginTop: 16 }}>Foto bukti</div>
-                  {proofUrl
-                    ? <img className="budget-qr" src={proofUrl} alt="Bukti lembur" style={{ maxWidth: 340 }} />
-                    : <div className="notes-empty">Memuat foto…</div>}
+                  <div className="budget-detail-label" style={{ marginTop: 16 }}>
+                    Foto bukti ({fotoDari(detail).length})
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {fotoDari(detail).map((p) => (
+                      <div key={p.path} style={{ width: 150 }}>
+                        {proofUrls[p.path] ? (
+                          <img
+                            src={proofUrls[p.path]}
+                            alt={p.name}
+                            title="Klik untuk memperbesar"
+                            onClick={() => setFotoBesar(proofUrls[p.path])}
+                            style={{
+                              width: '100%', height: 110, objectFit: 'cover', cursor: 'zoom-in',
+                              borderRadius: 8, border: '1px solid var(--line)', display: 'block',
+                            }}
+                          />
+                        ) : (
+                          <div className="notes-empty" style={{ height: 110, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            Memuat…
+                          </div>
+                        )}
+                        <div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {p.name}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </>
               )}
 
@@ -770,11 +911,94 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
               </div>
 
               <div className="field">
-                <label>Foto bukti <span style={{ color: 'var(--text-3)' }}>(opsional)</span></label>
-                <input type="file" accept=".png,.jpg,.jpeg,.webp"
-                  onChange={(e) => setFile(e.target.files?.[0] || null)} />
+                <label>
+                  Foto bukti <span style={{ color: 'var(--text-3)' }}>(opsional)</span>
+                </label>
+
+                {(fotoLama.length > 0 || fileBaru.length > 0) && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+                    {/* Foto yang sudah tersimpan. Dibuang dari daftar dulu;
+                        file di storage baru benar-benar dihapus saat Simpan. */}
+                    {fotoLama.map((p) => (
+                      <div key={p.path} style={{ position: 'relative', width: 96 }}>
+                        <div
+                          style={{
+                            height: 72, borderRadius: 8, border: '1px solid var(--line)',
+                            background: 'var(--raised)', display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', fontSize: 20,
+                          }}
+                        >
+                          🖼
+                        </div>
+                        <button
+                          type="button"
+                          className="btn act"
+                          title="Buang foto ini"
+                          onClick={() => {
+                            setFotoLama(fotoLama.filter((x) => x.path !== p.path));
+                            setFotoDibuang(fotoDibuang.concat([p]));
+                            setError('');
+                          }}
+                          style={{ position: 'absolute', top: 2, right: 2, padding: '0 6px', lineHeight: '18px' }}
+                        >
+                          ✕
+                        </button>
+                        <div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {p.name}
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Foto baru yang belum diunggah — dengan pratinjau asli. */}
+                    {fileBaru.map((f, i) => (
+                      <div key={`${f.name}-${i}`} style={{ position: 'relative', width: 96 }}>
+                        {pratinjau[i] ? (
+                          <img
+                            src={pratinjau[i]}
+                            alt={f.name}
+                            style={{
+                              width: '100%', height: 72, objectFit: 'cover', display: 'block',
+                              borderRadius: 8, border: '1px solid var(--line)',
+                            }}
+                          />
+                        ) : (
+                          <div style={{ height: 72, borderRadius: 8, border: '1px solid var(--line)' }} />
+                        )}
+                        <button
+                          type="button"
+                          className="btn act"
+                          title="Batalkan foto ini"
+                          onClick={() => { setFileBaru(fileBaru.filter((_, j) => j !== i)); setError(''); }}
+                          style={{ position: 'absolute', top: 2, right: 2, padding: '0 6px', lineHeight: '18px' }}
+                        >
+                          ✕
+                        </button>
+                        <div className="hint" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {f.name}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {sisaSlot > 0 && (
+                  <input
+                    type="file"
+                    multiple
+                    // image/* supaya di HP muncul pilihan Kamera maupun Galeri.
+                    accept="image/png,image/jpeg,image/webp,image/*"
+                    onChange={(e) => {
+                      pilihFoto(e.target.files);
+                      // Dikosongkan lagi supaya memilih file yang sama dua kali
+                      // (mis. setelah dibatalkan) tetap memicu onChange.
+                      e.target.value = '';
+                    }}
+                  />
+                )}
                 <div className="hint">
-                  {file ? file.name : (editId ? `Kosongkan bila tidak ingin mengganti foto lama · maks ${MAX_MB} MB` : `Opsional · maks ${MAX_MB} MB`)}
+                  {sisaSlot > 0
+                    ? `Boleh sekaligus beberapa · sisa ${sisaSlot} dari ${MAKS_FOTO_LEMBUR} foto · maks ${MAX_MB} MB per foto`
+                    : `Sudah ${MAKS_FOTO_LEMBUR} foto — buang salah satu dulu kalau mau ganti`}
                 </div>
               </div>
               <div className="field">
@@ -793,6 +1017,24 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Foto diperbesar. Klik di mana saja untuk menutup. */}
+      {fotoBesar && (
+        <div
+          onClick={() => setFotoBesar(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,.8)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24, cursor: 'zoom-out',
+          }}
+        >
+          <img
+            src={fotoBesar}
+            alt="Foto bukti lembur"
+            style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: 8 }}
+          />
         </div>
       )}
     </>

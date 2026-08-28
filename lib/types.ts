@@ -330,15 +330,29 @@ export interface BudgetRequest {
   created_at: string;
 }
 
+/** Satu foto bukti lembur. `path` = lokasi di bucket `lembur` (privat, harus
+ *  dibuka lewat signed URL), `name` = nama file asli untuk ditampilkan. */
+export interface OvertimeProof {
+  path: string;
+  name: string;
+}
+
+/** Maksimal foto bukti per pengajuan lembur. Dijaga juga oleh constraint
+ *  `overtime_proofs_maks_3` di database. */
+export const MAKS_FOTO_LEMBUR = 3;
+
 export interface OvertimeRequest {
   id: string;
   /** Project utama — dipertahankan karena policy RLS lama masih memakainya. */
   project_id: string | null;
   /** Semua project yang dikerjakan pada lembur ini. Termasuk project utama. */
   project_ids: string[];
-  /** Foto bukti di bucket `lembur`. Null kalau tidak dilampirkan. */
+  /** Foto bukti lama (satu foto). Tidak dipakai lagi oleh Alpha — disimpan
+   *  supaya baris/deploy lama tidak patah. Baca `proofs`. */
   proof_path: string | null;
   proof_name: string | null;
+  /** Foto bukti di bucket `lembur`, maksimal 3. Kosong = tidak melampirkan. */
+  proofs: OvertimeProof[];
   work_date: string;
   start_time: string;
   end_time: string;
