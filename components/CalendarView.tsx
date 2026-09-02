@@ -7,6 +7,8 @@ import { PLATFORMS, platformDef, statusDef, type Account, type ContentRow } from
 interface Props {
   accounts: Account[];
   projectFilter: string; // 'all' | project id
+  /** Klik kartu → buka brief-nya di Board Pipeline. */
+  onBukaKonten?: (row: ContentRow) => void;
 }
 
 const DAY_NAMES = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
@@ -36,7 +38,7 @@ const KODE_PLATFORM: Record<string, string> = {
 const warnaGaris = (platform: string | null) =>
   platformDef(platform)?.color || 'var(--border-strong)';
 
-export default function CalendarView({ accounts, projectFilter }: Props) {
+export default function CalendarView({ accounts, projectFilter, onBukaKonten }: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth()); // 0-11
@@ -151,7 +153,15 @@ export default function CalendarView({ accounts, projectFilter }: Props) {
                       <div
                         className="cal-item"
                         key={r.id}
+                        role={onBukaKonten ? 'button' : undefined}
+                        tabIndex={onBukaKonten ? 0 : undefined}
+                        onClick={() => onBukaKonten?.(r)}
+                        onKeyDown={(e) => {
+                          if (!onBukaKonten) return;
+                          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBukaKonten(r); }
+                        }}
                         style={{
+                          cursor: onBukaKonten ? 'pointer' : undefined,
                           ['--ci' as never]: pelanggaran ? 'var(--red)' : warnaGaris(r.platform),
                           ...(pelanggaran
                             ? { background: 'rgba(239, 68, 68, .15)', borderColor: 'var(--red)' }
@@ -159,7 +169,8 @@ export default function CalendarView({ accounts, projectFilter }: Props) {
                         }}
                         title={
                           `${stripMd(r.title)} — ${statusDef(r.status).label}` +
-                          (pf ? ` · ${pf.label}` : '')
+                          (pf ? ` · ${pf.label}` : '') +
+                          (onBukaKonten ? '\nKlik untuk membuka brief-nya di Board' : '')
                         }
                       >
                         <div className="cal-item-title">{stripMd(r.title)}</div>
@@ -202,6 +213,7 @@ export default function CalendarView({ accounts, projectFilter }: Props) {
               Kartu merah = <b>pelanggaran</b>
             </span>
           </div>
+          <b>Klik kartu</b> untuk membuka brief-nya langsung di Board Pipeline.
           Konten muncul di sini otomatis begitu <b>Tanggal tayang</b> diisi di Board.
           Status lengkapnya terbaca saat kursor diarahkan ke kartunya.
         </div>

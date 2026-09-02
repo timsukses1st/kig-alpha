@@ -235,6 +235,14 @@ export default function App() {
   /** Pesan gagal tambah project. Dulu window.alert — diblokir, jadi gagalnya diam. */
   const [projErr, setProjErr] = useState('');
   const [view, setView] = useState<View>('board');
+  /**
+   * Konten yang diminta dibuka dari Kalender Tayang.
+   *
+   * Disimpan di App, bukan di Board, karena pemicunya ada di layar lain.
+   * Board mengosongkannya lewat onBukaSelesai begitu brief-nya terbuka —
+   * kalau tidak, brief yang sama akan terbuka lagi setiap Board dirender ulang.
+   */
+  const [bukaKontenId, setBukaKontenId] = useState<string | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
@@ -660,9 +668,29 @@ export default function App() {
 
       <main className="main">
         {view === 'board' && (
-          <Board profile={profile} accounts={accounts} projects={projects} projectFilter={activeProject} />
+          <Board
+            profile={profile} accounts={accounts} projects={projects} projectFilter={activeProject}
+            bukaKontenId={bukaKontenId}
+            onBukaSelesai={() => setBukaKontenId(null)}
+          />
         )}
-        {view === 'kalender' && <CalendarView accounts={accounts} projectFilter={activeProject} />}
+        {view === 'kalender' && (
+          <CalendarView
+            accounts={accounts}
+            projectFilter={activeProject}
+            onBukaKonten={(r) => {
+              // Project ikut dipindahkan ke milik konten itu. Kalau tidak,
+              // setelah modalnya ditutup barisnya tidak kelihatan karena
+              // selector Project di sidebar masih menunjuk project lain.
+              if (r.project_id && activeProject !== 'all' && activeProject !== r.project_id) {
+                setActiveProject(r.project_id);
+              }
+              setBukaKontenId(r.id);
+              setView('board');
+              setMobileNav(false);
+            }}
+          />
+        )}
         {view === 'tracker' && <TrackerView activeProjectName={activeProj ? activeProj.name : null} profile={profile} />}
         {view === 'ads' && (
           <Placeholder

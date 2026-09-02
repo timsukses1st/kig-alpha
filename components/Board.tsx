@@ -13,6 +13,10 @@ interface Props {
   accounts: Account[];
   projects: Project[];
   projectFilter: string; // 'all' | project id
+  /** Diisi saat orang mengklik kartu di Kalender Tayang — brief-nya langsung dibuka. */
+  bukaKontenId?: string | null;
+  /** Dipanggil setelah brief-nya terbuka, supaya tidak terbuka lagi berulang. */
+  onBukaSelesai?: () => void;
 }
 
 type Range = 'today' | 'yesterday' | 'week' | 'all';
@@ -468,7 +472,7 @@ function PicCell({ row, members, disabled, onSave }: {
   );
 }
 
-export default function Board({ profile, accounts, projects, projectFilter }: Props) {
+export default function Board({ profile, accounts, projects, projectFilter, bukaKontenId, onBukaSelesai }: Props) {
   const [rows, setRows] = useState<ContentRow[]>([]);
   const [requests, setRequests] = useState<ContentRequest[]>([]);
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -846,6 +850,31 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     setError('');
     setModalOpen(true);
   };
+
+  /**
+   * Dibuka dari Kalender Tayang.
+   *
+   * Kalender mengirim id konten lewat prop; begitu barisnya sudah ada di
+   * daftar, brief-nya dibuka. `rows` memuat SELURUH konten (penyaringan
+   * tanggal & project dilakukan di layar, bukan di query), jadi barisnya
+   * pasti ketemu selama orangnya memang boleh melihatnya.
+   *
+   * Penyaring tanggal ikut dikembalikan ke "Semua" — kalau tidak, setelah
+   * modalnya ditutup barisnya lenyap dari layar dan orang mengira kontennya
+   * hilang.
+   *
+   * onBukaSelesai() dipanggil supaya prop-nya dikosongkan; tanpa itu brief
+   * yang sama terbuka lagi setiap kali Board dirender ulang.
+   */
+  useEffect(() => {
+    if (!bukaKontenId) return;
+    const row = rows.find((r) => r.id === bukaKontenId);
+    if (!row) return;               // tunggu load() selesai
+    setRange('all');
+    openEdit(row);
+    onBukaSelesai?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bukaKontenId, rows]);
 
   const readOnly = editing ? !canEditRow(profile, editing.status) : false;
 
