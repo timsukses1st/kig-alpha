@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { statusDef, type Account, type ContentRow } from '@/lib/types';
+import { PLATFORMS, platformDef, statusDef, type Account, type ContentRow } from '@/lib/types';
 
 interface Props {
   accounts: Account[];
@@ -16,6 +16,25 @@ const MONTH_NAMES = [
 ];
 
 const stripMd = (s: string) => s.replace(/\*\*/g, '');
+
+/** Kode pendek platform untuk kartu yang sempit. Nama panjangnya ada di legenda. */
+const KODE_PLATFORM: Record<string, string> = {
+  instagram: 'IG', tiktok: 'TT', youtube: 'YT', threads: 'TH', facebook: 'FB',
+};
+
+/**
+ * Warna garis samping kartu = PLATFORM, bukan status.
+ *
+ * Sebelumnya garis ini memakai warna status. Diganti 2 September 2026 atas
+ * permintaan Mas Dik: di kalender tayang, yang paling perlu dibedakan sekilas
+ * adalah platform mana yang tayang hari itu. Statusnya tetap terbaca di
+ * tooltip, dan `pelanggaran` justru jadi lebih menonjol daripada sebelumnya
+ * karena sekarang seluruh kartunya diberi warna merah.
+ *
+ * Platform kosong dapat abu-abu redup — sengaja tidak ditebak.
+ */
+const warnaGaris = (platform: string | null) =>
+  platformDef(platform)?.color || 'var(--border-strong)';
 
 export default function CalendarView({ accounts, projectFilter }: Props) {
   const now = new Date();
@@ -122,24 +141,69 @@ export default function CalendarView({ accounts, projectFilter }: Props) {
               return (
                 <div className={`cal-cell ${isToday ? 'today' : ''}`} key={key}>
                   <div className="cal-daynum">{d}</div>
-                  {items.map((r) => (
-                    <div
-                      className="cal-item"
-                      key={r.id}
-                      style={{ ['--ci' as never]: statusDef(r.status).color }}
-                      title={`${stripMd(r.title)} — ${statusDef(r.status).label}`}
-                    >
-                      <div className="cal-item-title">{stripMd(r.title)}</div>
-                      <div className="cal-item-acc">{accName(r.account_id)}</div>
-                    </div>
-                  ))}
+                  {items.map((r) => {
+                    // Pelanggaran diberi blok merah penuh, bukan cuma garis —
+                    // ini keadaan yang harus ketahuan tanpa perlu mengarahkan
+                    // kursor ke kartunya.
+                    const pelanggaran = r.status === 'pelanggaran';
+                    const pf = platformDef(r.platform);
+                    return (
+                      <div
+                        className="cal-item"
+                        key={r.id}
+                        style={{
+                          ['--ci' as never]: pelanggaran ? 'var(--red)' : warnaGaris(r.platform),
+                          ...(pelanggaran
+                            ? { background: 'rgba(239, 68, 68, .15)', borderColor: 'var(--red)' }
+                            : null),
+                        }}
+                        title={
+                          `${stripMd(r.title)} — ${statusDef(r.status).label}` +
+                          (pf ? ` · ${pf.label}` : '')
+                        }
+                      >
+                        <div className="cal-item-title">{stripMd(r.title)}</div>
+                        <div className="cal-item-acc">
+                          {accName(r.account_id)}
+                          {r.platform && KODE_PLATFORM[r.platform] && (
+                            /* Warna kode platform TIDAK ikut merah saat pelanggaran —
+                               justru di kartu itulah platformnya paling perlu
+                               tetap terbaca, karena garis sampingnya sudah dipakai
+                               untuk menandai pelanggaran. */
+                            <span style={{ color: warnaGaris(r.platform), marginLeft: 5 }}>
+                              {KODE_PLATFORM[r.platform]}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
           </div>
         )}
         <div className="cal-legend">
-          Warna garis = status konten. Konten muncul di sini otomatis begitu <b>Tanggal tayang</b> diisi di Board.
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 8 }}>
+            <b style={{ color: 'var(--text-2)' }}>Warna garis = platform:</b>
+            {PLATFORMS.map((p) => (
+              <span key={p.key} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span style={{
+                  width: 3, height: 13, borderRadius: 2, background: p.color, display: 'inline-block',
+                }} />
+                {p.label} <span style={{ opacity: .6 }}>({KODE_PLATFORM[p.key]})</span>
+              </span>
+            ))}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              <span style={{
+                width: 13, height: 13, borderRadius: 3, display: 'inline-block',
+                background: 'rgba(239, 68, 68, .15)', border: '1px solid var(--red)',
+              }} />
+              Kartu merah = <b>pelanggaran</b>
+            </span>
+          </div>
+          Konten muncul di sini otomatis begitu <b>Tanggal tayang</b> diisi di Board.
+          Status lengkapnya terbaca saat kursor diarahkan ke kartunya.
         </div>
       </div>
     </>
