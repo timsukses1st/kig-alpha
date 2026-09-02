@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
-  initials, MAKS_FOTO_LEMBUR,
+  boleh, initials, MAKS_FOTO_LEMBUR, TUGAS,
   type OvertimeProof, type OvertimeRequest, type Profile, type Project,
 } from '@/lib/types';
 
@@ -117,9 +117,11 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     return [];
   };
 
-  const canApprove = profile?.role === 'manager' || profile?.role === 'superadmin';
+  const canApprove = boleh(profile, TUGAS.lemburPutuskan);
   /** Hanya superadmin yang boleh menghapus pengajuan milik orang lain. */
-  const isSuper = profile?.role === 'superadmin';
+  // Cerminan policy ot_delete:
+  //   (requester_id = auth.uid() AND status='diajukan') OR boleh('lembur_hapus_orang')
+  const isSuper = boleh(profile, TUGAS.lemburHapusOrang);
 
   /**
    * window.confirm / prompt / alert DIBLOKIR di lingkungan ini — tombol yang
@@ -579,7 +581,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                         )}
                         {bolehHapus(o) && (
                           <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
-                            title={isSuper ? 'Hapus permanen (superadmin)' : 'Hapus pengajuan ini'}
+                            title={isSuper ? 'Hapus permanen (punya siapa pun)' : 'Hapus pengajuan ini'}
                             onClick={() => setConfirmDel(o)}>Hapus</button>
                         )}
                       </div>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { initials, type Profile, type Project, type RecapReport } from '@/lib/types';
+import { boleh, initials, TUGAS, type Profile, type Project, type RecapReport } from '@/lib/types';
 
 interface Props {
   profile: Profile | null;
@@ -181,7 +181,7 @@ export default function RecapView({ profile, projects, projectFilter }: Props) {
 
   const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
   const canDelete = (r: RecapReport) =>
-    profile?.id === r.uploaded_by || profile?.role === 'superadmin' || profile?.role === 'manager';
+    profile?.id === r.uploaded_by || boleh(profile, TUGAS.rekapHapusOrang);
 
   return (
     <>

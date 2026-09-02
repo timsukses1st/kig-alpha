@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { initials, type BudgetRequest, type Profile, type Project } from '@/lib/types';
+import { boleh, initials, TUGAS, type BudgetRequest, type Profile, type Project } from '@/lib/types';
 
 interface Props {
   profile: Profile | null;
@@ -66,14 +66,17 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
   };
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
-  const isPM = profile?.team === 'pm' || profile?.role === 'superadmin';
-  const isFinance = profile?.team === 'finance' || profile?.role === 'superadmin';
+  // Dua-duanya sekarang satu pertanyaan ke matriks: policy budget_update
+  // memakai boleh('budget_putuskan'), jadi layar harus bertanya hal yang sama.
+  const bisaPutuskan = boleh(profile, TUGAS.budgetPutuskan);
+  const isPM = bisaPutuskan;
+  const isFinance = bisaPutuskan;
   /**
    * Sejak notulen 14 Agustus, anggota berperan `tim` TIDAK lagi mengajukan
    * budget sendiri — pengajuan naik lewat lead atau manager masing-masing.
    * Yang lama tetap bisa mereka lihat dan sunting selama statusnya Diajukan.
    */
-  const canRequest = profile?.role === 'manager' || profile?.role === 'superadmin';
+  const canRequest = boleh(profile, TUGAS.budgetAjukan);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -139,7 +142,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
   // Kalau tombolnya ditampilkan lebih longgar dari policy, user akan menekan
   // tombol yang "berhasil" tapi tidak menghapus apa pun.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const bolehHapus = (_b: BudgetRequest) => profile?.role === 'superadmin';
+  const bolehHapus = (_b: BudgetRequest) => boleh(profile, TUGAS.budgetHapus);
 
   const doDelete = async () => {
     const b = confirmDel;

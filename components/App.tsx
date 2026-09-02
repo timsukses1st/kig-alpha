@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import {
-  bebasPilihVertical, canAddProject as bolehTambahProject, initials, VERTICALS,
-  type Account, type Profile, type Project, type Vertical,
+  bebasPilihVertical, boleh, canAddProject as bolehTambahProject, initials,
+  pasangMatriks, TUGAS, VERTICALS,
+  type Account, type IzinBaris, type IzinTim, type Profile, type Project, type Vertical,
 } from '@/lib/types';
 import Login from '@/components/Login';
 import { AlphaBadge } from '@/components/Logo';
@@ -276,10 +277,31 @@ export default function App() {
     try { window.localStorage?.setItem('alpha-sidebar', collapsed ? 'collapsed' : 'open'); } catch {}
   }, [collapsed]);
 
+  /**
+   * Matriks Izin Peran — dimuat SEKALI saat login, sebelum profil dipasang.
+   *
+   * Urutannya penting: matriks dulu, baru setProfile(). Kalau dibalik,
+   * ada satu putaran render di mana profil sudah ada tapi matriks belum,
+   * sehingga tombol sempat memakai aturan bawaan lalu berkedip berubah.
+   *
+   * Kalau pemuatan gagal, matriks tidak dipasang dan seluruh aplikasi jatuh
+   * ke aturan bawaan di lib/types.ts — perilaku Alpha sebelum matriks ada.
+   * Jadi gangguan jaringan tidak pernah mengunci orang keluar.
+   */
+  const loadMatriks = useCallback(async () => {
+    const [a, b] = await Promise.all([
+      supabase.from('role_permissions').select('tugas, role, boleh'),
+      supabase.from('role_permission_teams').select('tugas, role, team'),
+    ]);
+    if (a.error || b.error || !a.data || !b.data) return;
+    pasangMatriks(a.data as IzinBaris[], b.data as IzinTim[]);
+  }, []);
+
   const loadProfile = useCallback(async (userId: string) => {
+    await loadMatriks();
     const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
     setProfile((data as Profile) || null);
-  }, []);
+  }, [loadMatriks]);
 
   const loadAccounts = useCallback(async () => {
     const { data } = await supabase.from('accounts').select('*').eq('is_active', true).order('handle');
@@ -346,9 +368,19 @@ export default function App() {
   if (!session) return <Login />;
 
   const isSuper = profile?.role === 'superadmin';
-  const canSeeLog = profile?.role === 'superadmin' || profile?.role === 'manager';
+  const canSeeLog = boleh(profile, TUGAS.logLihat);
+  /**
+   * Menu Kelola Akses muncul kalau punya SALAH SATU izin di dalamnya.
+   * Tab mana yang boleh dibuka disaring sendiri oleh AccessView —
+   * User Login & Izin Peran tetap khusus superadmin, dikunci di kode,
+   * tidak bisa dibuka lewat centang mana pun.
+   */
+  const canSeeAccess = isSuper
+    || boleh(profile, TUGAS.kategoriKelola)
+    || boleh(profile, TUGAS.akunMediaKelola)
+    || boleh(profile, TUGAS.anggotaPicKelola);
   const navItems = NAV.filter((n) => {
-    if (n.key === 'access') return isSuper;
+    if (n.key === 'access') return canSeeAccess;
     if (n.key === 'log') return canSeeLog;
     return true;
   });
@@ -559,7 +591,7 @@ export default function App() {
         )}
         {view === 'komplain' && <ComplaintView profile={profile} />}
         {view === 'log' && canSeeLog && <LogView />}
-        {view === 'access' && isSuper && <AccessView selfId={session.user.id} onAccountsChanged={loadAccounts} activeProjectId={activeProject} activeProjectName={activeProj ? activeProj.name : null} />}
+        {view === 'access' && canSeeAccess && <AccessView profile={profile} selfId={session.user.id} onAccountsChanged={loadAccounts} activeProjectId={activeProject} activeProjectName={activeProj ? activeProj.name : null} />}
       </main>
       <ComplaintWidget profile={profile} />
     </div>

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { initials, KOLOM_URL_AKUN, PLATFORMS, tagColor, TEAM_GROUPS, TEAM_LABEL, teamsForVertical, VERTICALS, type Account, type ContentCategory, type Profile, type Project, type Role, type Team, type TeamMember } from '@/lib/types';
+import { boleh, initials, KOLOM_URL_AKUN, PLATFORMS, tagColor, TUGAS, TEAM_GROUPS, TEAM_LABEL, teamsForVertical, VERTICALS, type Account, type ContentCategory, type IzinBaris, type IzinTim, type Profile, type Project, type Role, type Team, type TeamMember, type TugasDef } from '@/lib/types';
 import { sigma, type SigmaProject } from '@/lib/sigma';
 
 const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
@@ -57,6 +57,8 @@ const USER_VERTICALS: { value: string; label: string }[] = [
 const MEMBER_TEAMS: Team[] = ['creative', 'distribution', 'ads', 'vmt', 'delta'];
 
 interface Props {
+  /** Dipakai untuk menentukan tab mana yang boleh dibuka. */
+  profile: Profile | null;
   selfId: string;
   onAccountsChanged?: () => void;
   activeProjectId?: string;
@@ -301,7 +303,7 @@ function LabelCell({ value, options, onSave }: {
   );
 }
 
-export default function AccessView({ selfId, onAccountsChanged, activeProjectId = 'all', activeProjectName = null }: Props) {
+export default function AccessView({ profile, selfId, onAccountsChanged, activeProjectId = 'all', activeProjectName = null }: Props) {
   const [users, setUsers] = useState<Profile[]>([]);
   /** Penyaring unit di tab User Login. '' = tampilkan semua. */
   const [saringVertical, setSaringVertical] = useState('');
@@ -314,7 +316,115 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
 
-  const [tab, setTab] = useState<'user' | 'project' | 'akun' | 'kategori' | 'tim'>('user');
+  type TabKey = 'user' | 'project' | 'akun' | 'kategori' | 'tim' | 'izin';
+
+  /**
+   * Tab mana yang boleh dibuka orang ini.
+   *
+   * `user` dan `izin` DIKUNCI DI KODE untuk superadmin — sengaja tidak jadi
+   * baris matriks. Kalau 'izin' bisa dibuka lewat centang, orang yang diberi
+   * satu tab bisa mencentang dirinya sendiri jadi bisa segalanya. Sama seperti
+   * SIGMA yang menulis "Kelola User permanen khusus Superadmin".
+   *
+   * `project` juga superadmin: ubah/hapus project memakai aturan unit bisnis
+   * (can_see_all), bukan peran — lihat baris terkunci di matriks.
+   */
+  const isSuperadmin = profile?.role === 'superadmin';
+  const izinTab: Record<TabKey, boolean> = {
+    user:     !!isSuperadmin,
+    izin:     !!isSuperadmin,
+    project:  !!isSuperadmin,
+    akun:     boleh(profile, TUGAS.akunMediaKelola),
+    kategori: boleh(profile, TUGAS.kategoriKelola),
+    tim:      boleh(profile, TUGAS.anggotaPicKelola),
+  };
+  const TAB_LABEL: Record<TabKey, string> = {
+    user: 'User Login', project: 'Project & Vertical', akun: 'Akun Media',
+    kategori: 'Kategori Konten', tim: 'Anggota Tim', izin: 'Izin Peran',
+  };
+  const URUTAN_TAB: TabKey[] = ['user', 'project', 'akun', 'kategori', 'tim', 'izin'];
+  const tabBoleh = URUTAN_TAB.filter((k) => izinTab[k]);
+
+  // Tab awal = tab pertama yang boleh dibuka, bukan selalu 'user'.
+  const [tab, setTab] = useState<TabKey>(tabBoleh[0] || 'user');
+
+  // Kalau izinnya berubah (matriks dimuat belakangan, atau centangnya dicabut
+  // orang lain), pindahkan ke tab yang masih boleh — jangan biarkan menatap
+  // layar kosong.
+  useEffect(() => {
+    if (!izinTab[tab] && tabBoleh.length > 0) setTab(tabBoleh[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, izinTab.user, izinTab.izin, izinTab.project, izinTab.akun, izinTab.kategori, izinTab.tim]);
+
+  /* ================= IZIN PERAN =================
+     Cerminan tabel role_permissions & role_permission_teams. Yang tampil di
+     sini persis yang dibaca RLS lewat fungsi boleh() — jadi mencentang di
+     layar ini benar-benar mengubah wewenang, bukan cuma tampilan. */
+  const [tugasDefs, setTugasDefs] = useState<TugasDef[]>([]);
+  const [izinBaris, setIzinBaris] = useState<IzinBaris[]>([]);
+  const [izinTim, setIzinTim] = useState<IzinTim[]>([]);
+  const [izinBusy, setIzinBusy] = useState('');
+  const [bukaTim, setBukaTim] = useState<string | null>(null);
+
+  const loadIzin = useCallback(async () => {
+    const [a, b, c] = await Promise.all([
+      supabase.from('permission_tasks').select('*').order('urutan'),
+      supabase.from('role_permissions').select('tugas, role, boleh'),
+      supabase.from('role_permission_teams').select('tugas, role, team'),
+    ]);
+    setTugasDefs((a.data as TugasDef[]) || []);
+    setIzinBaris((b.data as IzinBaris[]) || []);
+    setIzinTim((c.data as IzinTim[]) || []);
+  }, []);
+
+  useEffect(() => { if (tab === 'izin') loadIzin(); }, [tab, loadIzin]);
+
+  const dicentang = (tugas: string, role: Role) =>
+    izinBaris.some((x) => x.tugas === tugas && x.role === role && x.boleh);
+
+  const timUntuk = (tugas: string, role: Role) =>
+    izinTim.filter((x) => x.tugas === tugas && x.role === role).map((x) => x.team);
+
+  /** Ubah satu centang. .select() wajib — UPDATE yang ditolak RLS mengenai
+   *  0 baris TANPA error, jadi tanpa ini gagal terlihat seperti berhasil. */
+  const ubahCentang = async (tugas: string, role: Role, nilai: boolean) => {
+    const kunci = tugas + '|' + role;
+    setIzinBusy(kunci);
+    const { data, error } = await supabase
+      .from('role_permissions')
+      .update({ boleh: nilai, updated_at: new Date().toISOString(), updated_by: selfId })
+      .eq('tugas', tugas).eq('role', role).select('tugas');
+    setIzinBusy('');
+    if (error || !data || data.length === 0) {
+      setMsg('Gagal menyimpan — hanya superadmin yang boleh mengubah izin.');
+      return;
+    }
+    setIzinBaris((lama) => lama.map((x) =>
+      x.tugas === tugas && x.role === role ? { ...x, boleh: nilai } : x));
+    setMsg('Tersimpan. Yang sedang login perlu memuat ulang halaman.');
+  };
+
+  /** Pasang/lepas satu tim sebagai pembatas. */
+  const ubahPembatas = async (tugas: string, role: Role, team: Team, pasang: boolean) => {
+    const kunci = tugas + '|' + role + '|' + team;
+    setIzinBusy(kunci);
+    let gagal = false;
+    if (pasang) {
+      const { error } = await supabase.from('role_permission_teams').insert({ tugas, role, team });
+      gagal = !!error;
+      if (!gagal) setIzinTim((lama) => lama.concat([{ tugas, role, team }]));
+    } else {
+      const { data, error } = await supabase.from('role_permission_teams')
+        .delete().eq('tugas', tugas).eq('role', role).eq('team', team).select('tugas');
+      gagal = !!error || !data || data.length === 0;
+      if (!gagal) setIzinTim((lama) => lama.filter((x) =>
+        !(x.tugas === tugas && x.role === role && x.team === team)));
+    }
+    setIzinBusy('');
+    if (gagal) { setMsg('Gagal menyimpan pembatas tim.'); return; }
+    setMsg('Tersimpan. Yang sedang login perlu memuat ulang halaman.');
+  };
+
   const [categories, setCategories] = useState<ContentCategory[]>([]);
   const [newCatName, setNewCatName] = useState('');
   const [catBusy, setCatBusy] = useState(false);
@@ -897,14 +1007,14 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
         ) : (
           <>
             <div className="access-tabs">
-              <button className={`atab ${tab === 'user' ? 'active' : ''}`} onClick={() => setTab('user')}>User Login</button>
-              <button className={`atab ${tab === 'project' ? 'active' : ''}`} onClick={() => setTab('project')}>Project &amp; Vertical</button>
-              <button className={`atab ${tab === 'akun' ? 'active' : ''}`} onClick={() => setTab('akun')}>Akun Media</button>
-              <button className={`atab ${tab === 'kategori' ? 'active' : ''}`} onClick={() => setTab('kategori')}>Kategori Konten</button>
-              <button className={`atab ${tab === 'tim' ? 'active' : ''}`} onClick={() => setTab('tim')}>Anggota Tim</button>
+              {tabBoleh.map((k) => (
+                <button key={k} className={`atab ${tab === k ? 'active' : ''}`} onClick={() => setTab(k)}>
+                  {k === 'project' ? <>Project &amp; Vertical</> : TAB_LABEL[k]}
+                </button>
+              ))}
             </div>
 
-            {tab === 'user' && (<>
+            {tab === 'user' && izinTab.user && (<>
             {/* ================= USER LOGIN ================= */}
             <div className="section-head-row">
               <div className="section-title" style={{ margin: 0 }}>User Login</div>
@@ -1027,7 +1137,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
 
             </>)}
 
-            {tab === 'project' && (<>
+            {tab === 'project' && izinTab.project && (<>
             {/* ================= PROJECT ================= */}
             <div className="section-head-row">
               <div className="section-title" style={{ margin: 0 }}>Project &amp; Vertical</div>
@@ -1089,7 +1199,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
 
             </>)}
 
-            {tab === 'akun' && (<>
+            {tab === 'akun' && izinTab.akun && (<>
             {/* ================= AKUN MEDIA ================= */}
             <div className="section-title">Akun Media</div>
             <p className="section-hint">
@@ -1173,7 +1283,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
 
             </>)}
 
-            {tab === 'kategori' && (<>
+            {tab === 'kategori' && izinTab.kategori && (<>
             {/* ================= KATEGORI KONTEN ================= */}
             <div className="section-title">Kategori Konten</div>
             <p className="section-hint">
@@ -1227,7 +1337,7 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
 
             </>)}
 
-            {tab === 'tim' && (<>
+            {tab === 'tim' && izinTab.tim && (<>
             {/* ================= ANGGOTA TIM (PIC) ================= */}
             <div className="section-title">Anggota Tim (opsi PIC)</div>
             <p className="section-hint">
@@ -1269,6 +1379,120 @@ export default function AccessView({ selfId, onAccountsChanged, activeProjectId 
                 </tbody>
               </table>
             </div>
+            </>)}
+            {tab === 'izin' && izinTab.izin && (<>
+            {/* ================= IZIN PERAN ================= */}
+            <div className="section-title">Izin Peran</div>
+            <p className="section-hint">
+              Centang tugas yang boleh dilakukan tiap peran. Perubahan <b>langsung berlaku</b> — di tampilan
+              maupun di database. <b>Superadmin selalu punya semua izin</b> dan tidak bisa diubah.
+              <b> Kelola Akses</b> sendiri permanen khusus Superadmin.
+              <br />
+              Kolom <b>Dibatasi tim</b> mempersempit izin ke tim tertentu. Kosong berarti berlaku untuk semua tim —
+              tanpa ini, satu centang &ldquo;Manager&rdquo; akan memberi izin ke seluruh 17 manager termasuk Finance dan HRD.
+            </p>
+            <p className="section-hint">
+              Tiga hal <b>tidak</b> diatur di sini karena bukan soal peran: tahap kerja tiap tim di Board,
+              dinding unit bisnis KC/GME/KIG, dan aturan &ldquo;milik sendiri&rdquo;. Setiap perubahan tercatat di
+              <b> Log Aktivitas</b>.
+            </p>
+
+            {tugasDefs.length === 0 ? (
+              <p className="empty">Memuat…</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th style={{ minWidth: 230 }}>TUGAS</th>
+                      <th style={{ width: 110, textAlign: 'center' }}>MANAGER</th>
+                      <th style={{ width: 110, textAlign: 'center' }}>TIM</th>
+                      <th>DIBATASI TIM</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tugasDefs.map((t) => (
+                      <tr key={t.tugas}>
+                        <td>
+                          <b>{t.label}</b>
+                          {t.terkunci && (
+                            <span className="hint" style={{ marginLeft: 6, color: 'var(--text-3)' }}>· dikunci</span>
+                          )}
+                          {t.keterangan && <div className="sub" style={{ fontSize: 11 }}>{t.keterangan}</div>}
+                        </td>
+                        {(['manager', 'tim'] as Role[]).map((r) => (
+                          <td key={r} style={{ textAlign: 'center' }}>
+                            <input
+                              type="checkbox"
+                              checked={dicentang(t.tugas, r)}
+                              disabled={t.terkunci || izinBusy === t.tugas + '|' + r}
+                              title={t.terkunci ? 'Baris ini dikunci — aturannya bukan soal peran' : undefined}
+                              onChange={(e) => ubahCentang(t.tugas, r, e.target.checked)}
+                            />
+                          </td>
+                        ))}
+                        <td>
+                          {(['manager', 'tim'] as Role[]).map((r) => {
+                            if (!dicentang(t.tugas, r)) return null;
+                            const dipakai = timUntuk(t.tugas, r);
+                            const kunci = t.tugas + '|' + r;
+                            return (
+                              <div key={r} style={{ marginBottom: 4 }}>
+                                <span className="sub" style={{ fontSize: 11, marginRight: 6 }}>{r}:</span>
+                                {dipakai.length === 0
+                                  ? <span className="hint" style={{ marginRight: 6 }}>semua tim</span>
+                                  : dipakai.map((tm) => (
+                                      <button
+                                        key={tm}
+                                        className="btn act"
+                                        style={{ marginRight: 4, padding: '0 7px' }}
+                                        disabled={t.terkunci}
+                                        title={'Lepas pembatas ' + TEAM_LABEL[tm]}
+                                        onClick={() => ubahPembatas(t.tugas, r, tm, false)}
+                                      >
+                                        {TEAM_LABEL[tm]} ✕
+                                      </button>
+                                    ))}
+                                {!t.terkunci && (
+                                  bukaTim === kunci ? (
+                                    <select
+                                      autoFocus
+                                      defaultValue=""
+                                      onBlur={() => setBukaTim(null)}
+                                      onChange={(e) => {
+                                        const tm = e.target.value as Team;
+                                        setBukaTim(null);
+                                        if (tm) ubahPembatas(t.tugas, r, tm, true);
+                                      }}
+                                    >
+                                      <option value="">— pilih tim —</option>
+                                      {TEAM_GROUPS.map((g) => (
+                                        <optgroup key={g.label} label={g.label}>
+                                          {g.teams.filter((tm) => !dipakai.includes(tm)).map((tm) => (
+                                            <option key={tm} value={tm}>{TEAM_LABEL[tm]}</option>
+                                          ))}
+                                        </optgroup>
+                                      ))}
+                                    </select>
+                                  ) : (
+                                    <button className="btn act" style={{ padding: '0 7px' }}
+                                      onClick={() => setBukaTim(kunci)}>+ tim</button>
+                                  )
+                                )}
+                              </div>
+                            );
+                          })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="section-hint">
+              Orang yang sedang login perlu <b>memuat ulang halaman</b> untuk melihat efeknya di tombol-tombolnya.
+              Pembatasan di database berlaku seketika tanpa perlu muat ulang.
+            </p>
             </>)}
           </>
         )}

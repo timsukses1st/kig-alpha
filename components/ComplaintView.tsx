@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { initials, type Complaint, type ComplaintMessage, type Profile } from '@/lib/types';
+import { boleh, initials, TUGAS, type Complaint, type ComplaintMessage, type Profile } from '@/lib/types';
 
 interface Props {
   profile: Profile | null;
@@ -39,7 +39,8 @@ export default function ComplaintView({ profile }: Props) {
   const [newMsg, setNewMsg] = useState('');
   const [msgBusy, setMsgBusy] = useState(false);
 
-  const isLead = profile?.role === 'superadmin' || profile?.role === 'manager';
+  const isLead = boleh(profile, TUGAS.komplainLihat);
+  const bisaUbah = boleh(profile, TUGAS.komplainUbah);
 
   // --- notifikasi in-app (window.alert diblokir di browser) ---
   const [toast, setToast] = useState('');
@@ -276,7 +277,7 @@ export default function ComplaintView({ profile }: Props) {
                       <div className="sub" style={{ marginLeft: 40 }}>{fmt(c.created_at)}</div>
                     </td>
                     <td>
-                      {isLead ? (
+                      {bisaUbah ? (
                         <select value={c.status} onChange={(e) => setStatus(c, e.target.value)}
                           style={{ color: STATUS_META[c.status]?.color, borderColor: STATUS_META[c.status]?.color }}>
                           <option value="baru">Baru</option>
@@ -392,7 +393,7 @@ export default function ComplaintView({ profile }: Props) {
               </div>
             </div>
             <div className="modal-foot">
-              {isLead && active.status !== 'selesai' && (
+              {bisaUbah && active.status !== 'selesai' && (
                 <button className="btn" onClick={() => setStatus(active, 'selesai')}>✓ Tandai selesai</button>
               )}
               <div className="right">

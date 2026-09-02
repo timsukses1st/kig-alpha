@@ -4,7 +4,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
-  PLATFORMS, accountUrl, canCreateContent, canDeleteContent, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses,
+  PLATFORMS, accountUrl, boleh, canCreateContent, canDeleteContent, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses, TUGAS,
   type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type Team, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
@@ -1226,7 +1226,11 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     load(true);
   };
 
-  const canAcc = profile?.role === 'superadmin' || profile?.role === 'manager';
+  // Dulu "manager mana pun". Itu lebih longgar daripada database, jadi tombolnya
+  // muncul untuk Finance/HRD lalu ditolak diam-diam. Sekarang bertanya ke
+  // matriks, sumber yang sama dengan RLS.
+  const canAcc = boleh(profile, TUGAS.kontenPindahBebas);
+  const canTolakRequest = boleh(profile, TUGAS.requestUbah);
 
   // 'pelanggaran' sengaja di urutan terakhir — dia keadaan pengecualian,
   // bukan tahap lanjutan dari alur normal.
@@ -1270,7 +1274,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
     load(true);
   };
 
-  const canRequest = canAcc || profile?.team === 'pm';
+  const canRequest = boleh(profile, TUGAS.requestBuat);
   // Mengangkat request = membuat konten baru, jadi syaratnya sama persis.
   const canLift = canCreateContent(profile);
   const [reqModalOpen, setReqModalOpen] = useState(false);
@@ -1400,11 +1404,11 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
   // konten, sama seperti mereka tidak bisa menggesernya.
   const canDelete = canDeleteContent(profile);
 
-  // Menghapus CATATAN konten aturannya berbeda dan sengaja tidak ikut diubah:
-  // policy `notes_delete` masih `author_id = auth.uid() OR is_privileged()`.
-  // Kalau layar dibuat lebih ketat dari database, tombolnya hilang padahal
-  // sebenarnya diizinkan — itu membingungkan tanpa alasan.
-  const bisaHapusCatatan = profile?.role === 'superadmin' || profile?.role === 'manager';
+  // Menghapus CATATAN konten punya barisnya sendiri di matriks. Policy
+  // `notes_delete` sekarang berbunyi
+  //   author_id = auth.uid() OR boleh('catatan_hapus_orang')
+  // — jadi layar dan database bertanya ke tempat yang sama.
+  const bisaHapusCatatan = boleh(profile, TUGAS.catatanHapusOrang);
   const nextStep = editing ? nextActionFor(editing.status) : null;
   const prevIdx = editing ? ORDER.indexOf(editing.status) : -1;
   const prevStep = editing && prevIdx > 0 ? ORDER[prevIdx - 1] : null;
@@ -1779,7 +1783,7 @@ export default function Board({ profile, accounts, projects, projectFilter }: Pr
                       {reqBusy === rq.id ? 'Memproses…' : '↑ Angkat'}
                     </button>
                   )}
-                  {canAcc && (
+                  {canTolakRequest && (
                     <button className="btn ghost danger-text" disabled={reqBusy === rq.id} onClick={() => setRejReq(rq)}>
                       Tolak
                     </button>

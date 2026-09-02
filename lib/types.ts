@@ -515,11 +515,127 @@ export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
  */
 export const TIM_KONTEN: Team[] = ['creative', 'distribution', 'ads', 'vmt', 'delta'];
 
-/** Peran yang bebas memindahkan status apa pun. */
-function bebasPindahStatus(profile: Profile): boolean {
+/* ===================================================================
+   MATRIKS IZIN PERAN
+   ===================================================================
+   Cerminan tabel `role_permissions` + `role_permission_teams` dan fungsi
+   `boleh()` di database. Layar HARUS memakai sumber yang sama dengan RLS —
+   kalau tidak, tombol terlihat aktif lalu ditolak diam-diam.
+
+   Matriksnya dimuat SEKALI saat login (lihat App.tsx) lalu disimpan di
+   modul ini, supaya tidak perlu dialirkan sebagai prop melewati puluhan
+   komponen. Selama belum termuat, semua pertanyaan dijawab memakai
+   ATURAN BAWAAN di bawah — yaitu perilaku Alpha sebelum matriks ada.
+   Jadi kegagalan memuat matriks tidak pernah membuat orang kehilangan
+   akses, paling buruk cuma tidak mendapat perubahan terbaru.
+=================================================================== */
+
+/** Nama tugas. Dipakai sebagai kunci di database — jangan diubah sembarangan,
+ *  harus sama persis dengan kolom `tugas` di tabel `permission_tasks`. */
+export const TUGAS = {
+  kontenBuat:        'konten_buat',
+  kontenPindahBebas: 'konten_pindah_bebas',
+  kontenHapus:       'konten_hapus',
+  catatanHapusOrang: 'catatan_hapus_orang',
+  requestBuat:       'request_buat',
+  requestUbah:       'request_ubah',
+  requestHapus:      'request_hapus',
+  projectTambah:     'project_tambah',
+  projectUbahHapus:  'project_ubah_hapus',
+  kategoriKelola:    'kategori_kelola',
+  akunMediaKelola:   'akun_media_kelola',
+  anggotaPicKelola:  'anggota_pic_kelola',
+  budgetAjukan:      'budget_ajukan',
+  budgetPutuskan:    'budget_putuskan',
+  budgetHapus:       'budget_hapus',
+  lemburPutuskan:    'lembur_putuskan',
+  lemburHapusOrang:  'lembur_hapus_orang',
+  komplainLihat:     'komplain_lihat',
+  komplainUbah:      'komplain_ubah',
+  komplainHapus:     'komplain_hapus',
+  logLihat:          'log_lihat',
+  rekapHapusOrang:   'rekap_hapus_orang',
+  sebaranUbahOrang:  'sebaran_ubah_orang',
+} as const;
+
+export interface TugasDef {
+  tugas: string;
+  label: string;
+  kelompok: string;
+  urutan: number;
+  keterangan: string | null;
+  terkunci: boolean;
+}
+export interface IzinBaris { tugas: string; role: Role; boleh: boolean }
+export interface IzinTim   { tugas: string; role: Role; team: Team }
+
+/** null = belum dimuat. Sengaja variabel modul, bukan React context: helper
+ *  seperti canEditRow() dipanggil dari dalam perulangan render Board yang
+ *  tidak memegang context apa pun. */
+let MATRIKS: { baris: IzinBaris[]; tim: IzinTim[] } | null = null;
+
+export function pasangMatriks(baris: IzinBaris[], tim: IzinTim[]): void {
+  MATRIKS = { baris, tim };
+}
+export function matriksTerpasang(): boolean {
+  return MATRIKS !== null;
+}
+
+/** Perilaku Alpha SEBELUM matriks ada. Dipakai kalau matriks gagal dimuat. */
+function bawaan(profile: Profile, tugas: string): boolean {
+  const manager = profile.role === 'manager';
+  const tim = profile.role === 'tim';
+  const timKonten = !!profile.team && TIM_KONTEN.includes(profile.team);
+  switch (tugas) {
+    case TUGAS.kontenBuat:
+      return (manager && timKonten) || (tim && (profile.team === 'creative' || profile.team === 'delta'));
+    case TUGAS.kontenPindahBebas:
+    case TUGAS.kontenHapus:
+      return manager && timKonten;
+    case TUGAS.requestBuat:
+      return manager || profile.team === 'pm';
+    case TUGAS.requestUbah:
+      return manager || profile.team === 'creative' || profile.team === 'delta';
+    case TUGAS.projectTambah:
+      return manager && profile.team === 'pm';
+    case TUGAS.budgetPutuskan:
+      return profile.team === 'pm' || profile.team === 'finance';
+    case TUGAS.kategoriKelola:
+    case TUGAS.catatanHapusOrang:
+    case TUGAS.requestHapus:
+    case TUGAS.budgetAjukan:
+    case TUGAS.lemburPutuskan:
+    case TUGAS.komplainLihat:
+    case TUGAS.komplainUbah:
+    case TUGAS.komplainHapus:
+    case TUGAS.logLihat:
+    case TUGAS.rekapHapusOrang:
+      return manager;
+    // Sisanya superadmin saja — sudah dijawab di boleh() sebelum sampai sini.
+    default:
+      return false;
+  }
+}
+
+/**
+ * Pertanyaan tunggal: orang ini boleh melakukan tugas ini atau tidak?
+ *
+ * Superadmin dijawab SEBELUM matriks dibaca — sama persis seperti fungsi
+ * `boleh()` di database. Jadi tidak ada centang yang bisa mengunci superadmin
+ * keluar dari aplikasinya sendiri.
+ */
+export function boleh(profile: Profile | null, tugas: string): boolean {
+  if (!profile || !profile.is_active) return false;
   if (profile.role === 'superadmin') return true;
-  if (profile.role !== 'manager') return false;
-  return !!profile.team && TIM_KONTEN.includes(profile.team);
+  if (!MATRIKS) return bawaan(profile, tugas);
+
+  const baris = MATRIKS.baris.find((b) => b.tugas === tugas && b.role === profile.role);
+  if (!baris || !baris.boleh) return false;
+
+  const pembatas = MATRIKS.tim.filter((t) => t.tugas === tugas && t.role === profile.role);
+  if (pembatas.length === 0) return true;              // tanpa pembatas = semua tim
+  if (!profile.team) return false;
+  return pembatas.some((t) => t.team === profile.team);
 }
 
 /**
@@ -530,9 +646,7 @@ function bebasPindahStatus(profile: Profile): boolean {
  * pengguna cuma melihat kegagalan tanpa tahu sebabnya.
  */
 export function canCreateContent(profile: Profile | null): boolean {
-  if (!profile || !profile.is_active) return false;
-  if (bebasPindahStatus(profile)) return true;
-  return profile.role === 'tim' && (profile.team === 'creative' || profile.team === 'delta');
+  return boleh(profile, TUGAS.kontenBuat) || boleh(profile, TUGAS.kontenPindahBebas);
 }
 
 /**
@@ -543,8 +657,7 @@ export function canCreateContent(profile: Profile | null): boolean {
  * barisnya sekalian. Cerminan dari policy `contents_delete`.
  */
 export function canDeleteContent(profile: Profile | null): boolean {
-  if (!profile || !profile.is_active) return false;
-  return bebasPindahStatus(profile);
+  return boleh(profile, TUGAS.kontenHapus);
 }
 
 /**
@@ -559,9 +672,7 @@ export function canDeleteContent(profile: Profile | null): boolean {
  * membuka hal-hal yang sama sekali tidak berhubungan dengan project.
  */
 export function canAddProject(profile: Profile | null): boolean {
-  if (!profile || !profile.is_active) return false;
-  if (profile.role === 'superadmin') return true;
-  return profile.role === 'manager' && profile.team === 'pm';
+  return boleh(profile, TUGAS.projectTambah);
 }
 
 /**
@@ -576,7 +687,10 @@ export function bebasPilihVertical(profile: Profile | null): boolean {
 
 export function canEditRow(profile: Profile | null, status: ContentStatus): boolean {
   if (!profile || !profile.is_active) return false;
-  if (bebasPindahStatus(profile)) return true;
+  if (boleh(profile, TUGAS.kontenPindahBebas)) return true;
+  // Cabang tahap-per-tim sengaja TETAP hardcode. Kalau dijadikan centang,
+  // jadi 21 tim x 8 status = 168 kotak. Cerminannya team_can_edit() di database.
+  if (profile.role !== 'tim') return false;
   if (!profile.team) return false;
   // `?? []` penting: kalau ada nilai enum baru ditambahkan di database tapi
   // file ini belum ikut ter-deploy, tanpa ini barisnya jadi undefined.includes()
@@ -586,7 +700,8 @@ export function canEditRow(profile: Profile | null, status: ContentStatus): bool
 
 export function targetableStatuses(profile: Profile | null, current: ContentStatus): ContentStatus[] {
   if (!profile) return [current];
-  if (bebasPindahStatus(profile)) return STATUSES.map((s) => s.key);
+  if (boleh(profile, TUGAS.kontenPindahBebas)) return STATUSES.map((s) => s.key);
+  if (profile.role !== 'tim') return [current];
   if (!profile.team) return [current];
   const targets = TEAM_TARGETABLE[profile.team] ?? [];
   return targets.includes(current) ? targets : [current];
