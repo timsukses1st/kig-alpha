@@ -288,6 +288,18 @@ export default function App() {
    * ke aturan bawaan di lib/types.ts — perilaku Alpha sebelum matriks ada.
    * Jadi gangguan jaringan tidak pernah mengunci orang keluar.
    */
+  /**
+   * Penghitung versi izin. Dinaikkan tiap matriks dimuat ulang.
+   *
+   * pasangMatriks() menulis ke variabel modul, bukan state React — jadi React
+   * tidak tahu ada yang berubah dan tombol tidak dihitung ulang. Angka ini
+   * yang memaksanya: dia state, jadi naiknya memicu render ulang App beserta
+   * seluruh layar di bawahnya.
+   */
+  const [izinVersi, setIzinVersi] = useState(0);
+  /** Pemberitahuan kecil saat wewenang berubah di tengah kerja. */
+  const [izinKabar, setIzinKabar] = useState('');
+
   const loadMatriks = useCallback(async () => {
     const [a, b] = await Promise.all([
       supabase.from('role_permissions').select('tugas, role, boleh'),
@@ -295,6 +307,7 @@ export default function App() {
     ]);
     if (a.error || b.error || !a.data || !b.data) return;
     pasangMatriks(a.data as IzinBaris[], b.data as IzinTim[]);
+    setIzinVersi((v) => v + 1);
   }, []);
 
   const loadProfile = useCallback(async (userId: string) => {
@@ -342,6 +355,53 @@ export default function App() {
     setNewProjName(''); setNewProjLabel('');
     loadProjects();
   };
+
+  /**
+   * Wewenang berubah saat orang sedang bekerja.
+   *
+   * Tanpa ini, tombol di layar masih memakai izin lama sampai halaman dimuat
+   * ulang — padahal database sudah menolak sejak detik centangnya diubah.
+   * Yang muncul: tombol terlihat aktif, ditekan, lalu gagal tanpa sebab jelas.
+   *
+   * Kabarnya sengaja DIMUNCULKAN, tidak diam-diam. Tombol yang hilang mendadak
+   * tanpa penjelasan lebih membingungkan daripada wewenang yang basi sebentar.
+   *
+   * Butuh Replication tabel role_permissions & role_permission_teams
+   * dinyalakan di Supabase. Kalau belum, kodenya tetap aman — hanya tidak
+   * terjadi apa-apa, dan izin tetap segar setiap kali halaman dimuat.
+   */
+  useEffect(() => {
+    if (!profile) return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const segarkan = () => {
+      // Ditunda sebentar: mengubah satu baris matriks sering memicu beberapa
+      // kejadian beruntun (centang + chip tim). Tanpa jeda, matriks ditarik
+      // berkali-kali untuk satu perubahan.
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        loadMatriks();
+        setIzinKabar('Wewenang akunmu baru saja diperbarui.');
+      }, 400);
+    };
+
+    const ch = supabase
+      .channel('izin-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, segarkan)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permission_teams' }, segarkan)
+      .subscribe();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(ch);
+    };
+  }, [profile, loadMatriks]);
+
+  /** Kabar wewenang hilang sendiri setelah dibaca sebentar. */
+  useEffect(() => {
+    if (!izinKabar) return;
+    const t = setTimeout(() => setIzinKabar(''), 8000);
+    return () => clearTimeout(t);
+  }, [izinKabar]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -395,7 +455,26 @@ export default function App() {
   const logout = () => supabase.auth.signOut();
 
   return (
-    <div className="app-shell">
+    /* data-izin bukan hiasan: dia yang membuat izinVersi benar-benar terpakai,
+       sekaligus penanda saat menelusuri masalah — angkanya naik tiap matriks
+       dimuat ulang. Sengaja BUKAN key, karena key akan me-remount seluruh
+       aplikasi dan menghapus penyaring Board yang sedang dipakai orang. */
+    <div className="app-shell" data-izin={izinVersi}>
+      {izinKabar && (
+        <div
+          onClick={() => setIzinKabar('')}
+          title="Klik untuk menutup"
+          style={{
+            position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 300, cursor: 'pointer', maxWidth: 'calc(100vw - 32px)',
+            background: 'var(--raised)', border: '1px solid var(--line)',
+            borderLeft: '3px solid var(--st-review)', borderRadius: 8,
+            padding: '9px 14px', fontSize: 12.5, boxShadow: '0 6px 20px rgba(0,0,0,.28)',
+          }}
+        >
+          {izinKabar} <span style={{ color: 'var(--text-3)' }}>Muat ulang halaman kalau ada yang terlihat janggal.</span>
+        </div>
+      )}
       {/* Hanya tampil di layar kecil — lihat globals.css */}
       <button
         className="mobile-nav-btn"

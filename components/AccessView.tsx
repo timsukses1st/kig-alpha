@@ -688,6 +688,41 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
   useEffect(() => { load(); }, [load]);
 
   /**
+   * Kelola Akses ikut realtime.
+   *
+   * Sekarang layar ini dibuka lebih dari satu orang — PM & AM untuk Akun Media
+   * dan Anggota PIC, manager untuk Kategori. Tanpa ini, dua orang bisa menambah
+   * akun yang sama karena masing-masing melihat daftar yang sudah basi.
+   *
+   * Butuh Replication tabel-tabel di bawah dinyalakan di Supabase. Kalau belum,
+   * kodenya tetap aman — hanya tidak terjadi apa-apa.
+   */
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const segarkan = () => {
+      // Ditunda: satu perubahan sering memicu beberapa kejadian beruntun.
+      if (timer) clearTimeout(timer);
+      // Matriks hanya ditarik ulang oleh yang memang melihat tabnya.
+      timer = setTimeout(() => { load(); if (isSuperadmin) loadIzin(); }, 400);
+    };
+
+    const ch = supabase
+      .channel('akses-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, segarkan)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, segarkan)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'content_categories' }, segarkan)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, segarkan)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, segarkan)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permission_teams' }, segarkan)
+      .subscribe();
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(ch);
+    };
+  }, [load, loadIzin, isSuperadmin]);
+
+  /**
    * Akun yang ditampilkan: ikut project aktif di sidebar (kalau bukan 'all').
    *
    * Akun TANPA project selalu ikut ditampilkan. Kalau tidak, dia tidak muncul
