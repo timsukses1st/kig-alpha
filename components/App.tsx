@@ -373,6 +373,7 @@ export default function App() {
   useEffect(() => {
     if (!profile) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let timerDaftar: ReturnType<typeof setTimeout> | null = null;
     const segarkan = () => {
       // Ditunda sebentar: mengubah satu baris matriks sering memicu beberapa
       // kejadian beruntun (centang + chip tim). Tanpa jeda, matriks ditarik
@@ -384,17 +385,29 @@ export default function App() {
       }, 400);
     };
 
+    // Daftar akun & project dipakai di seluruh layar (dropdown Akun di Board,
+    // selector Project di sidebar). Dulu hanya disegarkan lewat
+    // onAccountsChanged — yaitu HANYA untuk orang yang menekan tombolnya.
+    // Akibatnya akun yang baru ditambahkan PM tidak muncul di Board orang lain.
+    const segarkanDaftar = () => {
+      if (timerDaftar) clearTimeout(timerDaftar);
+      timerDaftar = setTimeout(() => { loadAccounts(); loadProjects(); }, 400);
+    };
+
     const ch = supabase
       .channel('izin-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, segarkan)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permission_teams' }, segarkan)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, segarkanDaftar)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, segarkanDaftar)
       .subscribe();
 
     return () => {
       if (timer) clearTimeout(timer);
+      if (timerDaftar) clearTimeout(timerDaftar);
       supabase.removeChannel(ch);
     };
-  }, [profile, loadMatriks]);
+  }, [profile, loadMatriks, loadAccounts, loadProjects]);
 
   /** Kabar wewenang hilang sendiri setelah dibaca sebentar. */
   useEffect(() => {
