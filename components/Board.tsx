@@ -13,9 +13,9 @@ interface Props {
   accounts: Account[];
   projects: Project[];
   projectFilter: string; // 'all' | project id
-  /** Diisi saat orang mengklik kartu di Kalender Tayang — brief-nya langsung dibuka. */
+  /** Diisi saat orang mengklik kartu di Kalender Tayang — barisnya disorot. */
   bukaKontenId?: string | null;
-  /** Dipanggil setelah brief-nya terbuka, supaya tidak terbuka lagi berulang. */
+  /** Dipanggil setelah sorotnya dipasang, supaya tidak menyorot lagi berulang. */
   onBukaSelesai?: () => void;
 }
 
@@ -513,6 +513,8 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
   const [selected, setSelected] = useState<string[]>([]);
   /** Kelompokkan baris per Tanggal Tayang. Bisa dimatikan — kalau nanti ada
    *  pengurutan per kolom, kelompok tanggal jadi tidak berarti. */
+  /** Baris yang sedang disorot setelah dibuka dari Kalender Tayang. */
+  const [sorotId, setSorotId] = useState<string | null>(null);
   const [kelompokTgl, setKelompokTgl] = useState(true);
   /** Tanggal yang sedang dilipat. Kunci 'BELUM' untuk yang belum dijadwalkan. */
   const [tglTertutup, setTglTertutup] = useState<string[]>([]);
@@ -870,11 +872,35 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
     if (!bukaKontenId) return;
     const row = rows.find((r) => r.id === bukaKontenId);
     if (!row) return;               // tunggu load() selesai
+
+    // Penyaring tanggal dikembalikan ke "Semua" — kalau tidak, barisnya
+    // tersaring keluar dan orang mengira kontennya tidak ada.
     setRange('all');
-    openEdit(row);
+    // Kelompok tanggalnya dibuka kalau sedang dilipat.
+    const kunciGrup = row.publish_date || 'BELUM';
+    setTglTertutup((v) => v.filter((k) => k !== kunciGrup));
+    setSorotId(row.id);
     onBukaSelesai?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bukaKontenId, rows]);
+
+  /**
+   * Gulirkan ke baris yang disorot, lalu padamkan sorotnya.
+   *
+   * Ditunda satu putaran render supaya barisnya sudah benar-benar ada di DOM
+   * setelah penyaring tanggal dan lipatan kelompoknya dibereskan di atas.
+   */
+  useEffect(() => {
+    if (!sorotId) return;
+    const t1 = setTimeout(() => {
+      const el = document.getElementById('baris-' + sorotId);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
+    // Sorotnya padam sendiri. Kalau dibiarkan menyala terus, lama-lama
+    // dikira penanda tetap seperti pelanggaran.
+    const t2 = setTimeout(() => setSorotId(null), 6000);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, [sorotId]);
 
   const readOnly = editing ? !canEditRow(profile, editing.status) : false;
 
@@ -1556,6 +1582,31 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
 
   return (
     <>
+      {/* Sorot baris yang dibuka dari Kalender Tayang.
+          Ditaruh di sini, bukan di globals.css, supaya perubahan ini cukup
+          satu berkas — pola yang sama dipakai ChatView.
+          box-shadow inset dipakai, BUKAN background: latar baris sudah dipakai
+          penanda pelanggaran (merah) dan tanpa-link-drive (amber); kalau ditimpa,
+          penanda itu hilang selama sorotnya menyala. */}
+      <style>{`
+        /* Garis atas-bawah saja, TANPA bingkai penuh. Bayangan dipasang per
+           sel; kalau memakai bingkai penuh, tiap kolom dapat garis tegaknya
+           sendiri dan barisnya terlihat seperti kotak-kotak terpisah. */
+        @keyframes baris-sorot-denyut {
+          0%, 100% { box-shadow: inset 0  2px 0 rgba(245, 158, 11, .95),
+                                 inset 0 -2px 0 rgba(245, 158, 11, .95),
+                                 inset 0 0 26px rgba(245, 158, 11, .28); }
+          50%      { box-shadow: inset 0  2px 0 rgba(245, 158, 11, .40),
+                                 inset 0 -2px 0 rgba(245, 158, 11, .40),
+                                 inset 0 0 10px rgba(245, 158, 11, .08); }
+        }
+        tr.baris-sorot > td { animation: baris-sorot-denyut 1.1s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          tr.baris-sorot > td { animation: none;
+            box-shadow: inset 0 2px 0 rgba(245, 158, 11, .95),
+                        inset 0 -2px 0 rgba(245, 158, 11, .95); }
+        }
+      `}</style>
       <div className="topbar">
         <div style={{ display: 'flex', alignItems: 'baseline' }}>
           <h2>Board Pipeline</h2>
@@ -1949,6 +2000,8 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
                   return (
                     <tr
                       key={row.id}
+                      id={'baris-' + row.id}
+                      className={sorotId === row.id ? 'baris-sorot' : undefined}
                       // Semburat sewarna penandanya: merah untuk pelanggaran,
                       // amber untuk yang belum ada link drive.
                       style={

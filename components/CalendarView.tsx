@@ -170,7 +170,7 @@ export default function CalendarView({ accounts, projectFilter, onBukaKonten }: 
                         title={
                           `${stripMd(r.title)} — ${statusDef(r.status).label}` +
                           (pf ? ` · ${pf.label}` : '') +
-                          (onBukaKonten ? '\nKlik untuk membuka brief-nya di Board' : '')
+                          (onBukaKonten ? '\nKlik untuk melompat ke barisnya di Board' : '')
                         }
                       >
                         <div className="cal-item-title">{stripMd(r.title)}</div>
@@ -213,7 +213,7 @@ export default function CalendarView({ accounts, projectFilter, onBukaKonten }: 
               Kartu merah = <b>pelanggaran</b>
             </span>
           </div>
-          <b>Klik kartu</b> untuk membuka brief-nya langsung di Board Pipeline.
+          <b>Klik kartu</b> untuk melompat ke barisnya di Board Pipeline — barisnya akan disorot kuning sebentar.
           Konten muncul di sini otomatis begitu <b>Tanggal tayang</b> diisi di Board.
           Status lengkapnya terbaca saat kursor diarahkan ke kartunya.
         </div>
