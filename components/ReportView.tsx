@@ -23,6 +23,10 @@ const PERIODS: [Period, string][] = [
 
 const TEAM_FILTERS: (Team | 'all')[] = ['all', 'creative', 'distribution', 'ads', 'delta'];
 
+/** Pemisah antar kelompok kolom. Dipakai di <th> dan <td> kolom pertama
+ *  tiap kelompok, supaya garisnya lurus dari kepala sampai baris terakhir. */
+const GARIS = { borderLeft: '2px solid var(--border-strong)' } as const;
+
 interface Stat {
   member: TeamMember;
   total: number;
@@ -222,8 +226,12 @@ export default function ReportView({ projects, projectFilter }: Props) {
                 <tr>
                   <th>Anggota</th>
                   <th>Total</th>
-                  {STATUSES.map((s) => <th key={s.key}>{s.label}</th>)}
-                  <th>Tayang</th>
+                  {STATUSES.map((s, i) => <th key={s.key} style={i === 0 ? GARIS : undefined}>{s.label}</th>)}
+                  {/* Garis pemisah: kolom di kiri adalah RINCIAN per status
+                      (dijumlah = Total), kolom di kanan adalah RINGKASAN —
+                      cara lain memotong angka Total yang sama. Tanpa pemisah,
+                      keduanya terbaca seolah satu deret yang bisa dijumlah. */}
+                  <th style={GARIS}>Tayang</th>
                   <th>Belum tayang</th>
                   <th>Lewat deadline</th>
                 </tr>
@@ -237,12 +245,15 @@ export default function ReportView({ projects, projectFilter }: Props) {
                       <div className="sub" style={{ marginLeft: 40 }}>{s.member.team}</div>
                     </td>
                     <td><b>{s.total}</b></td>
-                    {STATUSES.map((st) => (
-                      <td key={st.key} style={{ color: s.perStatus[st.key] ? statusDef(st.key).color : 'var(--text-3)' }}>
+                    {STATUSES.map((st, i) => (
+                      <td key={st.key} style={{
+                        ...(i === 0 ? GARIS : null),
+                        color: s.perStatus[st.key] ? statusDef(st.key).color : 'var(--text-3)',
+                      }}>
                         {s.perStatus[st.key] || '—'}
                       </td>
                     ))}
-                    <td style={{ color: s.published ? 'var(--green)' : 'var(--text-3)' }}>{s.published || '—'}</td>
+                    <td style={{ ...GARIS, color: s.published ? 'var(--green)' : 'var(--text-3)' }}>{s.published || '—'}</td>
                     <td style={{ color: s.belumTayang ? 'var(--st-drafting)' : 'var(--text-3)' }}>{s.belumTayang || '—'}</td>
                     <td style={{ color: s.late ? 'var(--red)' : 'var(--text-3)' }}>{s.late || '—'}</td>
                   </tr>
