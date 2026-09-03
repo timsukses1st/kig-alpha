@@ -11,15 +11,33 @@
   --accent: #2f9bff;
   --accent-strong: #1e8fff;
   --accent-soft: rgba(47, 155, 255, 0.13);
-  --st-ide: #3ea6ff;
-  --st-drafting: #f5a623;
-  --st-review: #ff4d9d;
-  --st-siap: #38bdf8;
-  --st-terjadwal: #fbbf24;
-  --st-published: #fb7185;
-  --st-diiklankan: #ec4899;
-  /* Merah tegas untuk konten yang kena pelanggaran platform. */
-  --st-pelanggaran: #ef4444;
+  /* ---------------------------------------------------------------
+     Warna status — disusun ulang 3 September 2026.
+     Warna lama punya tiga rumpun yang saling mirip: biru (ide & siap),
+     kuning (drafting & terjadwal), dan merah muda (review, published,
+     diiklankan, pelanggaran). Yang paling parah review vs diiklankan —
+     CIEDE2000 cuma 4.0, praktis warna yang sama — dan siap_upload
+     PERSIS sama dengan warna TikTok (ΔE 0.0).
+
+     Palet ini dicari lewat pengukuran, bukan perasaan. Syaratnya:
+       - jarak antar status minimal ΔE 20 (tercapai 27.4 gelap / 21.3 terang)
+       - kontras minimal 4.5 terhadap latar panel, jadi label berwarna
+         tetap terbaca
+       - sejauh mungkin menjauh dari warna platform di PLATFORMS
+     Urutannya mengikuti alur kerja: abu (belum digarap) → oranye → kuning
+     → cyan → biru → hijau (selesai) → magenta (iklan) → merah (pelanggaran).
+
+     Kalau menambah status baru, ukur dulu jaraknya ke tujuh yang lain —
+     jangan asal ambil warna yang kelihatan enak.
+     --------------------------------------------------------------- */
+  --st-ide: #a3a3a3;
+  --st-drafting: #f28f2c;
+  --st-review: #f2de2c;
+  --st-siap: #79f6f6;
+  --st-terjadwal: #5f7ae7;
+  --st-published: #4bd259;
+  --st-diiklankan: #f452f4;
+  --st-pelanggaran: #f22c40;
   --green: #34d399;
   --amber: #fbbf24;
   --red: #f87171;
@@ -40,14 +58,14 @@
   --accent: #1677e6;
   --accent-strong: #0f6ad6;
   --accent-soft: rgba(22, 119, 230, 0.1);
-  --st-ide: #1e88e5;
-  --st-drafting: #d98200;
-  --st-review: #e0338a;
-  --st-siap: #0e9fd8;
-  --st-terjadwal: #d99a00;
-  --st-published: #e05563;
-  --st-diiklankan: #d6247f;
-  --st-pelanggaran: #d92020;
+  --st-ide: #565a66;
+  --st-drafting: #b85c0a;
+  --st-review: #7d6a00;
+  --st-siap: #0d7f86;
+  --st-terjadwal: #1668d8;
+  --st-published: #1f8038;
+  --st-diiklankan: #9b17c9;
+  --st-pelanggaran: #cf1d3d;
   --green: #0f9d6e;
   --amber: #b97b00;
   --red: #d64545;
