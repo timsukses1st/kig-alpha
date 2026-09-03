@@ -20,18 +20,24 @@
      PERSIS sama dengan warna TikTok (ΔE 0.0).
 
      Palet ini dicari lewat pengukuran, bukan perasaan. Syaratnya:
-       - jarak antar status minimal ΔE 20 (tercapai 27.4 gelap / 21.3 terang)
+       - jarak antar status minimal ΔE 20 (tercapai 27.5 gelap / 21.3 terang)
        - kontras minimal 4.5 terhadap latar panel, jadi label berwarna
          tetap terbaca
        - sejauh mungkin menjauh dari warna platform di PLATFORMS
-     Urutannya mengikuti alur kerja: abu (belum digarap) → oranye → kuning
+     Drafting sengaja ABU-ABU (permintaan Mas Dik, 3 Sep): tahap paling awal,
+     belum ada apa-apa yang jadi — warna netral pas untuk itu. Nilai abu dan
+     oranye ditukar dengan --st-ide, yang ternyata BUKAN status konten sama
+     sekali; dia cuma warna titik tab divisi Creative. Jadi penukaran ini tidak
+     menyentuh berkas lain, dan titik tab Creative jadi oranye.
+
+     Urutannya mengikuti alur kerja: abu (belum digarap) → kuning
      → cyan → biru → hijau (selesai) → magenta (iklan) → merah (pelanggaran).
 
      Kalau menambah status baru, ukur dulu jaraknya ke tujuh yang lain —
      jangan asal ambil warna yang kelihatan enak.
      --------------------------------------------------------------- */
-  --st-ide: #a3a3a3;
-  --st-drafting: #f28f2c;
+  --st-ide: #f28f2c;
+  --st-drafting: #a3a3a3;
   --st-review: #f2de2c;
   --st-siap: #79f6f6;
   --st-terjadwal: #5f7ae7;
@@ -58,8 +64,8 @@
   --accent: #1677e6;
   --accent-strong: #0f6ad6;
   --accent-soft: rgba(22, 119, 230, 0.1);
-  --st-ide: #565a66;
-  --st-drafting: #b85c0a;
+  --st-ide: #b85c0a;
+  --st-drafting: #565a66;
   --st-review: #7d6a00;
   --st-siap: #0d7f86;
   --st-terjadwal: #1668d8;
