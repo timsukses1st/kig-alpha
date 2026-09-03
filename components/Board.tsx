@@ -15,6 +15,18 @@ interface Props {
   projectFilter: string; // 'all' | project id
   /** Diisi saat orang mengklik kartu di Kalender Tayang — barisnya disorot. */
   bukaKontenId?: string | null;
+  /**
+   * Kiriman dari Laporan Kerja: daftar konten yang mau dilihat, beserta
+   * keterangan asalnya untuk ditampilkan di chip.
+   *
+   * Sengaja daftar ID, BUKAN aturan penyaring. Laporan Kerja sudah menghitung
+   * himpunannya sendiri (per orang, per status, sudah/belum tayang, lewat
+   * deadline) — sebagian di antaranya tidak punya padanan di penyaring Board
+   * sama sekali. Menerjemahkannya jadi aturan akan menghasilkan angka yang
+   * berbeda dengan yang barusan diklik, dan itu justru bikin ragu.
+   */
+  sorotan?: { ids: string[]; label: string } | null;
+  onTutupSorotan?: () => void;
   /** Dipanggil setelah sorotnya dipasang, supaya tidak menyorot lagi berulang. */
   onBukaSelesai?: () => void;
 }
@@ -472,7 +484,7 @@ function PicCell({ row, members, disabled, onSave }: {
   );
 }
 
-export default function Board({ profile, accounts, projects, projectFilter, bukaKontenId, onBukaSelesai }: Props) {
+export default function Board({ profile, accounts, projects, projectFilter, bukaKontenId, onBukaSelesai, sorotan, onTutupSorotan }: Props) {
   const [rows, setRows] = useState<ContentRow[]>([]);
   const [requests, setRequests] = useState<ContentRequest[]>([]);
   const [members, setMembers] = useState<TeamMember[]>([]);
@@ -625,6 +637,31 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
     return d >= dayStr(s7) && d <= today;
   }, [range, pickDate]);
 
+  /** Peta id konten yang sedang disorot. Objek biasa, bukan Set — repo ini
+   *  ber-target ES5 dan Set sudah beberapa kali bikin build gagal. */
+  const petaSorotan = useMemo(() => {
+    if (!sorotan) return null;
+    const m: Record<string, true> = {};
+    sorotan.ids.forEach((id) => { m[id] = true; });
+    return m;
+  }, [sorotan]);
+
+  /**
+   * Begitu ada kiriman dari Laporan, penyaring lain dikembalikan ke posisi
+   * netral. Kalau tidak, orang mengklik angka 4 lalu melihat 0 baris karena
+   * kebetulan tab Creative sedang aktif — dan mengira Alpha-nya rusak.
+   */
+  useEffect(() => {
+    if (!sorotan) return;
+    setDivision('semua');
+    setRange('all');
+    setOnlyTodo(false);
+    setOnlyNoPic(false);
+    setSearch('');
+    setPickDate('');
+    setTglTertutup([]);
+  }, [sorotan]);
+
   const activeDiv = DIVISIONS.find((d) => d.key === division)!;
 
   const accHandle = useCallback(
@@ -684,8 +721,16 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
   // ikut menampilkan angka yang sama.
   const baseRows = useMemo(() => {
     return rows.filter((r) => {
-      if (projectFilter !== 'all' && r.project_id !== projectFilter) return false;
-      if (!inRange(r)) return false;
+      // Saat ada kiriman dari Laporan, HANYA daftar itu yang menentukan —
+      // penyaring project dan tanggal dilewati. Himpunannya sudah disaring
+      // di Laporan (periode + project), jadi menyaringnya dua kali malah
+      // menghilangkan baris yang barusan ikut dihitung.
+      if (petaSorotan) {
+        if (!petaSorotan[r.id]) return false;
+      } else {
+        if (projectFilter !== 'all' && r.project_id !== projectFilter) return false;
+        if (!inRange(r)) return false;
+      }
       // "Perlu ditindak" = aset belum ada, atau sudah tayang tapi link post kosong
       // Pelanggaran selalu masuk 'Perlu ditindak' — itu justru yang paling
       // mendesak dibanding link drive yang belum diisi.
@@ -705,7 +750,7 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
       }
       return true;
     });
-  }, [rows, projectFilter, inRange, onlyTodo, onlyNoPic, query, accHandle]);
+  }, [rows, projectFilter, inRange, onlyTodo, onlyNoPic, query, accHandle, petaSorotan]);
 
   // Tab divisi dulu dikerjakan oleh kolom kanban — sekarang jadi filter baris.
   const filtered = useMemo(
@@ -1628,6 +1673,29 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
           <span className="top-note">{filtered.length} konten</span>
         </div>
         <div className="top-actions">
+          {sorotan && (
+            <span
+              title="Sedang menampilkan kiriman dari Laporan Kerja"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                border: '1px solid var(--accent)', background: 'var(--accent-soft)',
+                color: 'var(--accent)', borderRadius: 999, padding: '5px 6px 5px 12px',
+                fontSize: 12, fontWeight: 600, maxWidth: 360,
+              }}
+            >
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {sorotan.label}
+              </span>
+              <button
+                className="btn ghost"
+                onClick={() => onTutupSorotan?.()}
+                title="Kembali ke tampilan biasa"
+                style={{ padding: '0 7px', lineHeight: '20px', color: 'inherit' }}
+              >
+                ✕
+              </button>
+            </span>
+          )}
           <button className="btn" onClick={() => setColMenu(!colMenu)}>
             ☰ Kolom{hiddenCols.length ? ` (${hiddenCols.length})` : ''}
           </button>

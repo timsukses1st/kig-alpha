@@ -10,6 +10,8 @@ import {
 interface Props {
   projects: Project[];
   projectFilter: string;
+  /** Klik angka → lihat konten di baliknya di Board Pipeline. */
+  onLihatDiBoard?: (ids: string[], label: string) => void;
 }
 
 type Period = 'month' | 'last30' | 'quarter' | 'all';
@@ -34,6 +36,10 @@ interface Stat {
   published: number;
   belumTayang: number;
   late: number;
+  /** Baris di balik tiap angka — dipakai saat angkanya diklik. Disimpan di
+   *  sini supaya Board menerima himpunan yang PERSIS sama dengan yang
+   *  dihitung, bukan hasil penyaringan ulang yang bisa berbeda. */
+  rows: ContentRow[];
 }
 
 /**
@@ -58,7 +64,7 @@ const sudahTayang = (r: ContentRow) => {
   return !!r.post_url && r.post_url.trim() !== '';
 };
 
-export default function ReportView({ projects, projectFilter }: Props) {
+export default function ReportView({ projects, projectFilter, onLihatDiBoard }: Props) {
   const [rows, setRows] = useState<ContentRow[]>([]);
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,7 +128,7 @@ export default function ReportView({ projects, projectFilter }: Props) {
         }
         return {
           member: m, total: mine.length, perStatus,
-          published, belumTayang: mine.length - published, late,
+          published, belumTayang: mine.length - published, late, rows: mine,
         };
       })
       .sort((a, b) => b.total - a.total || a.member.name.localeCompare(b.member.name));
@@ -139,6 +145,31 @@ export default function ReportView({ projects, projectFilter }: Props) {
       belumTayang: scoped.length - published,
     };
   }, [scoped]);
+
+  /** Angka jadi tombol hanya kalau ada isinya — angka 0 tidak perlu dibuka. */
+  const Angka = ({ nilai, warna, ids, label }: {
+    nilai: number; warna?: string; ids: ContentRow[]; label: string;
+  }) => {
+    if (!nilai || !onLihatDiBoard) {
+      return <span style={{ color: warna || 'var(--text-3)' }}>{nilai || '—'}</span>;
+    }
+    return (
+      <button
+        type="button"
+        onClick={() => onLihatDiBoard(ids.map((r) => r.id), label)}
+        title={`Lihat ${nilai} konten ini di Board Pipeline`}
+        style={{
+          background: 'none', border: 'none', padding: 0, font: 'inherit',
+          color: warna || 'var(--text)', cursor: 'pointer', textDecoration: 'underline',
+          textDecorationStyle: 'dotted', textUnderlineOffset: 3,
+        }}
+      >
+        {nilai}
+      </button>
+    );
+  };
+
+  const periodeLabel = PERIODS.find(([k]) => k === period)?.[1] || '';
 
   const accLabel =
     projectFilter === 'all'
@@ -200,11 +231,16 @@ export default function ReportView({ projects, projectFilter }: Props) {
 
       <div className="content-area">
         <div className="kpi-row">
-          <div className="kpi"><div className="kpi-label">Total konten</div><div className="kpi-value">{totals.konten}</div></div>
-          <div className="kpi"><div className="kpi-label">Sudah ada PIC</div><div className="kpi-value">{totals.assigned}</div></div>
-          <div className="kpi"><div className="kpi-label">Belum ada PIC</div><div className="kpi-value" style={{ color: totals.belumAssign ? 'var(--amber)' : undefined }}>{totals.belumAssign}</div></div>
-          <div className="kpi"><div className="kpi-label">Sudah tayang</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{totals.published}</div></div>
-          <div className="kpi"><div className="kpi-label">Belum tayang</div><div className="kpi-value" style={{ color: totals.belumTayang ? 'var(--st-drafting)' : undefined }}>{totals.belumTayang}</div></div>
+          <div className="kpi"><div className="kpi-label">Total konten</div>
+            <div className="kpi-value"><Angka nilai={totals.konten} ids={scoped} label={`Semua konten · ${periodeLabel}`} /></div></div>
+          <div className="kpi"><div className="kpi-label">Sudah ada PIC</div>
+            <div className="kpi-value"><Angka nilai={totals.assigned} ids={scoped.filter((r) => picIdsOf(r).length > 0)} label={`Sudah ada PIC · ${periodeLabel}`} /></div></div>
+          <div className="kpi"><div className="kpi-label">Belum ada PIC</div>
+            <div className="kpi-value"><Angka nilai={totals.belumAssign} warna="var(--amber)" ids={scoped.filter((r) => picIdsOf(r).length === 0)} label={`Belum ada PIC · ${periodeLabel}`} /></div></div>
+          <div className="kpi"><div className="kpi-label">Sudah tayang</div>
+            <div className="kpi-value"><Angka nilai={totals.published} warna="var(--green)" ids={scoped.filter(sudahTayang)} label={`Sudah tayang · ${periodeLabel}`} /></div></div>
+          <div className="kpi"><div className="kpi-label">Belum tayang</div>
+            <div className="kpi-value"><Angka nilai={totals.belumTayang} warna="var(--st-drafting)" ids={scoped.filter((r) => !sudahTayang(r))} label={`Belum tayang · ${periodeLabel}`} /></div></div>
         </div>
 
         <div className="team-filter">
@@ -244,18 +280,32 @@ export default function ReportView({ projects, projectFilter }: Props) {
                       <b>{s.member.name}</b>
                       <div className="sub" style={{ marginLeft: 40 }}>{s.member.team}</div>
                     </td>
-                    <td><b>{s.total}</b></td>
+                    <td><b><Angka nilai={s.total} ids={s.rows} label={`${s.member.name} · semua (${periodeLabel})`} /></b></td>
                     {STATUSES.map((st, i) => (
-                      <td key={st.key} style={{
-                        ...(i === 0 ? GARIS : null),
-                        color: s.perStatus[st.key] ? statusDef(st.key).color : 'var(--text-3)',
-                      }}>
-                        {s.perStatus[st.key] || '—'}
+                      <td key={st.key} style={i === 0 ? GARIS : undefined}>
+                        <Angka
+                          nilai={s.perStatus[st.key] || 0}
+                          warna={statusDef(st.key).color}
+                          ids={s.rows.filter((r) => r.status === st.key)}
+                          label={`${s.member.name} · ${st.label} (${periodeLabel})`}
+                        />
                       </td>
                     ))}
-                    <td style={{ ...GARIS, color: s.published ? 'var(--green)' : 'var(--text-3)' }}>{s.published || '—'}</td>
-                    <td style={{ color: s.belumTayang ? 'var(--st-drafting)' : 'var(--text-3)' }}>{s.belumTayang || '—'}</td>
-                    <td style={{ color: s.late ? 'var(--red)' : 'var(--text-3)' }}>{s.late || '—'}</td>
+                    <td style={GARIS}>
+                      <Angka nilai={s.published} warna="var(--green)"
+                        ids={s.rows.filter(sudahTayang)}
+                        label={`${s.member.name} · sudah tayang (${periodeLabel})`} />
+                    </td>
+                    <td>
+                      <Angka nilai={s.belumTayang} warna="var(--st-drafting)"
+                        ids={s.rows.filter((r) => !sudahTayang(r))}
+                        label={`${s.member.name} · belum tayang (${periodeLabel})`} />
+                    </td>
+                    <td>
+                      <Angka nilai={s.late} warna="var(--red)"
+                        ids={s.rows.filter((r) => r.deadline && r.deadline < new Date().toISOString().slice(0, 10) && !sudahTayang(r))}
+                        label={`${s.member.name} · lewat deadline (${periodeLabel})`} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -268,6 +318,9 @@ export default function ReportView({ projects, projectFilter }: Props) {
           <br />
           <b>Tayang</b> = Published, Diiklankan, dan Pelanggaran yang link post-nya sudah terisi — pelanggaran
           memang sebagian kena setelah konten naik. <b>Belum tayang</b> = Total dikurangi Tayang.
+          <br />
+          <b>Angka bergaris putus-putus bisa diklik</b> — Board Pipeline akan menampilkan konten
+          di balik angka itu saja. Tutup lagi lewat tanda ✕ di kanan atas Board.
         </p>
       </div>
     </>

@@ -243,6 +243,12 @@ export default function App() {
    * kalau tidak, brief yang sama akan terbuka lagi setiap Board dirender ulang.
    */
   const [bukaKontenId, setBukaKontenId] = useState<string | null>(null);
+  /**
+   * Kiriman dari Laporan Kerja ke Board: daftar konten di balik angka yang
+   * diklik. Disimpan di App karena dua layar yang berbeda saling bicara.
+   * Board yang menutupnya lewat tanda ✕ di kanan atas.
+   */
+  const [sorotan, setSorotan] = useState<{ ids: string[]; label: string } | null>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
@@ -449,6 +455,14 @@ export default function App() {
   if (!session) return <Login />;
 
   const isSuper = profile?.role === 'superadmin';
+  /** Kalau orang berpindah layar lewat menu, kiriman dari Laporan dilepas.
+   *  Kalau dibiarkan, dia kembali ke Board nanti dan bingung kenapa isinya
+   *  tinggal beberapa baris — padahal chip-nya sudah tidak dia sadari. */
+  const pindahLayar = (k: View) => {
+    if (k !== 'board') setSorotan(null);
+    setView(k);
+  };
+
   const canSeeLog = boleh(profile, TUGAS.logLihat);
   /**
    * Menu Kelola Akses muncul kalau punya SALAH SATU izin di dalamnya.
@@ -632,7 +646,7 @@ export default function App() {
             key={n.key}
             className={`nav-item ${view === n.key ? 'active' : ''}`}
             title={slim ? n.label : undefined}
-            onClick={() => { setView(n.key); setMobileNav(false); }}
+            onClick={() => { pindahLayar(n.key); setMobileNav(false); }}
           >
             <NavIcon view={n.key} />
             {!slim && n.label}
@@ -672,6 +686,8 @@ export default function App() {
             profile={profile} accounts={accounts} projects={projects} projectFilter={activeProject}
             bukaKontenId={bukaKontenId}
             onBukaSelesai={() => setBukaKontenId(null)}
+            sorotan={sorotan}
+            onTutupSorotan={() => setSorotan(null)}
           />
         )}
         {view === 'kalender' && (
@@ -705,7 +721,18 @@ export default function App() {
         {view === 'lembur' && <OvertimeView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'sebaran' && <SebaranView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'chat' && <ChatView profile={profile} projects={projects} projectFilter={activeProject} />}
-        {view === 'laporan' && <ReportView projects={projects} projectFilter={activeProject} />}
+        {view === 'laporan' && (
+          <ReportView
+            projects={projects}
+            projectFilter={activeProject}
+            onLihatDiBoard={(ids, label) => {
+              if (ids.length === 0) return;
+              setSorotan({ ids, label });
+              setView('board');
+              setMobileNav(false);
+            }}
+          />
+        )}
         {view === 'ekspor' && (
           <ExportView profile={profile} projects={projects} accounts={accounts} projectFilter={activeProject} />
         )}
