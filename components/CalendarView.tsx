@@ -9,7 +9,24 @@ interface Props {
   projectFilter: string; // 'all' | project id
   /** Klik kartu → buka brief-nya di Board Pipeline. */
   onBukaKonten?: (row: ContentRow) => void;
+  /** Klik "+N lagi" → lihat seluruh konten tanggal itu di Board Pipeline. */
+  onLihatTanggal?: (rows: ContentRow[], label: string) => void;
 }
+
+/**
+ * Berapa kartu yang ditampilkan sebelum sisanya diringkas jadi "+N lagi".
+ *
+ * Sel tanggal tingginya DIPATOK 188px di globals.css — dulu tidak, dan hari
+ * yang berisi belasan konten bikin bentuk kalendernya rompal. Dalam tinggi
+ * itu muat sekitar tiga kartu, tapi kalau diisi tiga penuh tombol "+N lagi"
+ * ikut terdorong ke bawah lipatan dan tidak terlihat — persis masalah yang
+ * mau dipecahkan. Dua kartu memberi ruang pasti untuk tombolnya, di layar
+ * lebar maupun di HP (tingginya 132px di sana).
+ *
+ * Angka ini tidak banyak berpengaruh pada isi: per 3 September, rata-rata
+ * satu tanggal berisi 18,5 konten.
+ */
+const MAKS_TAMPIL = 2;
 
 const DAY_NAMES = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
 const MONTH_NAMES = [
@@ -35,10 +52,17 @@ const KODE_PLATFORM: Record<string, string> = {
  *
  * Platform kosong dapat abu-abu redup — sengaja tidak ditebak.
  */
+/** '2026-08-20' -> '20 Agu 2026'. Dipakai untuk keterangan chip di Board. */
+const judulTanggalPolos = (kunci: string) => {
+  const [y, m, d] = kunci.split('-').map(Number);
+  const BULAN = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+  return `${d} ${BULAN[m - 1]} ${y}`;
+};
+
 const warnaGaris = (platform: string | null) =>
   platformDef(platform)?.color || 'var(--border-strong)';
 
-export default function CalendarView({ accounts, projectFilter, onBukaKonten }: Props) {
+export default function CalendarView({ accounts, projectFilter, onBukaKonten, onLihatTanggal }: Props) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth()); // 0-11
@@ -140,10 +164,14 @@ export default function CalendarView({ accounts, projectFilter, onBukaKonten }: 
               const key = dateKey(d);
               const items = byDate[key] || [];
               const isToday = key === todayKey;
+              // Sel tingginya tetap, jadi sisanya diringkas — bukan disembunyikan
+              // di balik gulir yang batang-gulirnya transparan.
+              const tampil = items.length > MAKS_TAMPIL ? items.slice(0, MAKS_TAMPIL) : items;
+              const sisa = items.length - tampil.length;
               return (
                 <div className={`cal-cell ${isToday ? 'today' : ''}`} key={key}>
                   <div className="cal-daynum">{d}</div>
-                  {items.map((r) => {
+                  {tampil.map((r) => {
                     // Pelanggaran diberi blok merah penuh, bukan cuma garis —
                     // ini keadaan yang harus ketahuan tanpa perlu mengarahkan
                     // kursor ke kartunya.
@@ -189,6 +217,22 @@ export default function CalendarView({ accounts, projectFilter, onBukaKonten }: 
                       </div>
                     );
                   })}
+                  {sisa > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onLihatTanggal?.(items, `Tayang ${judulTanggalPolos(key)} · ${items.length} konten`)}
+                      disabled={!onLihatTanggal}
+                      title={`Lihat seluruh ${items.length} konten tanggal ini di Board Pipeline`}
+                      style={{
+                        width: '100%', background: 'none', border: 'none',
+                        padding: '3px 4px', font: 'inherit', fontSize: 10.5, fontWeight: 700,
+                        color: 'var(--text-2)', cursor: onLihatTanggal ? 'pointer' : 'default',
+                        textAlign: 'left',
+                      }}
+                    >
+                      +{sisa} lagi
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -213,7 +257,7 @@ export default function CalendarView({ accounts, projectFilter, onBukaKonten }: 
               Kartu merah = <b>pelanggaran</b>
             </span>
           </div>
-          <b>Klik kartu</b> untuk melompat ke barisnya di Board Pipeline — barisnya akan disorot kuning sebentar.
+          <b>Klik kartu</b> untuk melompat ke barisnya di Board Pipeline — barisnya akan disorot kuning sebentar. Tiap sel menampilkan 2 konten teratas; <b>+N lagi</b> membuka seluruh konten tanggal itu di Board.
           Konten muncul di sini otomatis begitu <b>Tanggal tayang</b> diisi di Board.
           Status lengkapnya terbaca saat kursor diarahkan ke kartunya.
         </div>

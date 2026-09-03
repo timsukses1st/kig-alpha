@@ -705,6 +705,12 @@ export default function App() {
               setView('board');
               setMobileNav(false);
             }}
+            onLihatTanggal={(rows, label) => {
+              if (rows.length === 0) return;
+              setSorotan({ ids: rows.map((r) => r.id), label });
+              setView('board');
+              setMobileNav(false);
+            }}
           />
         )}
         {view === 'tracker' && <TrackerView activeProjectName={activeProj ? activeProj.name : null} profile={profile} />}
