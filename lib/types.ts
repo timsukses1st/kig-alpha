@@ -386,6 +386,8 @@ export interface DistributionLog {
 
 export interface ActivityLog {
   id: number;
+  /** Pelaku. Null untuk kejadian yang dipicu sistem, bukan orang. */
+  actor_id: string | null;
   actor_email: string | null;
   actor_name: string | null;
   action: string;
