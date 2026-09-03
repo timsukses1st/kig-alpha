@@ -28,8 +28,31 @@ interface Stat {
   total: number;
   perStatus: Record<string, number>;
   published: number;
+  belumTayang: number;
   late: number;
 }
+
+/**
+ * Sudah tayang atau belum.
+ *
+ * Published & Diiklankan jelas sudah. Yang perlu aturan sendiri adalah
+ * PELANGGARAN — statusnya bukan tahap, tapi keadaan: sebagian kena setelah
+ * konten naik, sebagian kena sebelum sempat naik.
+ *
+ * Terverifikasi 3 September 2026: dari 31 konten berstatus pelanggaran,
+ * 23 punya link post (memang sudah sempat tayang) dan 8 tidak. Jadi
+ * memasukkan semuanya ke "belum tayang" salah, memasukkan semuanya ke
+ * "sudah tayang" juga salah. Yang dipakai: link post-nya terisi atau tidak.
+ *
+ * Konsekuensi yang perlu diingat: angka ini bisa berubah sendiri kalau ada
+ * yang mengisi link post konten pelanggaran belakangan. Itu memang
+ * disengaja — begitu linknya ada, kontennya memang terbukti pernah tayang.
+ */
+const sudahTayang = (r: ContentRow) => {
+  if (r.status === 'published' || r.status === 'diiklankan') return true;
+  if (r.status !== 'pelanggaran') return false;
+  return !!r.post_url && r.post_url.trim() !== '';
+};
 
 export default function ReportView({ projects, projectFilter }: Props) {
   const [rows, setRows] = useState<ContentRow[]>([]);
@@ -87,26 +110,29 @@ export default function ReportView({ projects, projectFilter }: Props) {
         let late = 0;
         for (const r of mine) {
           perStatus[r.status] = (perStatus[r.status] || 0) + 1;
-          if (r.status === 'published' || r.status === 'diiklankan') published++;
-          if (
-            r.deadline &&
-            r.deadline < todayStr &&
-            !['published', 'diiklankan'].includes(r.status)
-          ) late++;
+          if (sudahTayang(r)) published++;
+          // Konten yang sudah tayang tidak lagi dihitung lewat deadline —
+          // termasuk pelanggaran yang terbukti sempat naik. Kalau tidak,
+          // orangnya dihukum dua kali untuk konten yang sebenarnya selesai.
+          if (r.deadline && r.deadline < todayStr && !sudahTayang(r)) late++;
         }
-        return { member: m, total: mine.length, perStatus, published, late };
+        return {
+          member: m, total: mine.length, perStatus,
+          published, belumTayang: mine.length - published, late,
+        };
       })
       .sort((a, b) => b.total - a.total || a.member.name.localeCompare(b.member.name));
   }, [members, scoped, teamFilter, search]);
 
   const totals = useMemo(() => {
     const assigned = scoped.filter((r) => picIdsOf(r).length > 0).length;
-    const published = scoped.filter((r) => ['published', 'diiklankan'].includes(r.status)).length;
+    const published = scoped.filter(sudahTayang).length;
     return {
       konten: scoped.length,
       assigned,
       belumAssign: scoped.length - assigned,
       published,
+      belumTayang: scoped.length - published,
     };
   }, [scoped]);
 
@@ -116,7 +142,7 @@ export default function ReportView({ projects, projectFilter }: Props) {
       : projects.find((p) => p.id === projectFilter)?.name || 'project';
 
   const exportCsv = () => {
-    const head = ['Nama', 'Tim', 'Total', ...STATUSES.map((s) => s.label), 'Tayang', 'Lewat deadline'];
+    const head = ['Nama', 'Tim', 'Total', ...STATUSES.map((s) => s.label), 'Tayang', 'Belum tayang', 'Lewat deadline'];
     const lines = stats.map((s) =>
       [
         s.member.name,
@@ -124,6 +150,7 @@ export default function ReportView({ projects, projectFilter }: Props) {
         s.total,
         ...STATUSES.map((st) => s.perStatus[st.key] || 0),
         s.published,
+        s.belumTayang,
         s.late,
       ].join(',')
     );
@@ -173,6 +200,7 @@ export default function ReportView({ projects, projectFilter }: Props) {
           <div className="kpi"><div className="kpi-label">Sudah ada PIC</div><div className="kpi-value">{totals.assigned}</div></div>
           <div className="kpi"><div className="kpi-label">Belum ada PIC</div><div className="kpi-value" style={{ color: totals.belumAssign ? 'var(--amber)' : undefined }}>{totals.belumAssign}</div></div>
           <div className="kpi"><div className="kpi-label">Sudah tayang</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{totals.published}</div></div>
+          <div className="kpi"><div className="kpi-label">Belum tayang</div><div className="kpi-value" style={{ color: totals.belumTayang ? 'var(--st-drafting)' : undefined }}>{totals.belumTayang}</div></div>
         </div>
 
         <div className="team-filter">
@@ -196,6 +224,7 @@ export default function ReportView({ projects, projectFilter }: Props) {
                   <th>Total</th>
                   {STATUSES.map((s) => <th key={s.key}>{s.label}</th>)}
                   <th>Tayang</th>
+                  <th>Belum tayang</th>
                   <th>Lewat deadline</th>
                 </tr>
               </thead>
@@ -214,6 +243,7 @@ export default function ReportView({ projects, projectFilter }: Props) {
                       </td>
                     ))}
                     <td style={{ color: s.published ? 'var(--green)' : 'var(--text-3)' }}>{s.published || '—'}</td>
+                    <td style={{ color: s.belumTayang ? 'var(--st-drafting)' : 'var(--text-3)' }}>{s.belumTayang || '—'}</td>
                     <td style={{ color: s.late ? 'var(--red)' : 'var(--text-3)' }}>{s.late || '—'}</td>
                   </tr>
                 ))}
@@ -224,6 +254,9 @@ export default function ReportView({ projects, projectFilter }: Props) {
         <p className="cal-legend">
           Satu konten bisa dihitung untuk beberapa orang jika PIC Creative, Distribution, dan Ads-nya berbeda —
           angka per orang menggambarkan keterlibatan, bukan pembagian jatah.
+          <br />
+          <b>Tayang</b> = Published, Diiklankan, dan Pelanggaran yang link post-nya sudah terisi — pelanggaran
+          memang sebagian kena setelah konten naik. <b>Belum tayang</b> = Total dikurangi Tayang.
         </p>
       </div>
     </>
