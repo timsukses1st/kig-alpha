@@ -494,6 +494,7 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
   // ---- tampilan tabel ----
   const [search, setSearch] = useState('');
   const [onlyTodo, setOnlyTodo] = useState(false);
+  const [onlyNoPic, setOnlyNoPic] = useState(false);
   const [hiddenCols, setHiddenCols] = useState<ColKey[]>([]);
   const [colMenu, setColMenu] = useState(false);
   const [searchFocus, setSearchFocus] = useState(false);
@@ -666,6 +667,18 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
     return { pf, st, ct, free: rest.trim().split(/\s+/).filter(Boolean) };
   }, [search, categories]);
 
+  /**
+   * Belum ada PIC sama sekali — keempat slotnya kosong.
+   *
+   * Sengaja "keempatnya", bukan "PIC untuk tahap sekarang". Terverifikasi
+   * 3 September 2026: `pic_ads` kosong di SELURUH 333 konten, jadi aturan
+   * per-tahap akan menandai hampir semua baris dan penyaringnya jadi
+   * tidak berguna. Dengan aturan ini yang tersaring 35 baris — konten yang
+   * memang belum dibagi ke siapa pun.
+   */
+  const tanpaPic = (r: ContentRow) =>
+    !r.pic_copywriter && !r.pic_creative && !r.pic_distribution && !r.pic_ads;
+
   // Basis SEBELUM filter divisi — dipakai untuk menghitung angka di tiap tab.
   // Kalau dihitung dari hasil akhir, membuka tab Creative bikin semua tab lain
   // ikut menampilkan angka yang sama.
@@ -679,6 +692,7 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
       if (onlyTodo && !(r.status === 'pelanggaran' || !r.asset_url || ((r.status === 'published' || r.status === 'diiklankan') && !r.post_url))) {
         return false;
       }
+      if (onlyNoPic && !tanpaPic(r)) return false;
       if (query) {
         if (query.pf.length && !query.pf.includes(r.platform || '')) return false;
         if (query.st.length && !query.st.includes(r.status)) return false;
@@ -691,7 +705,7 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
       }
       return true;
     });
-  }, [rows, projectFilter, inRange, onlyTodo, query, accHandle]);
+  }, [rows, projectFilter, inRange, onlyTodo, onlyNoPic, query, accHandle]);
 
   // Tab divisi dulu dikerjakan oleh kolom kanban — sekarang jadi filter baris.
   const filtered = useMemo(
@@ -1170,10 +1184,11 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
     !r.asset_url || ((r.status === 'published' || r.status === 'diiklankan') && !r.post_url);
 
   const todoCount = useMemo(() => filtered.filter(needsAction).length, [filtered]);
+  const noPicCount = useMemo(() => filtered.filter(tanpaPic).length, [filtered]);
 
   // Pilihan dibersihkan tiap kali daftar berubah, supaya tidak ada aksi
   // massal yang mengenai baris di luar layar.
-  useEffect(() => { setSelected([]); }, [projectFilter, division, search, range, pickDate, onlyTodo]);
+  useEffect(() => { setSelected([]); }, [projectFilter, division, search, range, pickDate, onlyTodo, onlyNoPic]);
 
   const toggleSel = (id: string) =>
     setSelected((v) => (v.includes(id) ? v.filter((x) => x !== id) : [...v, id]));
@@ -1752,6 +1767,22 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
           }}
         >
           ⚑ Perlu ditindak{todoCount > 0 ? ` (${todoCount})` : ''}
+        </button>
+
+        <button
+          type="button"
+          className="btn"
+          onClick={() => setOnlyNoPic(!onlyNoPic)}
+          title="Tampilkan hanya brief yang belum dibagi ke siapa pun — keempat slot PIC masih kosong"
+          style={{
+            whiteSpace: 'nowrap',
+            borderColor: onlyNoPic ? 'var(--st-siap)' : undefined,
+            color: onlyNoPic ? 'var(--st-siap)' : undefined,
+            background: onlyNoPic ? 'rgba(121,246,246,.10)' : undefined,
+            fontWeight: onlyNoPic ? 600 : undefined,
+          }}
+        >
+          ◍ Tanpa PIC{noPicCount > 0 ? ` (${noPicCount})` : ''}
         </button>
 
         {/* Saklar, bukan aturan tetap: kalau nanti ada pengurutan per kolom,
