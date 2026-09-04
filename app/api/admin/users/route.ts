@@ -12,15 +12,27 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { ROLES, TEAM_VALUES, VERTICAL_VALUES } from '@/lib/types';
 
-// ⚠️ Daftar ini WAJIB sama dengan enum app_team di database dan tipe Team di
-// lib/types.ts. Kalau ada yang ketinggalan, nilainya dulu diam-diam diubah jadi
-// null tanpa pesan apa pun — user tampak berhasil dibuat padahal tim/vertical-nya
-// kosong. Sekarang nilai tak dikenal DITOLAK, bukan dibuang diam-diam.
-const VALID_ROLES = ['superadmin', 'manager', 'tim'];
-const VALID_TEAMS = ['delta', 'creative', 'distribution', 'ads', 'pm', 'finance', 'ga', 'ho'];
+// ----------------------------------------------------------------------------
+// Daftar pilihan diambil LANGSUNG dari lib/types.ts, tidak disalin ke sini.
+//
+// Nilai yang diisi tapi tidak dikenal tetap DITOLAK, bukan diam-diam dijadikan
+// null — dulu user tampak berhasil dibuat padahal tim/vertical-nya kosong.
+//
+// Tapi daftarnya dulu disalin ke file ini. Waktu 13 tim baru ditambahkan
+// (19 Agustus), salinan itu tidak ikut diperbarui, jadi membuat user bertim HRD
+// ditolak dengan pesan 'Team "hrd" tidak dikenal' — padahal tim itu sah di
+// database maupun di dropdown-nya sendiri.
+//
+// Selama daftarnya disalin, cepat atau lambat pasti berbeda lagi. Sekarang
+// satu-satunya tempat menambah tim adalah TEAM_LABEL di lib/types.ts
+// (plus enum `app_team` di database) — server ikut sendiri.
+// ----------------------------------------------------------------------------
+const VALID_ROLES: string[] = ROLES;
+const VALID_TEAMS: string[] = TEAM_VALUES;
 // 'ALL' = lintas unit. Dipakai oleh can_see_all() di database.
-const VALID_VERTICALS = ['KC', 'GME', 'KIG', 'ALL'];
+const VALID_VERTICALS: string[] = VERTICAL_VALUES;
 
 /**
  * Kosong / tidak diisi → null (sah, artinya "belum diatur").
@@ -115,6 +127,41 @@ export async function POST(req: Request) {
       const { error: dErr } = await admin.auth.admin.deleteUser(user_id);
       if (dErr) return NextResponse.json({ error: dErr.message }, { status: 400 });
       return NextResponse.json({ success: true });
+    }
+
+    // ---- GANTI EMAIL ----
+    // Sebelum ini satu-satunya cara mengganti email adalah membuat user baru,
+    // yang menyisakan akun lama sebagai kembaran: dua baris di Kelola Akses,
+    // dua-duanya bisa login, dan PIC/log lama tetap menempel di yang lama.
+    //
+    // email_confirm: true dipakai supaya alamat barunya langsung sah — kalau
+    // tidak, Supabase mengirim tautan konfirmasi dan orangnya terkunci di luar
+    // sampai tautan itu diklik.
+    if (action === 'update_email') {
+      const user_id = body.user_id;
+      const email = (body.email || '').trim().toLowerCase();
+      if (!user_id || !email) return NextResponse.json({ error: 'user_id & email wajib.' }, { status: 400 });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return NextResponse.json({ error: 'Format email tidak sah.' }, { status: 400 });
+      }
+
+      const { error: eErr } = await admin.auth.admin.updateUserById(user_id, {
+        email, email_confirm: true,
+      });
+      if (eErr) return NextResponse.json({ error: eErr.message }, { status: 400 });
+
+      // profiles.email cuma salinan untuk ditampilkan — kalau tidak ikut
+      // diperbarui, tabel Kelola Akses masih memperlihatkan alamat lama
+      // padahal loginnya sudah pindah.
+      const { error: pErr } = await admin.from('profiles').update({ email }).eq('id', user_id);
+      if (pErr) {
+        return NextResponse.json(
+          { error: 'Email login sudah diganti, tapi gagal memperbarui tabel profil: ' + pErr.message },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ success: true, email });
     }
 
     // ---- RESET PASSWORD ----

@@ -1,4 +1,13 @@
 export type Role = 'superadmin' | 'manager' | 'tim';
+
+/**
+ * Daftar role sebagai NILAI, bukan cuma tipe.
+ *
+ * Tipe TypeScript hilang waktu dibuild — route API di server tidak bisa
+ * memakainya untuk memeriksa isian, jadi dulu ia menyalin daftarnya sendiri.
+ * Salinan itulah yang ketinggalan zaman. Satu daftar saja, dipakai bersama.
+ */
+export const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
 /**
  * Tim = jabatan pada bagan organisasi, bukan sekadar fungsi kerja.
  * Nilai-nilai ini harus SAMA PERSIS dengan enum `app_team` di database.
@@ -37,6 +46,13 @@ export const TEAM_LABEL: Record<Team, string> = {
   ads: 'Ads',
   vmt: 'VMT',
 };
+
+/**
+ * Semua nilai team yang sah, diturunkan dari TEAM_LABEL supaya tidak mungkin
+ * beda. Menambah tim cukup di TEAM_LABEL (dan enum `app_team` di database) —
+ * daftar ini ikut sendiri, termasuk yang dipakai server.
+ */
+export const TEAM_VALUES: Team[] = Object.keys(TEAM_LABEL) as Team[];
 
 /** Pengelompokan untuk dropdown supaya 21 pilihan tidak jadi daftar panjang. */
 export const TEAM_GROUPS: { label: string; teams: Team[] }[] = [
@@ -98,6 +114,13 @@ export const VERTICALS: { key: Vertical; label: string }[] = [
   { key: 'GME', label: 'GME — Gala Mega Enigma' },
   { key: 'KIG', label: 'KIG — lintas grup' },
 ];
+
+/**
+ * Nilai vertical yang sah untuk kolom `profiles.vertical`.
+ * 'ALL' tidak ada di VERTICALS karena bukan unit bisnis — itu penanda
+ * "lintas unit" yang dibaca can_see_all() di database, tapi tetap harus sah.
+ */
+export const VERTICAL_VALUES: string[] = ['KC', 'GME', 'KIG', 'ALL'];
 
 export interface Project {
   id: string;

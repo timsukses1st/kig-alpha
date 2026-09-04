@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { boleh, initials, KOLOM_URL_AKUN, PLATFORMS, tagColor, TUGAS, TEAM_GROUPS, TEAM_LABEL, teamsForVertical, VERTICALS, type Account, type ContentCategory, type IzinBaris, type IzinTim, type Profile, type Project, type Role, type Team, type TeamMember, type TugasDef } from '@/lib/types';
+import { boleh, initials, KOLOM_URL_AKUN, PLATFORMS, ROLES, tagColor, TUGAS, TEAM_GROUPS, TEAM_LABEL, teamsForVertical, VERTICALS, type Account, type ContentCategory, type IzinBaris, type IzinTim, type Profile, type Project, type Role, type Team, type TeamMember, type TugasDef } from '@/lib/types';
 import { sigma, type SigmaProject } from '@/lib/sigma';
 
-const ROLES: Role[] = ['superadmin', 'manager', 'tim'];
 /**
  * Pilihan tim, dikelompokkan dan disaring menurut unit bisnisnya.
  *
@@ -489,6 +488,27 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
     flash('Password direset. Sampaikan ke orangnya, minta segera diganti.');
   };
 
+  /**
+   * Ganti email login tanpa membuat akun baru.
+   *
+   * Sebelumnya satu-satunya jalan adalah Tambah User dengan alamat baru —
+   * hasilnya dua akun untuk satu orang, dan yang lama tetap bisa dipakai login.
+   */
+  const doUbahEmail = async () => {
+    if (!emailUser) return;
+    const email = emailValue.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { flash('Format email belum benar.'); return; }
+    if (email === (emailUser.email || '').toLowerCase()) { flash('Alamatnya sama dengan yang sekarang.'); return; }
+    setEmailBusy(true);
+    const d = await callUserApi({ action: 'update_email', user_id: emailUser.id, email });
+    setEmailBusy(false);
+    if (!d) return;
+    setEmailUser(null);
+    setEmailValue('');
+    flash('Email login diganti. Mulai sekarang orangnya masuk pakai alamat yang baru.');
+    load();
+  };
+
   const confirmDeleteUser = async () => {
     if (!delUser) return;
     setDelUserBusy(true);
@@ -523,6 +543,12 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
   // Tiga tombol lain yang dulu bernasib sama.
   const [pwUser, setPwUser] = useState<Profile | null>(null);
   const [pwValue, setPwValue] = useState('');
+  // Ganti email login. Sengaja dipisah dari Reset PW karena akibatnya beda
+  // jenis: reset password mengganti kuncinya, ganti email mengganti nama
+  // pintunya — alamat lama langsung tidak bisa dipakai masuk lagi.
+  const [emailUser, setEmailUser] = useState<Profile | null>(null);
+  const [emailValue, setEmailValue] = useState('');
+  const [emailBusy, setEmailBusy] = useState(false);
   /** Sisa karakter yang masih kurang. 0 = sudah cukup. */
   const [pwLihat, setPwLihat] = useState(false);
   const [pwBusy, setPwBusy] = useState(false);
@@ -1151,6 +1177,7 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
                       </td>
                       <td>
                         <div className="recap-actions">
+                          <button className="btn act" onClick={() => { setEmailUser(u); setEmailValue(u.email || ''); }}>Ubah Email</button>
                           <button className="btn act" onClick={() => { setPwUser(u); setPwValue(''); setPwLihat(false); }}>Reset PW</button>
                           {u.id !== selfId && (
                             <button className="icon-del" title="Hapus user" onClick={() => setDelUser(u)}>
@@ -1654,6 +1681,66 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
                   onClick={saveLinkAcc}
                 >
                   {linkBusy ? 'Menyimpan\u2026' : 'Simpan alamat'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {emailUser && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !emailBusy && setEmailUser(null)}>
+          <div className="modal" style={{ maxWidth: 440 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--accent)' }} />
+                  Ubah email login
+                </div>
+                <div className="modal-title">{emailUser.full_name || emailUser.email}</div>
+                <div className="modal-sub">sekarang: {emailUser.email}</div>
+              </div>
+              <button className="btn ghost modal-close" disabled={emailBusy} onClick={() => setEmailUser(null)}>&#10005;</button>
+            </div>
+            <div style={{ padding: '18px 24px' }}>
+              <div className="field" style={{ marginBottom: 14 }}>
+                <label>Email baru</label>
+                <input
+                  type="email"
+                  value={emailValue}
+                  disabled={emailBusy}
+                  autoComplete="off"
+                  placeholder="nama@kahficorp.co.id"
+                  onChange={(e) => setEmailValue(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && !emailBusy && doUbahEmail()}
+                />
+                <div className="hint">
+                  Password, peran, tim, dan seluruh riwayatnya tidak berubah — yang pindah cuma alamat loginnya.
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: 'color-mix(in srgb, var(--amber) 10%, transparent)',
+                  borderLeft: '2px solid var(--amber)',
+                  borderRadius: '0 6px 6px 0',
+                  padding: '9px 12px',
+                  fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-2)',
+                }}
+              >
+                <b style={{ color: 'var(--text)' }}>Alamat lama langsung tidak bisa dipakai login.</b> Kabari orangnya
+                dulu sebelum disimpan{emailUser.id === selfId ? ' — dan ini akun Anda sendiri, jadi login berikutnya pakai alamat yang baru' : ''}.
+              </div>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={emailBusy} onClick={() => setEmailUser(null)}>Batal</button>
+                <button
+                  className="btn primary"
+                  disabled={emailBusy || !emailValue.trim() || emailValue.trim().toLowerCase() === (emailUser.email || '').toLowerCase()}
+                  onClick={doUbahEmail}
+                >
+                  {emailBusy ? 'Menyimpan…' : 'Simpan email'}
                 </button>
               </div>
             </div>
