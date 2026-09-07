@@ -74,13 +74,14 @@ function safeSheetName(name: string, index: number): string {
   return cleaned || `Sheet${index + 1}`;
 }
 
+/** Gaya untuk sel isi — lihat penjelasan panjang di STYLES_XML. */
+const GAYA_ISI = 2;
+/** Gaya untuk baris judul. */
+const GAYA_JUDUL = 1;
+
 function cellXml(ref: string, value: unknown, styleIdx: number): string {
-  // Gaya SELALU ditulis, termasuk s="0".
-  //
-  // Kalau atributnya dihilangkan untuk gaya 0, sebagian pembaca (LibreOffice,
-  // sebagian pengubah berkas) tidak memakai cellXfs[0] melainkan gaya bawaannya
-  // sendiri — akibatnya perataan atas dan wrapText yang sudah disetel di situ
-  // diabaikan diam-diam.
+  // Nomor gaya SELALU ditulis. Kalau atributnya dihilangkan, pembaca berkas
+  // memakai gaya bawaannya sendiri dan perataan yang sudah disetel diabaikan.
   const s = ` s="${styleIdx}"`;
 
   if (value === null || value === undefined || value === '') {
@@ -127,13 +128,13 @@ function sheetXml(sheet: XlsxSheet): string {
     .join('');
 
   const header = sheet.columns
-    .map((c, i) => cellXml(`${colName(i)}1`, c.header, 1))
+    .map((c, i) => cellXml(`${colName(i)}1`, c.header, GAYA_JUDUL))
     .join('');
 
   const body = sheet.rows
     .map((row, r) => {
       const cells = sheet.columns
-        .map((c, i) => cellXml(`${colName(i)}${r + 2}`, row[c.key], 0))
+        .map((c, i) => cellXml(`${colName(i)}${r + 2}`, row[c.key], GAYA_ISI))
         .join('');
 
       // Tinggi baris dihitung di sini, tidak diserahkan ke aplikasinya.
@@ -178,7 +179,9 @@ const STYLES_XML =
   '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
   '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
   '<fonts count="2">' +
-  '<font><sz val="11"/><color theme="1"/><name val="Calibri"/></font>' +
+  // rgb, BUKAN theme="1": paket ini tidak memuat theme1.xml, jadi rujukan tema
+  // tidak bisa diselesaikan Excel dan gayanya berisiko dibuang diam-diam.
+  '<font><sz val="11"/><color rgb="FF000000"/><name val="Calibri"/></font>' +
   '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>' +
   '</fonts>' +
   '<fills count="3">' +
@@ -189,26 +192,29 @@ const STYLES_XML =
   '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
   '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
   // -------------------------------------------------------------------------
-  // wrapText WAJIB ada di gaya isi (indeks 0).
+  // Indeks 0 WAJIB dibiarkan polos.
   //
-  // Tanpa ini, sel yang isinya beberapa baris ditampilkan Excel sebagai SATU
-  // baris memanjang yang menimpa kolom di sebelah kanannya — kolom Status dan
-  // Penyetuju jadi kelihatan kosong padahal datanya ada. Ganti barisnya sendiri
-  // tersimpan dengan benar di berkas; Excel hanya menolak menampilkannya
-  // bertingkat selama wrapText mati.
+  // Excel memperlakukan cellXfs[0] sebagai gaya "Normal" miliknya sendiri.
+  // Waktu wrapText dititipkan di situ, Excel menormalkannya kembali dan
+  // wrap-nya hilang tanpa pesan apa pun — pembaca lain (LibreOffice, openpyxl)
+  // menurut, jadi bugnya cuma kelihatan di Excel asli.
   //
-  // vertical="top" supaya baris yang tinggi tetap rata atas, tidak melayang di
-  // tengah dan bikin tabelnya susah dibaca.
-  //
-  // Tinggi baris sengaja TIDAK ditulis — begitu wrapText hidup dan tidak ada
-  // atribut ht/customHeight, Excel menghitung tingginya sendiri saat dibuka.
+  // Karena itu gaya isi dipindah ke indeks 2, dan setiap sel isi menyebutnya
+  // dengan s="2".
   // -------------------------------------------------------------------------
-  '<cellXfs count="2">' +
-  '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1">' +
-  '<alignment vertical="top" wrapText="1"/></xf>' +
-  '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">' +
+  '<cellXfs count="3">' +
+  '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+  '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0"' +
+  ' applyFont="1" applyFill="1" applyAlignment="1">' +
   '<alignment vertical="center" wrapText="1"/></xf>' +
+  '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"' +
+  ' applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>' +
   '</cellXfs>' +
+  // Excel mengharapkan stylesheet yang lengkap. Tanpa cellStyles/dxfs/tableStyles
+  // sebagian versi menganggapnya cacat lalu menyusun ulang tabel gayanya sendiri.
+  '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' +
+  '<dxfs count="0"/>' +
+  '<tableStyles count="0" defaultTableStyle="TableStyleMedium9" defaultPivotStyle="PivotStyleLight16"/>' +
   '</styleSheet>';
 
 // ---------------------------------------------------------------------- ZIP
