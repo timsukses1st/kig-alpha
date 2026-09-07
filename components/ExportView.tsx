@@ -83,7 +83,7 @@ const MODULES: ModuleDef[] = [
   {
     key: 'lembur', label: 'Lembur', sheet: 'Lembur',
     table: 'overtime_requests', dateCol: 'work_date', hasProject: true,
-    desc: 'Disaring berdasarkan tanggal kerja',
+    desc: 'Disaring berdasarkan tanggal kerja · + sheet Rekap Lembur (total jam per orang)',
   },
   {
     key: 'budget', label: 'Pengajuan Budget', sheet: 'Budget',
@@ -269,6 +269,14 @@ export default function ExportView({ profile, projects, accounts, projectFilter 
         if (error) { gagal.push(`${m.label} (${error.message})`); continue; }
         const rows = (data as Record<string, unknown>[]) || [];
         sheets.push(sheetFor(m, rows, { projName, accHandle, catName, picName }));
+
+        // Lembur dapat sheet kedua: total jam per orang.
+        //
+        // Dipisah, tidak ditempel di bawah daftar rinci, karena satu sheet yang
+        // isinya dua bentuk tabel tidak bisa disaring maupun diurutkan tanpa
+        // merusak salah satunya. Rekapnya dihitung dari baris yang SAMA, jadi
+        // ikut penyaring project dan rentang tanggal yang sedang dipilih.
+        if (m.key === 'lembur' && rows.length) sheets.push(sheetRekapLembur(rows));
       }
 
       if (!sheets.length) {
@@ -448,6 +456,126 @@ const ya = (x: unknown) => (x ? 'Ya' : 'Tidak');
 const tgl = (x: unknown) => (typeof x === 'string' ? x.slice(0, 10) : '');
 const tglJam = (x: unknown) => (typeof x === 'string' ? x.slice(0, 16).replace('T', ' ') : '');
 
+// ------------------------------------------------------------ durasi lembur
+
+/**
+ * Lama lembur dalam jam.
+ *
+ * Rumusnya SENGAJA disalin persis dari OvertimeView.tsx — kalau dua layar
+ * menghitung dengan cara berbeda, angka di Excel tidak akan cocok dengan angka
+ * di layar Lembur, dan yang disalahkan biasanya orangnya, bukan rumusnya.
+ *
+ * `mins < 0` berarti lembur melewati tengah malam (mis. 22:00 → 01:00), bukan
+ * kesalahan input — jadi ditambah 24 jam, tidak dibuang.
+ */
+function jamLembur(start: unknown, end: unknown): number {
+  if (typeof start !== 'string' || typeof end !== 'string') return 0;
+  const s = start.split(':').map(Number);
+  const e = end.split(':').map(Number);
+  if (s.length < 2 || e.length < 2) return 0;
+  let mins = e[0] * 60 + e[1] - (s[0] * 60 + s[1]);
+  if (mins < 0) mins += 24 * 60;
+  return mins / 60;
+}
+
+/** Dibulatkan 2 angka di belakang koma supaya Excel tidak menampilkan 2.5833333. */
+const bulat2 = (n: number) => Math.round(n * 100) / 100;
+
+/** 6 → "6j"; 2.583 → "2j 35m". Untuk dibaca manusia, bukan dijumlah Excel. */
+function jamTeks(h: number): string {
+  const H = Math.floor(h);
+  const M = Math.round((h - H) * 60);
+  return M ? `${H}j ${M}m` : `${H}j`;
+}
+
+/**
+ * Satu orang = satu baris rekap.
+ *
+ * Dikelompokkan menurut requester_id, BUKAN nama — dua orang bisa punya nama
+ * tampilan yang sama, dan satu orang bisa berganti nama tanpa berganti akun.
+ * Kalau id-nya kosong (akun sudah dihapus), namanya dipakai sebagai kunci
+ * cadangan supaya riwayatnya tidak lenyap dari rekap.
+ */
+interface BarisRekapLembur {
+  nama: string;
+  nSetuju: number; jamSetuju: number;
+  nAjukan: number; jamAjukan: number;
+  nTolak: number;
+  total: number;
+}
+
+function sheetRekapLembur(rows: Record<string, unknown>[]): XlsxSheet {
+  const peta: Record<string, BarisRekapLembur> = {};
+
+  for (const r of rows) {
+    const nama = (r.requester_name as string) || '(tanpa nama)';
+    const kunci = (r.requester_id as string) || `nama:${nama}`;
+    if (!peta[kunci]) {
+      peta[kunci] = { nama, nSetuju: 0, jamSetuju: 0, nAjukan: 0, jamAjukan: 0, nTolak: 0, total: 0 };
+    }
+    const b = peta[kunci];
+    const jam = jamLembur(r.start_time, r.end_time);
+    b.total += 1;
+    if (r.status === 'disetujui') { b.nSetuju += 1; b.jamSetuju += jam; }
+    else if (r.status === 'diajukan') { b.nAjukan += 1; b.jamAjukan += jam; }
+    else if (r.status === 'ditolak') { b.nTolak += 1; }
+  }
+
+  // Object.keys + map, bukan sebaran Map — tsconfig repo ini jatuh ke ES5.
+  const daftar = Object.keys(peta)
+    .map((k) => peta[k])
+    .sort((a, b) => b.jamSetuju - a.jamSetuju || a.nama.localeCompare(b.nama));
+
+  const baris: Record<string, unknown>[] = daftar.map((b) => ({
+    nama: b.nama,
+    nSetuju: b.nSetuju,
+    jamSetuju: bulat2(b.jamSetuju),
+    bacaan: jamTeks(b.jamSetuju),
+    nAjukan: b.nAjukan,
+    jamAjukan: bulat2(b.jamAjukan),
+    nTolak: b.nTolak,
+    total: b.total,
+  }));
+
+  // Baris TOTAL ditulis sebagai data biasa, bukan rumus Excel — supaya angkanya
+  // tetap benar walau sheet-nya disalin, disaring, atau dibuka di Google Sheets.
+  if (daftar.length) {
+    const t = daftar.reduce(
+      (a, b) => ({
+        nSetuju: a.nSetuju + b.nSetuju, jamSetuju: a.jamSetuju + b.jamSetuju,
+        nAjukan: a.nAjukan + b.nAjukan, jamAjukan: a.jamAjukan + b.jamAjukan,
+        nTolak: a.nTolak + b.nTolak, total: a.total + b.total,
+      }),
+      { nSetuju: 0, jamSetuju: 0, nAjukan: 0, jamAjukan: 0, nTolak: 0, total: 0 },
+    );
+    baris.push({
+      nama: 'TOTAL',
+      nSetuju: t.nSetuju,
+      jamSetuju: bulat2(t.jamSetuju),
+      bacaan: jamTeks(t.jamSetuju),
+      nAjukan: t.nAjukan,
+      jamAjukan: bulat2(t.jamAjukan),
+      nTolak: t.nTolak,
+      total: t.total,
+    });
+  }
+
+  return {
+    name: 'Rekap Lembur',
+    columns: [
+      { header: 'Nama', key: 'nama', width: 24 },
+      { header: 'Disetujui (pengajuan)', key: 'nSetuju', width: 20 },
+      { header: 'Total Jam Disetujui', key: 'jamSetuju', width: 19 },
+      { header: 'Terbaca', key: 'bacaan', width: 12 },
+      { header: 'Menunggu (pengajuan)', key: 'nAjukan', width: 20 },
+      { header: 'Jam Menunggu', key: 'jamAjukan', width: 14 },
+      { header: 'Ditolak (pengajuan)', key: 'nTolak', width: 18 },
+      { header: 'Total Pengajuan', key: 'total', width: 16 },
+    ],
+    rows: baris,
+  };
+}
+
 function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): XlsxSheet {
   switch (m.key) {
     case 'konten':
@@ -533,6 +661,7 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
           { header: 'Pengaju', key: 'pengaju', width: 22 },
           { header: 'Mulai', key: 'mulai', width: 10 },
           { header: 'Selesai', key: 'selesai', width: 10 },
+          { header: 'Durasi (jam)', key: 'durasi', width: 12 },
           { header: 'Uraian', key: 'uraian', width: 52 },
           { header: 'Status', key: 'status', width: 13 },
           { header: 'Penyetuju', key: 'approver', width: 22 },
@@ -545,6 +674,8 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
           pengaju: v(r, 'requester_name'),
           mulai: v(r, 'start_time'),
           selesai: v(r, 'end_time'),
+          // Angka, bukan teks "3j" — supaya bisa dijumlah sendiri di Excel.
+          durasi: bulat2(jamLembur(r.start_time, r.end_time)),
           uraian: v(r, 'description'),
           status: v(r, 'status'),
           approver: v(r, 'approver_name'),
