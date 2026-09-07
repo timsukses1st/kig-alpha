@@ -32,15 +32,25 @@ export interface XlsxSheet {
 
 // ---------------------------------------------------------------- XML helpers
 
-/** Excel menolak karakter kontrol; ini juga mencegah XML rusak karena & atau <. */
+/**
+ * Excel menolak karakter kontrol; ini juga mencegah XML rusak karena & atau <.
+ *
+ * Ganti baris (\n) SENGAJA dibiarkan hidup — itu yang membuat uraian bertingkat
+ * tetap bertingkat di dalam sel. \r\n dan \r sendirian diseragamkan jadi \n supaya
+ * hasilnya sama di semua peramban; kalau tidak, penafsir XML yang melakukannya
+ * diam-diam dan perilakunya jadi sulit ditebak.
+ */
 function esc(v: string): string {
   return v
+    .replace(/\r\n?/g, '\n')
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    // Ditulis sebagai &#10; — cara baku Excel menyimpan ganti baris dalam sel.
+    .replace(/\n/g, '&#10;');
 }
 
 /** A, B, ... Z, AA, AB, ... — penomoran kolom ala Excel. */
@@ -65,7 +75,13 @@ function safeSheetName(name: string, index: number): string {
 }
 
 function cellXml(ref: string, value: unknown, styleIdx: number): string {
-  const s = styleIdx ? ` s="${styleIdx}"` : '';
+  // Gaya SELALU ditulis, termasuk s="0".
+  //
+  // Kalau atributnya dihilangkan untuk gaya 0, sebagian pembaca (LibreOffice,
+  // sebagian pengubah berkas) tidak memakai cellXfs[0] melainkan gaya bawaannya
+  // sendiri — akibatnya perataan atas dan wrapText yang sudah disetel di situ
+  // diabaikan diam-diam.
+  const s = ` s="${styleIdx}"`;
 
   if (value === null || value === undefined || value === '') {
     return `<c r="${ref}"${s}/>`;
@@ -79,6 +95,30 @@ function cellXml(ref: string, value: unknown, styleIdx: number): string {
   // Sisanya ditulis sebagai teks inline. Sengaja tidak memakai sharedStrings:
   // lebih sederhana, dan selisih ukurannya tidak berarti untuk ekspor sebesar ini.
   return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${esc(String(value))}</t></is></c>`;
+}
+
+/** Tinggi satu baris teks, satuan point — bawaan Excel. */
+const TINGGI_BARIS = 15;
+
+/** Batas atas supaya satu uraian panjang tidak membuat baris setinggi satu layar. */
+const MAKS_BARIS_TEKS = 30;
+
+/**
+ * Perkiraan berapa baris teks yang dibutuhkan satu sel.
+ *
+ * Dua hal yang menambah tinggi: ganti baris yang diketik orangnya, dan teks
+ * yang lebih panjang dari lebar kolom sehingga dilipat sendiri oleh Excel.
+ * Dua-duanya dihitung, lalu diambil yang paling banyak di antara semua kolom.
+ */
+function barisTeks(nilai: unknown, lebar: number): number {
+  if (nilai === null || nilai === undefined) return 1;
+  const teks = String(nilai);
+  if (!teks) return 1;
+  const muat = Math.max(lebar - 1, 1);
+  let total = 0;
+  const potongan = teks.replace(/\r\n?/g, '\n').split('\n');
+  for (const p of potongan) total += Math.max(1, Math.ceil(p.length / muat));
+  return Math.min(total, MAKS_BARIS_TEKS);
 }
 
 function sheetXml(sheet: XlsxSheet): string {
@@ -95,7 +135,23 @@ function sheetXml(sheet: XlsxSheet): string {
       const cells = sheet.columns
         .map((c, i) => cellXml(`${colName(i)}${r + 2}`, row[c.key], 0))
         .join('');
-      return `<row r="${r + 2}">${cells}</row>`;
+
+      // Tinggi baris dihitung di sini, tidak diserahkan ke aplikasinya.
+      //
+      // Excel memang biasanya melipat sendiri begitu wrapText hidup, tapi
+      // LibreOffice dan sebagian pembaca lain tidak — barisnya tetap setinggi
+      // satu baris dan teksnya terpotong. Dengan ht + customHeight, hasilnya
+      // sama di mana pun berkas ini dibuka.
+      let baris = 1;
+      for (let i = 0; i < sheet.columns.length; i++) {
+        const n = barisTeks(row[sheet.columns[i].key], sheet.columns[i].width ?? 18);
+        if (n > baris) baris = n;
+      }
+      const tinggi = baris > 1
+        ? ` ht="${baris * TINGGI_BARIS}" customHeight="1"`
+        : '';
+
+      return `<row r="${r + 2}"${tinggi}>${cells}</row>`;
     })
     .join('');
 
@@ -132,9 +188,26 @@ const STYLES_XML =
   '</fills>' +
   '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
   '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+  // -------------------------------------------------------------------------
+  // wrapText WAJIB ada di gaya isi (indeks 0).
+  //
+  // Tanpa ini, sel yang isinya beberapa baris ditampilkan Excel sebagai SATU
+  // baris memanjang yang menimpa kolom di sebelah kanannya — kolom Status dan
+  // Penyetuju jadi kelihatan kosong padahal datanya ada. Ganti barisnya sendiri
+  // tersimpan dengan benar di berkas; Excel hanya menolak menampilkannya
+  // bertingkat selama wrapText mati.
+  //
+  // vertical="top" supaya baris yang tinggi tetap rata atas, tidak melayang di
+  // tengah dan bikin tabelnya susah dibaca.
+  //
+  // Tinggi baris sengaja TIDAK ditulis — begitu wrapText hidup dan tidak ada
+  // atribut ht/customHeight, Excel menghitung tingginya sendiri saat dibuka.
+  // -------------------------------------------------------------------------
   '<cellXfs count="2">' +
-  '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
-  '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>' +
+  '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1">' +
+  '<alignment vertical="top" wrapText="1"/></xf>' +
+  '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1">' +
+  '<alignment vertical="center" wrapText="1"/></xf>' +
   '</cellXfs>' +
   '</styleSheet>';
 
