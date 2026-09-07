@@ -740,3 +740,112 @@ export function initials(name: string | null | undefined): string {
   if (!name) return '?';
   return name.trim().charAt(0).toUpperCase() || '?';
 }
+
+// ============================================================================
+// CUTI & WFH
+//
+// Usulan Qintana (HRD KC) lewat Komplain, 3 September 2026: pengajuan cuti dan
+// WFH yang disetujui lead dulu lalu HRD, dan karyawannya bisa memantau sendiri
+// statusnya di Alpha.
+// ============================================================================
+
+export type JenisCuti = 'cuti' | 'sakit' | 'izin' | 'wfh';
+
+export const JENIS_CUTI: { key: JenisCuti; label: string; color: string }[] = [
+  { key: 'cuti',  label: 'Cuti',  color: 'var(--st-terjadwal)' },
+  { key: 'sakit', label: 'Sakit', color: 'var(--st-pelanggaran)' },
+  { key: 'izin',  label: 'Izin',  color: 'var(--st-ide)' },
+  { key: 'wfh',   label: 'WFH',   color: 'var(--st-siap)' },
+];
+
+/**
+ * Empat status ini SAMA PERSIS dengan CHECK di tabel leave_requests.
+ * Menambah status di sini tanpa mengubah database berarti pengajuannya ditolak
+ * saat disimpan, dengan pesan yang tidak menjelaskan apa-apa.
+ */
+export type StatusCuti = 'menunggu_lead' | 'menunggu_hrd' | 'disetujui' | 'ditolak';
+
+export const STATUS_CUTI: Record<StatusCuti, { label: string; color: string; urut: number }> = {
+  menunggu_lead: { label: 'Menunggu Lead', color: 'var(--st-ide)',          urut: 1 },
+  menunggu_hrd:  { label: 'Menunggu HRD',  color: 'var(--st-review)',       urut: 2 },
+  disetujui:     { label: 'Disetujui',     color: 'var(--green)',           urut: 3 },
+  ditolak:       { label: 'Ditolak',       color: 'var(--red)',             urut: 4 },
+};
+
+export interface LeaveRequest {
+  id: string;
+  kind: JenisCuti;
+  start_date: string;
+  end_date: string;
+  reason: string;
+  requester_id: string;
+  requester_name: string | null;
+  status: StatusCuti;
+  lead_id: string | null;
+  lead_name: string | null;
+  lead_at: string | null;
+  hrd_id: string | null;
+  hrd_name: string | null;
+  hrd_at: string | null;
+  reject_by: 'lead' | 'hrd' | null;
+  reject_reason: string | null;
+  /** Dihitung database (end_date - start_date + 1). Hari kalender, bukan hari kerja. */
+  hari_kalender: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Bentuk ringkas profil orang lain, secukupnya untuk menentukan lead & HRD. */
+export interface OrangRingkas {
+  id: string;
+  nama: string;
+  role: Role;
+  team: Team | null;
+  vertical: string | null;
+}
+
+/**
+ * Apakah `saya` adalah lead dari `pemohon`?
+ *
+ * Ini CERMINAN dari fungsi is_lead_for() di database — dipakai hanya untuk
+ * menentukan tombol mana yang tampil. Tembok sebenarnya tetap RLS; kalau
+ * cerminan ini keliru, UPDATE-nya ditolak database dan mengenai 0 baris.
+ * Karena itu setiap penyimpanan tetap memeriksa .select('id').
+ *
+ * Tangganya:
+ *   anggota (role tim)     -> manager di tim yang sama
+ *   manager tim biasa      -> manager tim 'ho'
+ *   manager tim 'ho'       -> manager tim 'pimpinan'
+ *   manager tim 'pimpinan' -> superadmin saja
+ */
+export function akuLeadUntuk(saya: Profile | null, pemohon: OrangRingkas | null): boolean {
+  if (!saya || !pemohon) return false;
+  if (saya.role === 'superadmin') return true;
+  if (pemohon.id === saya.id) return false;          // tidak menyetujui diri sendiri
+  if (saya.role !== 'manager') return false;
+  if (saya.vertical !== 'ALL' && saya.vertical !== pemohon.vertical) return false;
+  if (pemohon.team === 'pimpinan') return false;
+  if (pemohon.team === 'ho') return saya.team === 'pimpinan';
+  if (pemohon.role === 'manager') return saya.team === 'ho';
+  return saya.team === pemohon.team;
+}
+
+/** Cerminan is_hrd_for(). HRD unit yang sama; superadmin selalu lolos. */
+export function akuHrdUntuk(saya: Profile | null, pemohon: OrangRingkas | null): boolean {
+  if (!saya || !pemohon) return false;
+  if (saya.role === 'superadmin') return true;
+  if (saya.team !== 'hrd') return false;
+  if (saya.vertical === 'ALL') return true;
+  return saya.vertical === pemohon.vertical;
+}
+
+/** Label jenis yang enak dibaca; jatuh ke kodenya kalau ada jenis tak dikenal. */
+export function jenisCutiDef(key: string): { key: string; label: string; color: string } {
+  const f = JENIS_CUTI.find((j) => j.key === key);
+  return f || { key, label: key, color: 'var(--text-3)' };
+}
+
+/** Label status; jatuh ke kodenya kalau database punya status yang belum dikenal UI. */
+export function statusCutiDef(key: string): { label: string; color: string; urut: number } {
+  return STATUS_CUTI[key as StatusCuti] || { label: key, color: 'var(--text-3)', urut: 9 };
+}

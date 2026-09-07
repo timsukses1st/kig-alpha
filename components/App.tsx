@@ -19,13 +19,14 @@ import ExportView from '@/components/ExportView';
 import RecapView from '@/components/RecapView';
 import BudgetView from '@/components/BudgetView';
 import OvertimeView from '@/components/OvertimeView';
+import LeaveView from '@/components/LeaveView';
 import SebaranView from '@/components/SebaranView';
 import ComplaintView from '@/components/ComplaintView';
 import ComplaintWidget from '@/components/ComplaintWidget';
 import ChatView from '@/components/ChatView';
 import TrackerView from '@/components/TrackerView';
 
-type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'sebaran' | 'chat' | 'laporan' | 'ekspor' | 'komplain' | 'log' | 'access';
+type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'cuti' | 'sebaran' | 'chat' | 'laporan' | 'ekspor' | 'komplain' | 'log' | 'access';
 
 const NAV: { key: View; label: string }[] = [
   { key: 'board', label: 'Board Pipeline' },
@@ -35,6 +36,7 @@ const NAV: { key: View; label: string }[] = [
   { key: 'recap', label: 'Recap Report' },
   { key: 'budget', label: 'Pengajuan Budget' },
   { key: 'lembur', label: 'Lembur' },
+  { key: 'cuti', label: 'Cuti & WFH' },
   { key: 'sebaran', label: 'Sebaran Harian' },
   { key: 'chat', label: 'Chat Project' },
   { key: 'laporan', label: 'Laporan Kerja' },
@@ -95,6 +97,15 @@ const ICON_PATHS: Record<View, React.ReactNode> = {
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7v5l3 2" />
+    </>
+  ),
+  cuti: (
+    <>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+      <line x1="8" y1="3" x2="8" y2="7" />
+      <line x1="16" y1="3" x2="16" y2="7" />
+      <path d="M9 14.5l2 2 4-4" />
     </>
   ),
   sebaran: (
@@ -725,6 +736,7 @@ export default function App() {
         )}
         {view === 'budget' && <BudgetView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'lembur' && <OvertimeView profile={profile} projects={projects} projectFilter={activeProject} />}
+        {view === 'cuti' && <LeaveView profile={profile} />}
         {view === 'sebaran' && <SebaranView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'chat' && <ChatView profile={profile} projects={projects} projectFilter={activeProject} />}
         {view === 'laporan' && (
