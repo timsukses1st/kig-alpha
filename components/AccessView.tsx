@@ -652,6 +652,11 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
     const ch = supabase
       .channel('akses-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, segarkan)
+      // `projects` sempat terlewat: App.tsx sudah mendengarkannya untuk dropdown
+      // di sidebar, tapi tabel Project & Vertical di layar ini punya state dan
+      // load() sendiri — jadi project baru (mis. hasil "Kirim ke Alpha" dari
+      // SIGMA) tidak muncul di sini sampai halaman dimuat ulang.
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, segarkan)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, segarkan)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'content_categories' }, segarkan)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, segarkan)
