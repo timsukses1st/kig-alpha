@@ -849,3 +849,45 @@ export function jenisCutiDef(key: string): { key: string; label: string; color: 
 export function statusCutiDef(key: string): { label: string; color: string; urut: number } {
   return STATUS_CUTI[key as StatusCuti] || { label: key, color: 'var(--text-3)', urut: 9 };
 }
+
+// ============================================================================
+// NOTIFIKASI
+//
+// Satu baris = satu pemberitahuan untuk SATU orang. Notifikasi hanya lahir dari
+// pemicu database; layar tidak punya izin menyisipkan, supaya tidak ada yang
+// bisa mengarang pemberitahuan atas nama sistem.
+// ============================================================================
+
+export interface Notif {
+  id: string;
+  user_id: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  /** Kunci menu tujuan saat diklik — nilainya sama dengan View di App.tsx. */
+  view: string | null;
+  ref_id: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+/** Lambang & warna per jenis notifikasi. Jenis tak dikenal tetap tampil, pakai bawaan. */
+export const NOTIF_META: Record<string, { ikon: string; warna: string }> = {
+  cuti_antrean:       { ikon: '🗓', warna: 'var(--st-ide)' },
+  cuti_putus:         { ikon: '🗓', warna: 'var(--st-terjadwal)' },
+  lembur_antrean:     { ikon: '⏱', warna: 'var(--st-ide)' },
+  lembur_putus:       { ikon: '⏱', warna: 'var(--st-terjadwal)' },
+  budget_antrean:     { ikon: '💰', warna: 'var(--st-ide)' },
+  budget_putus:       { ikon: '💰', warna: 'var(--st-terjadwal)' },
+  konten_pic:         { ikon: '🎬', warna: 'var(--accent)' },
+  konten_pelanggaran: { ikon: '⚠️', warna: 'var(--red)' },
+  chat_pesan:         { ikon: '💬', warna: 'var(--st-siap)' },
+  chat_join:          { ikon: '🙋', warna: 'var(--st-ide)' },
+  chat_join_putus:    { ikon: '🙋', warna: 'var(--st-terjadwal)' },
+  komplain_baru:      { ikon: '📣', warna: 'var(--st-review)' },
+  komplain_balas:     { ikon: '📣', warna: 'var(--st-review)' },
+};
+
+export function notifMeta(kind: string): { ikon: string; warna: string } {
+  return NOTIF_META[kind] || { ikon: '🔔', warna: 'var(--text-3)' };
+}

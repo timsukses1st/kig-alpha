@@ -20,6 +20,7 @@ import RecapView from '@/components/RecapView';
 import BudgetView from '@/components/BudgetView';
 import OvertimeView from '@/components/OvertimeView';
 import LeaveView from '@/components/LeaveView';
+import NotifBell from '@/components/NotifBell';
 import SebaranView from '@/components/SebaranView';
 import ComplaintView from '@/components/ComplaintView';
 import ComplaintWidget from '@/components/ComplaintWidget';
@@ -665,6 +666,21 @@ export default function App() {
         ))}
 
         <div className="sidebar-footer">
+          {/* Lonceng ditaruh di kaki sidebar, bukan di topbar, karena topbar
+              dimiliki masing-masing layar — kalau ditaruh di sana, ia harus
+              disisipkan ke 14 komponen dan gampang terlewat di salah satunya. */}
+          <NotifBell
+            profile={profile}
+            slim={slim}
+            onBuka={(v, ref) => {
+              if (!v) return;
+              // Notifikasi konten membawa id kontennya: Board dibuka langsung
+              // pada kartu itu, bukan cuma pindah layar lalu dicari sendiri.
+              if (v === 'board' && ref) setBukaKontenId(ref);
+              pindahLayar(v as View);
+              setMobileNav(false);
+            }}
+          />
           <button
             className={slim ? 'icon-btn footer-icon' : 'btn ghost theme-btn'}
             title={theme === 'dark' ? 'Mode terang' : 'Mode gelap'}
