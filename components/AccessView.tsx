@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { boleh, initials, KOLOM_URL_AKUN, PLATFORMS, ROLES, tagColor, TUGAS, TEAM_GROUPS, TEAM_LABEL, teamsForVertical, VERTICALS, type Account, type ContentCategory, type IzinBaris, type IzinTim, type Profile, type Project, type Role, type Team, type TeamMember, type TugasDef } from '@/lib/types';
-import { sigma, type SigmaProject } from '@/lib/sigma';
 
 /**
  * Pilihan tim, dikelompokkan dan disaring menurut unit bisnisnya.
@@ -519,8 +518,6 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
     flash('User dihapus.');
     load();
   };
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState('');
 
   const [newHandle, setNewHandle] = useState('');
   const [newLabel, setNewLabel] = useState('');
@@ -612,86 +609,6 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
     flash(hasData ? 'Project & seluruh isinya dihapus.' : 'Project dihapus.');
     setDelProj(null);
     load(); onAccountsChanged?.();
-  };
-
-  const syncFromSigma = async () => {
-    setSyncing(true);
-    setSyncMsg('');
-    try {
-      const { data, error } = await sigma.from('alpha_project_feed').select('*');
-      if (error || !data) { setSyncMsg('Gagal membaca project dari SIGMA.'); setSyncing(false); return; }
-      const sigmaProjects = data as SigmaProject[];
-
-      // project Alpha yang sudah ada (by nama, case-insensitive)
-      const existing = new Set(projects.map((p) => p.name.trim().toLowerCase()));
-      const toCreate = sigmaProjects.filter(
-        (sp) => sp.name && !existing.has(sp.name.trim().toLowerCase())
-      );
-
-      let created = 0;
-      for (const sp of toCreate) {
-        const vertical = ['KC', 'GME', 'KIG'].includes(sp.unit || '') ? sp.unit : null;
-        const { error: insErr } = await supabase.from('projects').insert({
-          name: sp.name.trim(),
-          label: null,
-          vertical,
-        });
-        if (!insErr) created++;
-      }
-
-      // ---- refresh daftar project Alpha (termasuk yang baru dibuat) ----
-      const { data: freshProjects } = await supabase.from('projects').select('*');
-      const projByName = new Map<string, string>();
-      (freshProjects || []).forEach((p: { id: string; name: string }) =>
-        projByName.set(p.name.trim().toLowerCase(), p.id)
-      );
-
-      // ---- sync AKUN dari SIGMA (kombinasi unik account + project) ----
-      let accCreated = 0;
-      try {
-        const { data: feed } = await sigma
-          .from('alpha_tracker_feed')
-          .select('account, project_name, project_unit');
-        if (feed) {
-          // kumpulkan akun unik + project SIGMA-nya (skip unit null/non KC-GME-KIG)
-          const seen = new Map<string, string>(); // account -> project_name
-          for (const row of feed as { account: string | null; project_name: string | null; project_unit: string | null }[]) {
-            if (!row.account) continue;
-            if (!row.project_unit || !['KC', 'GME', 'KIG'].includes(row.project_unit)) continue;
-            const handle = row.account.trim().toLowerCase();
-            if (!seen.has(handle) && row.project_name) seen.set(handle, row.project_name);
-          }
-
-          // akun Alpha yang sudah ada
-          const { data: existAcc } = await supabase.from('accounts').select('handle');
-          const existHandles = new Set(
-            (existAcc || []).map((a: { handle: string }) => a.handle.replace(/^@/, '').trim().toLowerCase())
-          );
-
-          for (const [handle, projName] of Array.from(seen.entries())) {
-            if (existHandles.has(handle)) continue;
-            const projectId = projByName.get(projName.trim().toLowerCase()) || null;
-            const { error: accErr } = await supabase.from('accounts').insert({
-              handle: '@' + handle,
-              label: null,
-              project_id: projectId,
-              is_active: true,
-            });
-            if (!accErr) accCreated++;
-          }
-        }
-      } catch { /* sync akun gagal -> project tetap sukses */ }
-
-      const parts = [];
-      parts.push(created > 0 ? `${created} project baru` : `project sudah lengkap`);
-      parts.push(accCreated > 0 ? `${accCreated} akun baru` : `akun sudah lengkap`);
-      setSyncMsg(`Sync selesai — ${parts.join(' · ')}.`);
-      load();
-      onAccountsChanged?.();
-    } catch {
-      setSyncMsg('Gagal terhubung ke SIGMA.');
-    }
-    setSyncing(false);
   };
 
   const load = useCallback(async () => {
@@ -1203,16 +1120,12 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
             {/* ================= PROJECT ================= */}
             <div className="section-head-row">
               <div className="section-title" style={{ margin: 0 }}>Project &amp; Vertical</div>
-              <button className="btn" onClick={syncFromSigma} disabled={syncing}>
-                {syncing ? 'Menyinkronkan…' : '⟳ Sync dari SIGMA'}
-              </button>
             </div>
             <p className="section-hint">
               Vertical menentukan siapa yang boleh melihat: orang <b>KC</b> tidak melihat project <b>GME</b>, dan sebaliknya.
-              Pilih <b>KIG</b> untuk project lintas grup. <b>Sync dari SIGMA</b> menyalin project <i>dan akun</i> KC/GME/KIG
-              dari SIGMA (lengkap dengan unit &amp; tautan project-nya) — SIGMA tetap bersih, Alpha jadi ruang kerja.
+              Pilih <b>KIG</b> untuk project lintas grup. Project baru dikirim <i>dari</i> SIGMA lewat tombol
+              &ldquo;Kirim ke Alpha&rdquo; di sana, supaya tautan antar-sistemnya ikut tercatat.
             </p>
-            {syncMsg && <p className="sync-msg">{syncMsg}</p>}
             <div className="table-wrap" style={{ marginBottom: 8 }}>
               <table>
                 <thead>
