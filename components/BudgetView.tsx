@@ -57,6 +57,8 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
   const [rejectFor, setRejectFor] = useState<BudgetRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [confirmDel, setConfirmDel] = useState<BudgetRequest | null>(null);
+  /** Pengajuan yang sedang dikonfirmasi untuk ditarik kembali ke Diajukan. */
+  const [balikFor, setBalikFor] = useState<BudgetRequest | null>(null);
   const [actBusy, setActBusy] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashToast = (msg: string) => {
@@ -77,6 +79,22 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
    * Yang lama tetap bisa mereka lihat dan sunting selama statusnya Diajukan.
    */
   const canRequest = boleh(profile, TUGAS.budgetAjukan);
+
+  /**
+   * Boleh menarik ACC yang salah kembali ke Diajukan.
+   *
+   * Cerminan trigger `jaga_kolom_keputusan_budget` di database, yang menuliskan
+   * syaratnya persis begini: hanya superadmin, dan HANYA dari status
+   * `disetujui`. Yang sudah `dibayar` tidak boleh — uangnya sudah keluar, dan
+   * membalik statusnya membuat catatan Alpha bercerita hal yang tidak terjadi.
+   * Yang `ditolak` juga tidak: itu bukan kasus salah ACC.
+   *
+   * Sengaja TIDAK memakai matriks Izin Peran: aturannya dikunci di database,
+   * jadi centang apa pun di Kelola Akses tidak akan mengubahnya — dan tombol
+   * yang muncul tanpa bisa dipakai lebih buruk daripada tombol yang tidak ada.
+   */
+  const bisaBalikkan = (b: BudgetRequest) =>
+    profile?.role === 'superadmin' && b.status === 'disetujui';
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -169,6 +187,38 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
 
     setConfirmDel(null); setDetail(null);
     flashToast('Pengajuan dihapus.');
+    load(true);
+  };
+
+  /**
+   * Menarik ACC yang salah kembali ke status Diajukan.
+   *
+   * Yang dikirim HANYA `status`. Nama penyetuju, waktu ACC, dan alasan tolak
+   * dibersihkan oleh trigger di database — kalau layar yang membersihkannya,
+   * satu jalur update yang lupa ikut membersihkan akan menyisakan baris
+   * "Diajukan" yang masih menyimpan nama penyetuju.
+   */
+  const doBalik = async () => {
+    const b = balikFor;
+    if (!b) return;
+    setActBusy(true);
+    const { data, error: err } = await supabase
+      .from('budget_requests').update({ status: 'diajukan' }).eq('id', b.id).select('id');
+    setActBusy(false);
+    setBalikFor(null);
+    if (err) {
+      // Pesan dari trigger sudah berbahasa manusia ("Hanya superadmin yang
+      // boleh…"), jadi ditampilkan apa adanya, bukan diganti kalimat umum.
+      flashToast(err.message);
+      return;
+    }
+    if (!data || data.length === 0) {
+      flashToast('Tidak ada yang berubah — wewenang akunmu tidak mencukupi untuk pengajuan ini.');
+      load(true);
+      return;
+    }
+    setDetail(null);
+    flashToast('Pengajuan dikembalikan ke Diajukan — ACC sebelumnya dibatalkan.');
     load(true);
   };
 
@@ -461,6 +511,16 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                               onChange={(e) => markPaid(b, e.target.files?.[0] || null)} />
                           </label>
                         )}
+                        {bisaBalikkan(b) && (
+                          <button
+                            className="btn act"
+                            style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}
+                            title="Batalkan ACC — kembalikan ke status Diajukan"
+                            onClick={() => setBalikFor(b)}
+                          >
+                            ↺ Batal ACC
+                          </button>
+                        )}
                         {bolehHapus(b) && (
                           <button className="icon-del" title="Hapus pengajuan" onClick={() => setConfirmDel(b)}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -482,6 +542,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
         </div>
         <p className="cal-legend">
           Alur: <b>Manager ajukan</b> (+ bukti) → <b>PM ACC</b> → <b>Finance tandai dibayar</b> (+ struk). Ikut tembok unit project.
+          {profile?.role === 'superadmin' && ' ACC yang keliru bisa ditarik kembali ke Diajukan selama belum dibayar.'}
         </p>
         {!canRequest && (
           <p className="cal-legend" style={{ color: 'var(--amber)' }}>
@@ -544,6 +605,10 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
             <div className="modal-foot">
               {canEdit(detail) && (
                 <button className="btn" onClick={() => openEdit(detail)}>✎ Edit</button>
+              )}
+              {bisaBalikkan(detail) && (
+                <button className="btn" style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}
+                  onClick={() => setBalikFor(detail)}>↺ Kembalikan ke Diajukan</button>
               )}
               {bolehHapus(detail) && (
                 <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
@@ -667,6 +732,45 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                 <button className="btn primary" style={{ background: 'var(--red)', borderColor: 'var(--red)' }}
                   onClick={doReject} disabled={actBusy}>
                   {actBusy ? 'Memproses…' : 'Tolak pengajuan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Konfirmasi tarik ACC kembali ke Diajukan (superadmin, status Disetujui) */}
+      {balikFor && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !actBusy && setBalikFor(null)}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--amber)' }} />Batalkan ACC</div>
+                <div className="modal-title">Kembalikan ke status Diajukan?</div>
+                <div className="modal-sub">
+                  {balikFor.title} · {rupiah(balikFor.amount)} · {balikFor.requester_name}
+                </div>
+              </div>
+              <button className="btn ghost modal-close" disabled={actBusy} onClick={() => setBalikFor(null)}>&#10005;</button>
+            </div>
+            <div style={{ padding: '16px 24px' }}>
+              <p className="thread-detail">
+                Catatan persetujuannya dihapus
+                {balikFor.approver_name ? <> — <b>{balikFor.approver_name}</b> tidak lagi tercatat sebagai penyetuju</> : null}
+                , dan pengajuan ini kembali masuk antrean ACC. Pengajunya diberi tahu lewat notifikasi.
+              </p>
+              <p className="hint" style={{ marginTop: 10 }}>
+                Isi pengajuannya sendiri (judul, jumlah, bukti) tidak berubah. Riwayat pembatalan ini
+                tetap tercatat di Log Aktivitas.
+              </p>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" onClick={() => setBalikFor(null)} disabled={actBusy}>Batal</button>
+                <button className="btn primary"
+                  style={{ background: 'var(--amber)', borderColor: 'var(--amber)' }}
+                  onClick={doBalik} disabled={actBusy}>
+                  {actBusy ? 'Memproses…' : 'Ya, kembalikan'}
                 </button>
               </div>
             </div>
