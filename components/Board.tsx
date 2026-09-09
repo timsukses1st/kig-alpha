@@ -2470,18 +2470,29 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
           {adaPerubahan && (
             <div
               onClick={serapPerubahan}
-              title="Klik untuk memuat sekarang"
+              title="Rekan lain baru mengubah data. Sengaja belum dimuat supaya isian kamu tidak tertimpa — klik kalau mau memuat sekarang."
               style={{
                 position: 'fixed', left: 16, bottom: 16, zIndex: 90, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 8,
                 padding: '9px 14px', borderRadius: 22, fontSize: 12.5,
                 background: 'var(--panel)', color: 'var(--text-2)',
-                border: '1px solid var(--amber)',
+                // Biru, BUKAN amber. Di seluruh Alpha amber berarti "ada yang
+                // perlu ditindak" — lewat deadline, sebaiknya ditunjuk, foto
+                // kebesaran. Memakai amber di sini membuat kabar baik terbaca
+                // sebagai peringatan.
+                border: '1px solid var(--accent)',
                 boxShadow: '0 10px 30px rgba(0,0,0,.45)',
               }}
             >
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--amber)' }} />
-              Ada perubahan dari anggota lain — ditahan sampai kamu selesai
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent)' }} />
+              {/* Kalimat lama: "Ada perubahan dari anggota lain — ditahan sampai
+                  kamu selesai". Subjeknya kabur: yang ditahan itu perubahan
+                  MEREKA, tapi terbaca seolah KAMU yang sedang dibatasi sistem.
+                  Beberapa Copywriter melaporkannya sebagai "sistem membatasi
+                  pengerjaan" padahal justru sebaliknya — isian mereka sedang
+                  dilindungi. Sekarang kabar baiknya yang ditaruh di depan. */}
+              <b style={{ color: 'var(--text)' }}>Isianmu aman</b>
+              <span>— perubahan dari rekan dimuat setelah kamu selesai</span>
             </div>
           )}
 
