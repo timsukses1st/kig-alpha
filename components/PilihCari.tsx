@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export interface PilihanCari {
   id: string;
@@ -45,6 +45,13 @@ export default function PilihCari({
   const [sorot, setSorot] = useState(0);
   const [pos, setPos] = useState<{ top: number; left: number; lebar: number } | null>(null);
   const kotakRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Panelnya di atas atau di bawah tombol — ditetapkan SEKALI saat dibuka.
+   *
+   * Kalau arahnya dihitung ulang terus saat digulir, panelnya lompat dari
+   * bawah ke atas persis waktu orang mau mengklik pilihan.
+   */
+  const arahAtas = useRef(false);
 
   const terpilih = options.find((o) => o.id === value) || null;
 
@@ -64,17 +71,22 @@ export default function PilihCari({
    * tabel yang bisa digulir atau di dalam modal — dan pilihan paling bawah
    * jadi tidak bisa diklik sama sekali. Pola ini sama dengan PicCell.
    */
+  /** Menempelkan panel ke posisi tombol saat ini. Arahnya tidak diubah. */
+  const tempelkan = useCallback(() => {
+    const r = kotakRef.current ? kotakRef.current.getBoundingClientRect() : null;
+    if (!r) return;
+    setPos({
+      top: arahAtas.current ? Math.max(8, r.top - TINGGI_PANEL - 4) : r.bottom + 4,
+      left: Math.min(r.left, Math.max(8, window.innerWidth - LEBAR_PANEL - 8)),
+      lebar: Math.max(r.width, 220),
+    });
+  }, []);
+
   const bukaPanel = () => {
     if (disabled) return;
     const r = kotakRef.current ? kotakRef.current.getBoundingClientRect() : null;
-    if (r) {
-      const muatBawah = window.innerHeight - r.bottom > TINGGI_PANEL + 16;
-      setPos({
-        top: muatBawah ? r.bottom + 4 : Math.max(8, r.top - TINGGI_PANEL - 4),
-        left: Math.min(r.left, Math.max(8, window.innerWidth - LEBAR_PANEL - 8)),
-        lebar: Math.max(r.width, 220),
-      });
-    }
+    if (r) arahAtas.current = window.innerHeight - r.bottom <= TINGGI_PANEL + 16;
+    tempelkan();
     setCari('');
     setSorot(0);
     setBuka(true);
@@ -92,19 +104,40 @@ export default function PilihCari({
       }
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') tutup(); };
-    // Menutup saat digulir: panelnya fixed, jadi kalau halamannya bergerak
-    // panelnya akan tertinggal menggantung di tempat lama.
-    window.addEventListener('scroll', tutup, true);
-    window.addEventListener('resize', tutup);
+
+    /**
+     * Panelnya `position: fixed`, jadi kalau isi halaman bergulir dia tidak
+     * ikut bergerak sendiri. Dulu ini diakali dengan MENUTUP panelnya begitu
+     * ada gulir — dan itu bikin repot: tabel modal bergulir sedikit saja
+     * (bahkan hanya karena kotak carinya di-fokus) pilihannya sudah keburu
+     * tertutup. Sekarang panelnya diikutkan bergerak, bukan ditutup.
+     */
+    let raf = 0;
+    const ikut = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        const r = kotakRef.current ? kotakRef.current.getBoundingClientRect() : null;
+        // Tombolnya sudah tergulir keluar layar — baru di sini panelnya
+        // ditutup, karena kalau dibiarkan dia mengambang di atas isi yang
+        // tidak ada hubungannya sama sekali.
+        if (!r || r.bottom < 0 || r.top > window.innerHeight) { setBuka(false); return; }
+        tempelkan();
+      });
+    };
+
+    window.addEventListener('scroll', ikut, true);
+    window.addEventListener('resize', ikut);
     document.addEventListener('mousedown', luar);
     document.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('scroll', tutup, true);
-      window.removeEventListener('resize', tutup);
+      if (raf) window.cancelAnimationFrame(raf);
+      window.removeEventListener('scroll', ikut, true);
+      window.removeEventListener('resize', ikut);
       document.removeEventListener('mousedown', luar);
       document.removeEventListener('keydown', onKey);
     };
-  }, [buka]);
+  }, [buka, tempelkan]);
 
   const pilih = (id: string) => { onChange(id); setBuka(false); };
 

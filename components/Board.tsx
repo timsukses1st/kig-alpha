@@ -355,30 +355,49 @@ function PicCell({ row, members, disabled, onSave }: {
     })
     .filter((x) => x.name);
 
-  const openPanel = () => {
+  /** Menempelkan panel ke posisi tombol saat ini. */
+  const tempelkan = useCallback(() => {
     const r = boxRef.current ? boxRef.current.getBoundingClientRect() : null;
-    if (r) {
-      setPos({
-        top: Math.min(r.bottom + 6, Math.max(8, window.innerHeight - 250)),
-        left: Math.min(r.left, Math.max(8, window.innerWidth - 268)),
-      });
-    }
+    if (!r) return;
+    setPos({
+      top: Math.min(r.bottom + 6, Math.max(8, window.innerHeight - 250)),
+      left: Math.min(r.left, Math.max(8, window.innerWidth - 268)),
+    });
+  }, []);
+
+  const openPanel = () => {
+    tempelkan();
     setOpen(true);
   };
 
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
-    window.addEventListener('scroll', close, true);
-    window.addEventListener('resize', close);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    /**
+     * Panelnya fixed, jadi ia harus diikutkan saat tabelnya digulir. Dulu
+     * panelnya ditutup begitu ada gulir — gulir mendatar sedikit saja untuk
+     * mencari kolomnya sudah membuat daftar PIC-nya hilang.
+     */
+    let raf = 0;
+    const ikut = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        const r = boxRef.current ? boxRef.current.getBoundingClientRect() : null;
+        if (!r || r.bottom < 0 || r.top > window.innerHeight) { setOpen(false); return; }
+        tempelkan();
+      });
+    };
+    window.addEventListener('scroll', ikut, true);
+    window.addEventListener('resize', ikut);
     document.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('scroll', close, true);
-      window.removeEventListener('resize', close);
+      if (raf) window.cancelAnimationFrame(raf);
+      window.removeEventListener('scroll', ikut, true);
+      window.removeEventListener('resize', ikut);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [open, tempelkan]);
 
   return (
     <div ref={boxRef}>
