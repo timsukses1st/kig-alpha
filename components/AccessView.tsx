@@ -597,6 +597,21 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
   const [linkVal, setLinkVal] = useState<Record<string, string>>({});
   const [linkBusy, setLinkBusy] = useState(false);
 
+  /**
+   * Apakah yang diketik sama dengan nama project.
+   *
+   * Perbandingannya SENGAJA tidak peka huruf besar-kecil. Label di modal itu
+   * memakai `.field label` yang ber-`text-transform: uppercase`, jadi nama
+   * "Rumah Singgah" tampil sebagai "RUMAH SINGGAH". Orang mengetik persis apa
+   * yang dia lihat — lalu ditolak karena dibandingkan huruf per huruf dengan
+   * nama aslinya. Spasi berlebih juga dirapikan: menyalin nama dari tempat lain
+   * sering ikut membawa spasi ganda atau spasi di ujung.
+   */
+  const cocokNamaProject = (ketikan: string, nama: string): boolean => {
+    const rapi = (s: string) => s.trim().replace(/\s+/g, ' ').toLowerCase();
+    return rapi(ketikan) === rapi(nama) && rapi(nama) !== '';
+  };
+
   const askDeleteProject = async (pr: Project) => {
     const countIn = async (table: string): Promise<number> => {
       try {
@@ -617,8 +632,8 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
     if (!delProj) return;
     const { pr, nContent, nAcc, nBudget } = delProj;
     const hasData = nContent + nAcc + nBudget > 0;
-    // kalau ada isi, wajib ketik nama persis
-    if (hasData && delConfirmText.trim() !== pr.name) {
+    // kalau ada isi, wajib ketik namanya
+    if (hasData && !cocokNamaProject(delConfirmText, pr.name)) {
       flash('Ketik nama project dengan benar untuk menghapus total.');
       return;
     }
@@ -639,9 +654,18 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
       await supabase.from('accounts').delete().eq('project_id', pr.id);
     }
 
-    const { error } = await supabase.from('projects').delete().eq('id', pr.id);
+    // .select('id') wajib: DELETE yang ditolak RLS mengenai 0 baris TANPA
+    // error, jadi tanpa ini penghapusan yang gagal tetap memunculkan pesan
+    // "Project & seluruh isinya dihapus" padahal projectnya masih ada.
+    const { data: terhapus, error } = await supabase
+      .from('projects').delete().eq('id', pr.id).select('id');
     setDelBusy(false);
     if (error) { flash('Gagal menghapus project: ' + error.message); return; }
+    if (!terhapus || terhapus.length === 0) {
+      flash('Project tidak terhapus — wewenang akunmu tidak mencukupi.');
+      load();
+      return;
+    }
     flash(hasData ? 'Project & seluruh isinya dihapus.' : 'Project dihapus.');
     setDelProj(null);
     load(); onAccountsChanged?.();
@@ -1833,7 +1857,7 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
 
       {delProj && (() => {
         const hasData = delProj.nContent + delProj.nAcc + delProj.nBudget > 0;
-        const canDelete = !hasData || delConfirmText.trim() === delProj.pr.name;
+        const canDelete = !hasData || cocokNamaProject(delConfirmText, delProj.pr.name);
         return (
         <div className="overlay" onClick={(e) => e.target === e.currentTarget && setDelProj(null)}>
           <div className="modal" style={{ maxWidth: 440 }}>
@@ -1859,9 +1883,26 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
                     <span className="del-counts-note">+ recap & request terkait</span>
                   </div>
                   <div className="field" style={{ marginTop: 14 }}>
-                    <label>Ketik <b style={{ color: 'var(--red)' }}>{delProj.pr.name}</b> untuk konfirmasi</label>
+                    {/* textTransform: 'none' WAJIB di sini. `.field label` memaksa
+                        HURUF BESAR, jadi tanpa ini nama "Rumah Singgah" tampil
+                        sebagai "RUMAH SINGGAH" — orang mengetik apa yang dia
+                        lihat, lalu bingung kenapa tombolnya tetap mati. */}
+                    <label>
+                      Ketik{' '}
+                      <b style={{ color: 'var(--red)', textTransform: 'none', letterSpacing: 0 }}>
+                        {delProj.pr.name}
+                      </b>{' '}
+                      untuk konfirmasi
+                    </label>
                     <input value={delConfirmText} onChange={(e) => setDelConfirmText(e.target.value)}
                       placeholder={delProj.pr.name} autoFocus />
+                    <div className="hint">
+                      {delConfirmText.trim() === ''
+                        ? 'Huruf besar-kecil tidak masalah.'
+                        : (canDelete
+                          ? '✓ Cocok — tombol Hapus total sudah aktif.'
+                          : 'Belum cocok dengan nama project.')}
+                    </div>
                   </div>
                 </>
               )}
