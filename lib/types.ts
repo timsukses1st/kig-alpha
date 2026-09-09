@@ -847,6 +847,10 @@ export interface OrangRingkas {
   role: Role;
   team: Team | null;
   vertical: string | null;
+  /** Atasan yang ditunjuk di Bagan Tim. WAJIB ikut diambil dari query —
+   *  tanpa ini penunjukan bagan tidak terbaca dan layar jatuh ke tangga
+   *  otomatis, sementara database sudah memakai penunjukannya. */
+  lead_id: string | null;
 }
 
 /**
@@ -867,6 +871,17 @@ export function akuLeadUntuk(saya: Profile | null, pemohon: OrangRingkas | null)
   if (!saya || !pemohon) return false;
   if (saya.role === 'superadmin') return true;
   if (pemohon.id === saya.id) return false;          // tidak menyetujui diri sendiri
+
+  // Atasan yang DITUNJUK di Bagan Tim menang atas tangga otomatis, dan
+  // diperiksa SEBELUM syarat peran — persis seperti urutan di is_lead_for().
+  //
+  // Cabang ini sempat tertinggal waktu Bagan Tim dibuat: database sudah
+  // memakai penunjukan, layar masih memakai tangga otomatis. Akibatnya Febry
+  // (Pimpinan) ditunjuk jadi atasan Erika & Qintana, database mengizinkan,
+  // tapi tombol Setujui tidak pernah muncul — karena tangga otomatis bilang
+  // atasan seorang manager itu HO, dan Febry bukan HO.
+  if (pemohon.lead_id) return pemohon.lead_id === saya.id;
+
   if (saya.role !== 'manager') return false;
   if (saya.vertical !== 'ALL' && saya.vertical !== pemohon.vertical) return false;
   if (pemohon.team === 'pimpinan') return false;

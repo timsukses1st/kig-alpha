@@ -100,11 +100,11 @@ export default function LeaveView({ profile }: Props) {
     // dan semua orang akan melihat tombol yang pasti ditolak database.
     const { data: prof } = await supabase
       .from('profiles')
-      .select('id, full_name, email, role, team, vertical')
+      .select('id, full_name, email, role, team, vertical, lead_id')
       .eq('is_active', true);
 
     const peta: Record<string, OrangRingkas> = {};
-    ((prof as { id: string; full_name: string | null; email: string; role: Role; team: Team | null; vertical: string | null }[]) || [])
+    ((prof as { id: string; full_name: string | null; email: string; role: Role; team: Team | null; vertical: string | null; lead_id: string | null }[]) || [])
       .forEach((u) => {
         peta[u.id] = {
           id: u.id,
@@ -112,6 +112,7 @@ export default function LeaveView({ profile }: Props) {
           role: u.role,
           team: u.team,
           vertical: u.vertical,
+          lead_id: u.lead_id,
         };
       });
     setOrang(peta);
