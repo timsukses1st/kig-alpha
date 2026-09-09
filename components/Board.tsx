@@ -5,7 +5,7 @@ import PilihCari from '@/components/PilihCari';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
-  PLATFORMS, TEAM_LABEL, accountUrl, boleh, canCreateContent, canDeleteContent, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses, TUGAS,
+  PLATFORMS, TEAM_LABEL, accountUrl, alamatTautanBoard, boleh, canCreateContent, canDeleteContent, canEditRow, initials, MAKS_BRIEF_TAUTAN, platformDef, statusDef, tagColor, targetableStatuses, TUGAS,
   type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type Team, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
@@ -543,6 +543,11 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
   const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [copiedRow, setCopiedRow] = useState<string | null>(null);
   const [toast, setToast] = useState('');
+  // ---- tautan ke sekumpulan brief (untuk dicantumkan di lembur) ----
+  const [tautanBusy, setTautanBusy] = useState(false);
+  /** Ditampilkan hanya kalau clipboard ditolak browser — supaya alamatnya
+   *  tetap bisa diblok dan disalin manual, bukan hilang begitu saja. */
+  const [tautanManual, setTautanManual] = useState<{ url: string; jumlah: number } | null>(null);
   // Project konten yang sudah ada dikunci. Memindahkannya harus disengaja
   // (klik tombol dulu), supaya tidak bisa berpindah klien karena salah klik.
   const [movingProject, setMovingProject] = useState(false);
@@ -1083,6 +1088,91 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
       window.setTimeout(() => setCopiedRow((c) => (c === row.id ? null : c)), 1600);
     } else {
       flashToast('Browser menolak akses clipboard — buka kartunya lalu salin manual.');
+    }
+  };
+
+  /* ---------------- tautan ke sekumpulan brief ---------------- */
+
+  /** Menyalin teks apa adanya. Jalur cadangan sama dengan copyRowCaption:
+   *  sebagian browser memblokir Clipboard API di luar gestur langsung. */
+  const salinTeks = async (teks: string): Promise<boolean> => {
+    try {
+      await navigator.clipboard.writeText(teks);
+      return true;
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = teks;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        return ok;
+      } catch { return false; }
+    }
+  };
+
+  /**
+   * Nama bawaan sebuah tautan — yang nanti tampil di chip Board saat dibuka.
+   *
+   * Sengaja tidak menanyakan apa pun ke orangnya: alurnya harus tetap tiga
+   * langkah (centang → klik kanan → tempel). Kalau semua briefnya dari satu
+   * akun, nama akunnya dipakai karena itu keterangan paling berguna; kalau
+   * campur, tanggal pembuatannya yang dipakai.
+   */
+  const labelTautan = (ids: string[]): string => {
+    const inti = `${ids.length} brief`;
+    const akunIds: string[] = [];
+    rows.forEach((r) => {
+      if (ids.indexOf(r.id) === -1) return;
+      if (r.account_id && akunIds.indexOf(r.account_id) === -1) akunIds.push(r.account_id);
+    });
+    if (akunIds.length === 1) {
+      const nama = accounts.find((a) => a.id === akunIds[0])?.handle || '';
+      if (nama) return `${inti} · ${nama}`.slice(0, 80);
+    }
+    const tgl = new Date().toLocaleDateString('id-ID', {
+      day: 'numeric', month: 'short', year: 'numeric',
+    });
+    return `${inti} · ${tgl}`.slice(0, 80);
+  };
+
+  /**
+   * Membuat satu tautan pendek berisi daftar brief, lalu menyalinnya.
+   *
+   * Barisnya hanya menyimpan id. Siapa pun yang membuka tautannya tetap
+   * disaring RLS `contents` — brief di luar unitnya tidak akan muncul, dan
+   * itu memang yang diinginkan.
+   */
+  const buatTautan = async (ids: string[]) => {
+    if (tautanBusy) return;
+    if (!profile) { flashToast('Sesi belum siap — muat ulang halamannya.'); return; }
+    if (ids.length === 0) return;
+    if (ids.length > MAKS_BRIEF_TAUTAN) {
+      flashToast(`Maksimal ${MAKS_BRIEF_TAUTAN} brief dalam satu tautan.`);
+      return;
+    }
+    setTautanBusy(true);
+    const { data, error: errT } = await supabase
+      .from('board_links')
+      .insert({ content_ids: ids, label: labelTautan(ids), created_by: profile.id })
+      .select('kode')
+      .single();
+    setTautanBusy(false);
+    if (errT || !data) {
+      flashToast('Gagal membuat tautan — coba lagi sebentar lagi.');
+      return;
+    }
+    const url = alamatTautanBoard(data.kode as string);
+    const ok = await salinTeks(url);
+    if (ok) {
+      flashToast(`Tautan ${ids.length} brief tersalin — tinggal tempel di kolom link lembur.`);
+    } else {
+      setTautanManual({ url, jumlah: ids.length });
     }
   };
 
@@ -1674,9 +1764,26 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
           <span className="top-note">{filtered.length} konten</span>
         </div>
         <div className="top-actions">
-          {sorotan && (
+          {sorotan && (() => {
+            /**
+             * Berapa dari daftar itu yang benar-benar terlihat.
+             *
+             * Tautan brief bisa dibuka orang dari unit lain; RLS `contents`
+             * menyaring sebagian barisnya tanpa bunyi apa pun. Tanpa angka ini
+             * orang mengira Alpha-nya rusak — padahal memang tidak berhak.
+             */
+            // Saat tabelnya belum selesai dimuat, `rows` masih kosong dan
+            // angkanya akan berkedip "0 terlihat" sekejap. Selama itu anggap
+            // saja utuh — nanti dihitung ulang sendiri setelah data masuk.
+            const ada = petaSorotan && rows.length > 0
+              ? rows.filter((r) => petaSorotan[r.id]).length
+              : sorotan.ids.length;
+            const kurang = sorotan.ids.length - ada;
+            return (
             <span
-              title="Sedang menampilkan kiriman dari Laporan Kerja"
+              title={kurang > 0
+                ? `${kurang} dari ${sorotan.ids.length} konten tidak ditampilkan karena di luar wewenang akunmu`
+                : 'Sedang menampilkan daftar konten tertentu'}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 8,
                 border: '1px solid var(--accent)', background: 'var(--accent-soft)',
@@ -1686,6 +1793,11 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
             >
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {sorotan.label}
+                {kurang > 0 && (
+                  <span style={{ fontWeight: 500, opacity: 0.8 }}>
+                    {` · ${ada} terlihat`}
+                  </span>
+                )}
               </span>
               <button
                 className="btn ghost"
@@ -1696,7 +1808,8 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
                 ✕
               </button>
             </span>
-          )}
+            );
+          })()}
           <button className="btn" onClick={() => setColMenu(!colMenu)}>
             ☰ Kolom{hiddenCols.length ? ` (${hiddenCols.length})` : ''}
           </button>
@@ -2405,6 +2518,16 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
                 <span className="bulk-short">Status</span>
               </button>
               <button
+                className="btn ghost"
+                style={{ whiteSpace: 'nowrap' }}
+                disabled={tautanBusy}
+                title="Buat satu tautan berisi brief yang tercentang — untuk dicantumkan di pengajuan lembur"
+                onClick={() => { setBulkStatusOpen(false); buatTautan(selected); }}
+              >
+                🔗 <span className="bulk-long">{tautanBusy ? 'Membuat tautan…' : 'Salin tautan'}</span>
+                <span className="bulk-short">Tautan</span>
+              </button>
+              <button
                 className="btn primary"
                 style={{ whiteSpace: 'nowrap' }}
                 onClick={() => { setBulkStatusOpen(false); openDup(rows.filter((r) => selected.includes(r.id))); }}
@@ -2464,7 +2587,8 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
           <p className="cal-legend">
             Ketik langsung di kolomnya — tersimpan otomatis saat pindah kolom atau tekan Enter, Esc untuk batal.
             Klik judul konten untuk membuka brief lengkapnya, atau klik kanan pada baris (tekan-tahan di HP) untuk duplikat, salin caption, dan hapus.
-            Centang beberapa baris untuk mengubah statusnya sekaligus lewat tombol <b>⇄ Ubah status</b> yang muncul di bawah.
+            Centang beberapa baris untuk mengubah statusnya sekaligus lewat tombol <b>⇄ Ubah status</b> yang muncul di bawah,
+            atau <b>🔗 Salin tautan</b> untuk membuat satu alamat berisi brief yang tercentang — tinggal ditempel di kolom link pengajuan lembur.
             Filter tanggal mengikuti <b>Tanggal tayang</b> — konten yang belum dijadwalkan hanya muncul di rentang <b>Semua</b>. Kolom yang tidak bisa diketik berarti tahapnya sedang dikelola tim lain.
           </p>
 
@@ -2979,6 +3103,15 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
       {ctxMenu && (() => {
         const row = ctxMenu.row;
         const hasCaption = !!(row.caption || row.hashtags);
+        /**
+         * Klik kanan DI DALAM baris yang sedang tercentang berarti "yang
+         * tercentang semua". Klik kanan di baris lain berarti baris itu saja —
+         * kalau tidak, orang yang cuma mau menyalin satu brief malah membawa
+         * pilihan lama yang sudah dia lupakan.
+         */
+        const idsTautan = selected.length > 0 && selected.indexOf(row.id) !== -1
+          ? selected
+          : [row.id];
         const ic = (d: string) => (
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
             strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3020,6 +3153,18 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
               onPick={() => { setCtxMenu(null); copyRowCaption(row); }}
             />
             <CtxItem
+              label={
+                tautanBusy
+                  ? 'Membuat tautan…'
+                  : (idsTautan.length > 1
+                    ? `Salin tautan ${idsTautan.length} brief terpilih`
+                    : 'Salin tautan brief ini')
+              }
+              disabled={tautanBusy}
+              icon={ic('M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7')}
+              onPick={() => { setCtxMenu(null); buatTautan(idsTautan); }}
+            />
+            <CtxItem
               label="Duplikat ke platform lain"
               icon={ic('M9 9h12v12H9zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1')}
               onPick={() => { setCtxMenu(null); openDup([row]); }}
@@ -3057,6 +3202,44 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
           </>
         );
       })()}
+
+      {/* Cadangan kalau browser menolak clipboard — alamatnya tetap harus
+          bisa diambil, bukan hilang bersama toast yang gagal. */}
+      {tautanManual && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && setTautanManual(null)}>
+          <div className="modal" style={{ maxWidth: 480 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--accent)' }} />
+                  Tautan brief
+                </div>
+                <div className="modal-title">Salin manual</div>
+                <div className="modal-sub">
+                  Browser menolak akses clipboard. Tautannya sudah jadi — blok teksnya lalu tekan Ctrl+C.
+                </div>
+              </div>
+              <button className="btn ghost modal-close" onClick={() => setTautanManual(null)}>✕</button>
+            </div>
+            <div style={{ padding: '4px 24px 20px' }}>
+              <div className="field">
+                <label>Berisi {tautanManual.jumlah} brief</label>
+                <input
+                  readOnly
+                  value={tautanManual.url}
+                  onFocus={(e) => e.currentTarget.select()}
+                  autoFocus
+                  style={{ width: '100%', fontFamily: 'var(--mono)', fontSize: 12 }}
+                />
+              </div>
+              <p className="hint" style={{ marginTop: 10 }}>
+                Tempel di kolom <b>Link hasil pengerjaan</b> pada pengajuan lembur.
+                Yang membukanya hanya melihat brief yang memang boleh dia lihat.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Duplikat konten ke platform lain */}
       {dupRows && dupRows.length > 0 && (

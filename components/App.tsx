@@ -5,7 +5,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import {
   bebasPilihVertical, boleh, canAddProject as bolehTambahProject, initials,
-  pasangMatriks, TUGAS, VERTICALS,
+  PARAM_TAUTAN_BOARD, pasangMatriks, TUGAS, VERTICALS,
   type Account, type IzinBaris, type IzinTim, type Profile, type Project, type Vertical,
 } from '@/lib/types';
 import Login from '@/components/Login';
@@ -261,11 +261,75 @@ export default function App() {
    * Board yang menutupnya lewat tanda ✕ di kanan atas.
    */
   const [sorotan, setSorotan] = useState<{ ids: string[]; label: string } | null>(null);
+  /**
+   * Kode tautan brief dari alamat (`?b=...`), dibaca sekali saat halaman dibuka.
+   *
+   * Disimpan di state dan BARU ditukar jadi daftar konten setelah ada sesi —
+   * orang yang mengklik tautan dari WhatsApp sering belum login, dan kalau
+   * kodenya dilepas sebelum itu dia mendarat di Board kosong tanpa penjelasan.
+   */
+  const [kodeTautan, setKodeTautan] = useState<string | null>(null);
+  /** Pesan singkat kalau tautannya tidak ketemu. Padam sendiri. */
+  const [tautanPesan, setTautanPesan] = useState('');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [booting, setBooting] = useState(true);
+
+  /* ---------------- tautan brief dari alamat ---------------- */
+
+  useEffect(() => {
+    try {
+      const k = new URLSearchParams(window.location.search).get(PARAM_TAUTAN_BOARD);
+      if (k) setKodeTautan(k);
+    } catch { /* alamat aneh — abaikan saja, jangan sampai Alpha gagal muat */ }
+  }, []);
+
+  useEffect(() => {
+    if (!kodeTautan || !session) return;
+    let batal = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('board_links')
+        .select('content_ids, label')
+        .eq('kode', kodeTautan)
+        .maybeSingle();
+      if (batal) return;
+      setKodeTautan(null);
+      // Alamat dibersihkan SETELAH terpakai. Kalau dibersihkan lebih awal,
+      // muat ulang halaman saat masih di layar login akan kehilangan kodenya.
+      try {
+        const p = new URLSearchParams(window.location.search);
+        p.delete(PARAM_TAUTAN_BOARD);
+        const sisa = p.toString();
+        window.history.replaceState({}, '', window.location.pathname + (sisa ? `?${sisa}` : ''));
+      } catch {}
+      if (error || !data) {
+        setTautanPesan('Tautan brief tidak ditemukan — mungkin sudah dihapus pembuatnya.');
+        return;
+      }
+      const ids: string[] = Array.isArray(data.content_ids) ? (data.content_ids as string[]) : [];
+      if (ids.length === 0) {
+        setTautanPesan('Tautan brief ini kosong.');
+        return;
+      }
+      // Penyaring project di sidebar dikembalikan ke Semua. Tautannya bisa
+      // berisi brief dari project mana pun, dan kalau sidebar kebetulan sedang
+      // menunjuk project lain isinya kelihatan nol tanpa sebab yang jelas.
+      setActiveProject('all');
+      setSorotan({ ids, label: (data.label as string) || `${ids.length} brief` });
+      setView('board');
+      setMobileNav(false);
+    })();
+    return () => { batal = true; };
+  }, [kodeTautan, session]);
+
+  useEffect(() => {
+    if (!tautanPesan) return;
+    const t = window.setTimeout(() => setTautanPesan(''), 6000);
+    return () => window.clearTimeout(t);
+  }, [tautanPesan]);
 
   useEffect(() => {
     const savedTheme = window.localStorage?.getItem('alpha-theme');
@@ -706,6 +770,21 @@ export default function App() {
           )}
         </div>
       </aside>
+
+      {tautanPesan && (
+        <div
+          onClick={() => setTautanPesan('')}
+          style={{
+            position: 'fixed', top: 14, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 300, cursor: 'pointer', maxWidth: 'min(92vw, 460px)',
+            padding: '10px 16px', borderRadius: 999, fontSize: 12.5, fontWeight: 600,
+            background: 'var(--raised)', border: '1px solid var(--border-strong)',
+            boxShadow: '0 14px 36px rgba(0,0,0,.5)',
+          }}
+        >
+          {tautanPesan}
+        </div>
+      )}
 
       <main className="main">
         {view === 'board' && (

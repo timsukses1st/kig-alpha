@@ -413,6 +413,45 @@ export function domainSingkat(url: string): string {
   return m ? m[1].replace(/^www\./i, '') : url;
 }
 
+/* ------------------------------------------------------------------ *
+ * Tautan ke sekumpulan brief di Board
+ * ------------------------------------------------------------------ */
+
+/**
+ * Satu tautan pendek yang menunjuk ke beberapa brief sekaligus.
+ *
+ * Dipakai untuk mencantumkan pekerjaan di pengajuan lembur: pilih briefnya di
+ * Board, klik kanan, dapat satu alamat. Yang membukanya melihat Board yang
+ * sudah disaring ke daftar itu.
+ *
+ * Yang disimpan HANYA daftar id. Isi tiap brief tetap dijaga RLS `contents`,
+ * jadi memegang tautannya tidak membuat orang bisa melihat brief yang bukan
+ * haknya — brief itu sekadar tidak muncul.
+ */
+export interface BoardLink {
+  id: string;
+  /** Kode pendek di alamat, mis. `?b=4cbe22a80d`. Dibuat oleh database. */
+  kode: string;
+  content_ids: string[];
+  label: string;
+  created_by: string;
+  created_at: string;
+}
+
+/** Maksimal brief dalam satu tautan. Dijaga juga oleh constraint
+ *  `board_links_isi_wajar` di database. */
+export const MAKS_BRIEF_TAUTAN = 200;
+
+/** Nama parameter alamat yang dibaca App saat halaman dibuka. */
+export const PARAM_TAUTAN_BOARD = 'b';
+
+/** Alamat lengkap sebuah tautan board, dari kodenya. */
+export function alamatTautanBoard(kode: string): string {
+  if (typeof window === 'undefined') return `?${PARAM_TAUTAN_BOARD}=${kode}`;
+  const { origin, pathname } = window.location;
+  return `${origin}${pathname || '/'}?${PARAM_TAUTAN_BOARD}=${kode}`;
+}
+
 export interface OvertimeRequest {
   id: string;
   /** Project utama — dipertahankan karena policy RLS lama masih memakainya. */
