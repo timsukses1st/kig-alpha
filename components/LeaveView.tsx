@@ -74,6 +74,14 @@ export default function LeaveView({ profile }: Props) {
   const [tolakUntuk, setTolakUntuk] = useState<LeaveRequest | null>(null);
   const [alasanTolak, setAlasanTolak] = useState('');
   const [tarikUntuk, setTarikUntuk] = useState<LeaveRequest | null>(null);
+  /**
+   * Hapus milik orang lain — hanya superadmin, dan sengaja DIPISAH dari "Tarik".
+   *
+   * Menarik pengajuan sendiri yang belum diputus itu hal biasa. Menghapus
+   * pengajuan orang lain yang sudah diputus itu menghilangkan jejak keputusan,
+   * jadi tidak pantas memakai tombol dan kalimat konfirmasi yang sama.
+   */
+  const [hapusUntuk, setHapusUntuk] = useState<LeaveRequest | null>(null);
   const [aksiBusy, setAksiBusy] = useState(false);
 
   const flash = (m: string) => {
@@ -100,11 +108,11 @@ export default function LeaveView({ profile }: Props) {
     // dan semua orang akan melihat tombol yang pasti ditolak database.
     const { data: prof } = await supabase
       .from('profiles')
-      .select('id, full_name, email, role, team, vertical, lead_id')
+      .select('id, full_name, email, role, team, vertical, lead_id, cuti_lewati_hrd')
       .eq('is_active', true);
 
     const peta: Record<string, OrangRingkas> = {};
-    ((prof as { id: string; full_name: string | null; email: string; role: Role; team: Team | null; vertical: string | null; lead_id: string | null }[]) || [])
+    ((prof as { id: string; full_name: string | null; email: string; role: Role; team: Team | null; vertical: string | null; lead_id: string | null; cuti_lewati_hrd: boolean }[]) || [])
       .forEach((u) => {
         peta[u.id] = {
           id: u.id,
@@ -113,6 +121,7 @@ export default function LeaveView({ profile }: Props) {
           team: u.team,
           vertical: u.vertical,
           lead_id: u.lead_id,
+          cuti_lewati_hrd: u.cuti_lewati_hrd,
         };
       });
     setOrang(peta);
@@ -152,6 +161,17 @@ export default function LeaveView({ profile }: Props) {
     if (o.status === 'menunggu_hrd' && akuHrdUntuk(profile, p)) return 'hrd';
     return null;
   }, [profile, pemohonDari]);
+
+  /**
+   * Pengajuan orang ini selesai di lead, tanpa tahap HRD.
+   * Cerminan kolom `cuti_lewati_hrd` — dipakai untuk memilih kata di tombol
+   * dan menjelaskan jejaknya, bukan untuk menentukan hasilnya. Yang memutuskan
+   * tetap pemicu di database.
+   */
+  const berhentiDiLead = useCallback(
+    (o: LeaveRequest): boolean => !!pemohonDari(o)?.cuti_lewati_hrd,
+    [pemohonDari],
+  );
 
   const punyaAntrean = useMemo(
     () => rows.some((o) => giliranSaya(o) !== null),
@@ -299,7 +319,7 @@ export default function LeaveView({ profile }: Props) {
     setTolakUntuk(null);
     setAlasanTolak('');
     flash(setuju
-      ? (tingkat === 'lead' ? 'Diteruskan ke HRD.' : 'Pengajuan disetujui.')
+      ? (tingkat === 'lead' && !berhentiDiLead(o) ? 'Diteruskan ke HRD.' : 'Pengajuan disetujui.')
       : 'Pengajuan ditolak.');
     load(true);
   };
@@ -315,9 +335,40 @@ export default function LeaveView({ profile }: Props) {
     load(true);
   };
 
+  /** Hapus permanen oleh superadmin. */
+  const hapusOrang = async (o: LeaveRequest) => {
+    setAksiBusy(true);
+    // .select('id') wajib: DELETE yang ditolak RLS mengenai 0 baris TANPA
+    // error, jadi tanpa ini gagal hapus terlihat seperti berhasil.
+    const { data, error: err } = await supabase
+      .from('leave_requests').delete().eq('id', o.id).select('id');
+    setAksiBusy(false);
+    setHapusUntuk(null);
+    if (err) { flash(`Gagal menghapus — ${err.message}`); return; }
+    if (!data || data.length === 0) {
+      flash('Tidak terhapus — kamu tidak punya izin menghapus pengajuan ini.');
+      return;
+    }
+    setDetail(null);
+    flash(`Pengajuan ${o.requester_name || ''} dihapus permanen.`);
+    load(true);
+  };
+
   /** Boleh diubah/ditarik hanya selama belum diputus siapa pun. */
   const masihMilikSaya = (o: LeaveRequest) =>
     o.requester_id === profile?.id && o.status === 'menunggu_lead';
+
+  /**
+   * Cerminan policy `cuti_delete`:
+   *   (requester_id = auth.uid() AND status='menunggu_lead') OR my_role()='superadmin'
+   *
+   * Superadmin memang sudah diizinkan database sejak awal — yang belum ada
+   * cuma tombolnya di layar.
+   */
+  const isSuper = profile?.role === 'superadmin';
+  /** Tombol Hapus hanya muncul di baris yang tidak punya tombol Tarik, supaya
+   *  satu baris tidak menampilkan dua tombol merah yang artinya mirip. */
+  const bolehHapusOrang = (o: LeaveRequest) => isSuper && !masihMilikSaya(o);
 
   return (
     <>
@@ -421,7 +472,7 @@ export default function LeaveView({ profile }: Props) {
                             <>
                               <button className="btn act" style={{ borderColor: 'var(--green)', color: 'var(--green)' }}
                                 disabled={aksiBusy} onClick={() => putuskan(o, true)}>
-                                {giliran === 'lead' ? 'Teruskan' : 'Setujui'}
+                                {giliran === 'lead' && !berhentiDiLead(o) ? 'Teruskan' : 'Setujui'}
                               </button>
                               <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
                                 disabled={aksiBusy} onClick={() => { setAlasanTolak(''); setTolakUntuk(o); }}>
@@ -435,6 +486,11 @@ export default function LeaveView({ profile }: Props) {
                               <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
                                 onClick={() => setTarikUntuk(o)}>Tarik</button>
                             </>
+                          )}
+                          {bolehHapusOrang(o) && (
+                            <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                              title="Hapus permanen (khusus superadmin)"
+                              onClick={() => setHapusUntuk(o)}>Hapus</button>
                           )}
                         </div>
                       </td>
@@ -532,7 +588,12 @@ export default function LeaveView({ profile }: Props) {
                     <b>HRD</b>{' '}
                     {detail.hrd_at
                       ? `${detail.reject_by === 'hrd' ? 'menolak' : 'menyetujui'} — ${detail.hrd_name} · ${fmtTglJam(detail.hrd_at)}`
-                      : (detail.reject_by === 'lead' ? 'tidak dilanjutkan' : 'belum memutus')}
+                      : detail.reject_by === 'lead' ? 'tidak dilanjutkan'
+                      // Dibedakan dari "belum memutus": kalau tahap HRD memang
+                      // dilewati, menulis "belum" membuat orang menunggu
+                      // keputusan yang tidak akan pernah datang.
+                      : berhentiDiLead(detail) ? 'tidak melalui tahap ini — cukup keputusan lead'
+                      : 'belum memutus'}
                   </div>
                 </div>
               </div>
@@ -554,12 +615,16 @@ export default function LeaveView({ profile }: Props) {
                       style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
                       onClick={() => { setAlasanTolak(''); setTolakUntuk(detail); }}>Tolak</button>
                     <button className="btn primary" disabled={aksiBusy} onClick={() => putuskan(detail, true)}>
-                      {giliranSaya(detail) === 'lead' ? 'Teruskan ke HRD' : 'Setujui'}
+                      {giliranSaya(detail) === 'lead' && !berhentiDiLead(detail) ? 'Teruskan ke HRD' : 'Setujui'}
                     </button>
                   </>
                 )}
                 {masihMilikSaya(detail) && (
                   <button className="btn" onClick={() => bukaEdit(detail)}>Edit</button>
+                )}
+                {bolehHapusOrang(detail) && (
+                  <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                    onClick={() => setHapusUntuk(detail)}>Hapus</button>
                 )}
               </div>
             </div>
@@ -598,6 +663,50 @@ export default function LeaveView({ profile }: Props) {
                   style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
                   onClick={() => putuskan(tolakUntuk, false, alasanTolak.trim())}>
                   {aksiBusy ? 'Menyimpan…' : 'Tolak pengajuan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hapusUntuk && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !aksiBusy && setHapusUntuk(null)}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--red)' }} />Hapus permanen</div>
+                <div className="modal-title">Hapus pengajuan {hapusUntuk.requester_name}?</div>
+                <div className="modal-sub">
+                  {jenisCutiDef(hapusUntuk.kind).label} · {rentang(hapusUntuk)} · {lama(hapusUntuk)}
+                  {' · '}{statusCutiDef(hapusUntuk.status).label}
+                </div>
+              </div>
+              <button className="btn ghost modal-close" disabled={aksiBusy} onClick={() => setHapusUntuk(null)}>✕</button>
+            </div>
+            <div style={{ padding: '18px 24px' }}>
+              <div style={{
+                background: 'color-mix(in srgb, var(--red) 10%, transparent)',
+                borderLeft: '2px solid var(--red)', borderRadius: '0 6px 6px 0',
+                padding: '9px 12px', fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-2)',
+              }}>
+                <b style={{ color: 'var(--text)' }}>Ini pengajuan orang lain.</b>{' '}
+                {hapusUntuk.status === 'disetujui' || hapusUntuk.status === 'ditolak'
+                  ? 'Pengajuan ini sudah diputus — menghapusnya ikut menghilangkan jejak keputusan siapa dan kapan.'
+                  : 'Pengajuan ini masih berjalan; pemohonnya tidak akan diberi tahu bahwa pengajuannya hilang.'}
+                {' '}Tidak bisa dikembalikan.
+              </div>
+              <p className="hint" style={{ marginTop: 10 }}>
+                Jejaknya tetap ada di <b>Log Aktivitas</b>.
+              </p>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={aksiBusy} onClick={() => setHapusUntuk(null)}>Batal</button>
+                <button className="btn" disabled={aksiBusy}
+                  style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                  onClick={() => hapusOrang(hapusUntuk)}>
+                  {aksiBusy ? 'Menghapus…' : 'Hapus permanen'}
                 </button>
               </div>
             </div>

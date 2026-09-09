@@ -812,6 +812,18 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
     load();
   };
 
+  /** Menyalakan/mematikan penanda "cukup disetujui lead, tanpa HRD". */
+  const simpanLewatiHrd = async (orangId: string, nilai: boolean) => {
+    setBaganBusy(orangId);
+    const { data, error } = await supabase
+      .from('profiles').update({ cuti_lewati_hrd: nilai }).eq('id', orangId).select('id');
+    setBaganBusy(null);
+    if (error) { flash(error.message); return; }
+    if (!data || data.length === 0) { flash('Tidak tersimpan — tidak punya izin.'); return; }
+    flash(nilai ? 'Cutinya sekarang cukup disetujui lead.' : 'Cutinya kembali melewati HRD.');
+    load();
+  };
+
   const updateUser = async (id: string, patch: Partial<Profile>) => {
     setMsg('');
     const { error } = await supabase.from('profiles').update(patch).eq('id', id);
@@ -1285,7 +1297,11 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
               <div className="table-wrap">
                 <table>
                   <thead>
-                    <tr><th>Nama</th><th>Tim</th><th style={{ width: 220 }}>Atasan langsung</th><th>Berlaku sekarang</th></tr>
+                    <tr>
+                      <th>Nama</th><th>Tim</th><th style={{ width: 220 }}>Atasan langsung</th>
+                      <th style={{ width: 150 }}>Cuti tanpa HRD</th>
+                      <th>Berlaku sekarang</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {orangBagan.map((u) => {
@@ -1314,6 +1330,24 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
                                   </option>
                                 ))}
                             </select>
+                          </td>
+                          <td>
+                            {/* Penanda ini memendekkan alur persetujuan, jadi
+                                ditaruh sebaris dengan atasannya — dua hal itu
+                                sama-sama menentukan siapa yang mengetuk. */}
+                            <label style={{
+                              display: 'flex', alignItems: 'center', gap: 7,
+                              fontSize: 11.5, cursor: 'pointer',
+                              color: u.cuti_lewati_hrd ? 'var(--accent)' : 'var(--text-3)',
+                            }}>
+                              <input
+                                type="checkbox"
+                                checked={!!u.cuti_lewati_hrd}
+                                disabled={baganBusy === u.id}
+                                onChange={(e) => simpanLewatiHrd(u.id, e.target.checked)}
+                              />
+                              {u.cuti_lewati_hrd ? 'Cukup lead' : 'Lewat HRD'}
+                            </label>
                           </td>
                           <td>
                             {u.lead_id ? (

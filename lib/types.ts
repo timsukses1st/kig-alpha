@@ -104,6 +104,12 @@ export interface Profile {
    * punya lebih dari satu manager, karena tangga otomatis tidak bisa memilih.
    */
   lead_id: string | null;
+  /**
+   * true = pengajuan cutinya SELESAI begitu lead menyetujui, tidak diteruskan
+   * ke HRD. Dipakai untuk jajaran yang atasannya Pimpinan — janggal kalau HRD
+   * yang mengetuk cuti atasannya sendiri.
+   */
+  cuti_lewati_hrd: boolean;
 }
 
 export interface TeamMember {
@@ -851,6 +857,8 @@ export interface OrangRingkas {
    *  tanpa ini penunjukan bagan tidak terbaca dan layar jatuh ke tangga
    *  otomatis, sementara database sudah memakai penunjukannya. */
   lead_id: string | null;
+  /** true = cutinya selesai begitu lead menyetujui, tanpa tahap HRD. */
+  cuti_lewati_hrd?: boolean;
 }
 
 /**
