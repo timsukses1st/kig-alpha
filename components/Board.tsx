@@ -5,7 +5,7 @@ import PilihCari from '@/components/PilihCari';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
-  PLATFORMS, TEAM_LABEL, accountUrl, alamatTautanBoard, boleh, canCreateContent, canDeleteContent, canEditRow, initials, MAKS_BRIEF_TAUTAN, platformDef, statusDef, tagColor, targetableStatuses, TUGAS,
+  PLATFORMS, TEAM_LABEL, accountUrl, akunUntukProject, alamatTautanBoard, boleh, canCreateContent, canDeleteContent, canEditRow, initials, MAKS_BRIEF_TAUTAN, platformDef, statusDef, tagColor, targetableStatuses, TUGAS,
   type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type Team, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
@@ -842,9 +842,13 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
    * Akses dia tidak kelihatan sama sekali karena daftarnya disaring per
    * project. Akibatnya ada akun nyasar yang bisa dipilih siapa saja tapi tidak
    * bisa diurus siapa pun. Sekarang akun wajib punya project.
+   *
+   * Akun UNIVERSAL (mis. @sudutsinema_ yang mengangkat banyak judul film) ikut
+   * ditawarkan lewat `akunUntukProject`, tapi tetap punya project asal — jadi
+   * masih ada satu tempat yang jelas untuk mengurusnya.
    */
   const accountsOfProject = (projId: string) =>
-    projId ? accounts.filter((a) => a.project_id === projId) : accounts;
+    projId ? akunUntukProject(accounts, projects, projId) : accounts;
   const membersOf = (team: 'creative' | 'distribution' | 'ads', terpasang?: string | null) =>
     anggotaUntuk(members, team, terpasang);
   // Cerminan policy `contents_insert`. Sengaja lewat satu fungsi bersama di
@@ -2942,11 +2946,20 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
                       disabled={readOnly}
                       placeholder="Ketik nama akun…"
                       onChange={(id) => setForm({ ...form, account_id: id })}
-                      options={accountsOfProject(form.project_id).map((a) => ({
-                        id: a.id,
-                        label: a.handle,
-                        sub: a.label || undefined,
-                      }))}
+                      options={accountsOfProject(form.project_id).map((a) => {
+                        // Akun universal ditandai supaya jelas dia bukan milik
+                        // project ini — kalau tidak, orang mengira daftarnya
+                        // salah waktu melihat akun judul film lain.
+                        const umum = !!a.universal && a.project_id !== form.project_id;
+                        return {
+                          id: a.id,
+                          label: a.handle,
+                          sub: umum
+                            ? `akun umum${a.label ? ' · ' + a.label : ''}`
+                            : (a.label || undefined),
+                          cari: umum ? 'umum universal' : undefined,
+                        };
+                      })}
                     />
                   </div>
                   <div className="field">

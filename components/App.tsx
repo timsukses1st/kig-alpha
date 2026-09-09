@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import {
-  bebasPilihVertical, boleh, canAddProject as bolehTambahProject, initials,
+  akunUntukProject, bebasPilihVertical, boleh, canAddProject as bolehTambahProject, initials,
   PARAM_TAUTAN_BOARD, pasangMatriks, TUGAS, VERTICALS,
   type Account, type IzinBaris, type IzinTim, type Profile, type Project, type Vertical,
 } from '@/lib/types';
@@ -643,7 +643,7 @@ export default function App() {
                 <div className="acc-name">{activeProj ? activeProj.name : 'Semua project'}</div>
                 <div className="acc-sub">
                   {activeProj
-                    ? `${activeProj.vertical || '—'} · ${activeProj.label || accounts.filter((a) => a.project_id === activeProj.id).length + ' akun'}`
+                    ? `${activeProj.vertical || '—'} · ${activeProj.label || akunUntukProject(accounts, projects, activeProj.id).length + ' akun'}`
                     : `${projects.length} project aktif`}
                 </div>
               </div>
@@ -663,7 +663,7 @@ export default function App() {
                       <div className="acc-name">{pr.name}</div>
                       <div className="acc-sub">
                         {pr.vertical ? pr.vertical + ' · ' : ''}
-                        {pr.label || `${accounts.filter((a) => a.project_id === pr.id).length} akun`}
+                        {pr.label || `${akunUntukProject(accounts, projects, pr.id).length} akun`}
                       </div>
                     </div>
                     {activeProject === pr.id && <span className="check">✓</span>}

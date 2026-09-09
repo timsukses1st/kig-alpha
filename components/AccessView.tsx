@@ -1467,6 +1467,9 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
               {' '}Kolom <b>Link</b> menyimpan alamat profil per platform — satu akun bisa dipakai di beberapa
               platform dengan username berbeda, jadi alamatnya diisi sendiri-sendiri. Yang belum diisi
               tidak akan ditautkan di Board.
+              {' '}Centang <b>Akun umum</b> untuk akun yang mengangkat banyak judul — akun itu ikut muncul di
+              dropdown Akun pada <b>semua project satu unit</b>, tapi tetap diurus dari project asalnya di
+              kolom Project. KC tidak pernah bocor ke KIG.
             </p>
             {/* Daftar pilihan Label — dipakai bersama oleh form tambah & kolom tabel */}
             <datalist id="acc-label-options">
@@ -1487,7 +1490,7 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
             <div className="table-wrap">
               <table>
                 <thead>
-                  <tr><th>Akun</th><th>Project</th><th>Label</th><th>Link</th><th>Status</th><th style={{ width: 90 }}></th></tr>
+                  <tr><th>Akun</th><th>Project</th><th style={{ width: 74 }}>Akun umum</th><th>Label</th><th>Link</th><th>Status</th><th style={{ width: 90 }}></th></tr>
                 </thead>
                 <tbody>
                   {shownAccounts.map((a) => (
@@ -1501,6 +1504,37 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
                           <option value="">—</option>
                           {projects.map((pr) => <option key={pr.id} value={pr.id}>{pr.name}</option>)}
                         </select>
+                      </td>
+                      <td>
+                        {/* Akun umum = mengangkat banyak judul, mis. @sudutsinema_.
+                            Ikut muncul di dropdown semua project SE-UNIT, tapi
+                            project di sebelah kiri tetap jadi tempat mengurusnya. */}
+                        <label
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+                          title="Ikut muncul di dropdown semua project satu unit"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!a.universal}
+                            onChange={(e) => {
+                              const nilai = e.target.checked;
+                              supabase.from('accounts').update({ universal: nilai }).eq('id', a.id).select('id')
+                                .then(({ data, error }) => {
+                                  if (error || !data || data.length === 0) {
+                                    flash('Gagal mengubah — butuh izin Kelola akun media.');
+                                    return;
+                                  }
+                                  flash(nilai
+                                    ? `${a.handle} sekarang muncul di semua project satu unit.`
+                                    : `${a.handle} kembali khusus project asalnya.`);
+                                  load(); onAccountsChanged?.();
+                                });
+                            }}
+                          />
+                          {a.universal && (
+                            <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--accent)' }}>umum</span>
+                          )}
+                        </label>
                       </td>
                       <td>
                         <LabelCell

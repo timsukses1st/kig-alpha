@@ -218,6 +218,19 @@ export interface Account {
   is_active: boolean;
   project_id: string | null;
   /**
+   * Akun umum yang mengangkat banyak judul — mis. `@sudutsinema_` yang dipakai
+   * Seni Merayu Tuhan sekaligus Film Rumah Singgah.
+   *
+   * Kalau true, akun ini ikut muncul di dropdown SEMUA project yang se-unit
+   * dengan project asalnya. `project_id` tetap wajib dan tetap menentukan unit
+   * bisnisnya (dipakai policy `accounts_select`) serta jadi satu-satunya tempat
+   * akun ini diurus di Kelola Akses.
+   *
+   * Opsional di TypeScript supaya komponen yang memakai `select()` terbatas
+   * tidak ikut rusak.
+   */
+  universal?: boolean | null;
+  /**
    * Alamat profil per platform. Satu baris akun dipakai lintas platform —
    * `@mediaruangfilm` ada di Instagram, TikTok, dan YouTube — dan username
    * aslinya bisa berbeda di tiap tempat, jadi tiap platform punya kolomnya
@@ -231,6 +244,43 @@ export interface Account {
   url_youtube?: string | null;
   url_threads?: string | null;
   url_facebook?: string | null;
+}
+
+/**
+ * Akun yang boleh dipilih untuk sebuah project.
+ *
+ * Isinya: akun milik project itu sendiri, DITAMBAH akun universal yang project
+ * asalnya berada di unit bisnis yang sama.
+ *
+ * Penjaga unit itu bukan basa-basi. RLS `accounts_select` sudah menyaring per
+ * unit, jadi anggota KC memang tidak pernah menerima baris akun KIG — tapi
+ * superadmin (vertical ALL) menerima semuanya. Tanpa pemeriksaan ini, akun
+ * universal milik KC akan muncul di dropdown project KIG, dan cuma superadmin
+ * yang melihatnya. Bug seperti itu baru ketahuan berbulan-bulan kemudian.
+ *
+ * Dipakai bersama oleh Board, App, dan Kelola Akses supaya tidak ada dua layar
+ * yang berbeda pendapat soal akun mana yang boleh dipakai.
+ */
+export function akunUntukProject(
+  accounts: Account[],
+  projects: Project[],
+  projectId: string | null,
+): Account[] {
+  if (!projectId) return accounts;
+  const verticalDari = (id: string | null): string | null => {
+    if (!id) return null;
+    const p = projects.find((x) => x.id === id);
+    return p ? (p.vertical as string) : null;
+  };
+  const unit = verticalDari(projectId);
+  return accounts.filter((a) => {
+    if (a.project_id === projectId) return true;
+    if (!a.universal || !a.project_id) return false;
+    // Unit project asal harus sama. Kalau salah satunya tidak diketahui,
+    // akunnya TIDAK ditawarkan — lebih baik kurang daripada bocor lintas unit.
+    const unitAsal = verticalDari(a.project_id);
+    return !!unit && !!unitAsal && unitAsal === unit;
+  });
 }
 
 /** Platform -> nama kolom penyimpan alamatnya di tabel `accounts`. */
