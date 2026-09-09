@@ -366,6 +366,39 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
   const [izinTim, setIzinTim] = useState<IzinTim[]>([]);
   const [izinBusy, setIzinBusy] = useState('');
   const [bukaTim, setBukaTim] = useState<string | null>(null);
+  /** Tugas yang barisnya sedang dibuka untuk diatur. Hanya satu pada satu waktu. */
+  const [bukaIzin, setBukaIzin] = useState<string | null>(null);
+
+  /**
+   * SIAPA yang benar-benar bisa melakukan sebuah tugas.
+   *
+   * Tabel ini dulu memperlihatkan mekanismenya — centang peran di satu kolom,
+   * chip tim di kolom lain — lalu pembacanya harus mengalikan sendiri di
+   * kepala untuk tahu hasilnya. Padahal yang ditanyakan orang selalu "siapa
+   * yang bisa", bukan "peran mana yang dicentang".
+   *
+   * Aturannya disalin dari fungsi boleh() di database: peran memberi izin,
+   * pembatas tim mempersempit. Superadmin selalu bisa.
+   */
+  const orangYangBisa = (tugas: string): Profile[] =>
+    users.filter((u) => {
+      if (!u.is_active) return false;
+      if (u.role === 'superadmin') return true;
+      if (u.role !== 'manager' && u.role !== 'tim') return false;
+      if (!dicentang(tugas, u.role)) return false;
+      const pembatas = timUntuk(tugas, u.role);
+      if (pembatas.length === 0) return true;
+      return !!u.team && pembatas.includes(u.team);
+    });
+
+  /** Ringkasan satu peran: "semua tim" atau daftar timnya. */
+  const ringkasPeran = (tugas: string, r: Role): string | null => {
+    if (!dicentang(tugas, r)) return null;
+    const pembatas = timUntuk(tugas, r);
+    const nama = r === 'manager' ? 'Manager' : 'Tim';
+    if (pembatas.length === 0) return `${nama} · semua tim`;
+    return `${nama} · ${pembatas.map((tm) => TEAM_LABEL[tm]).join(', ')}`;
+  };
 
   const loadIzin = useCallback(async () => {
     const [a, b, c] = await Promise.all([
@@ -1548,117 +1581,210 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
             </div>
             </>)}
             {tab === 'izin' && izinTab.izin && (<>
-            {/* ================= IZIN PERAN ================= */}
+            {/* ================= IZIN PERAN =================
+                Disusun ulang 9 Sep 2026. Versi sebelumnya menampilkan 23 baris
+                datar dengan dua kolom centang dan dinding chip tim — bentuknya
+                memperlihatkan MEKANISME, sementara yang dicari orang selalu
+                HASIL: siapa yang bisa. Sekarang tiap baris menjawab itu lebih
+                dulu, dan pengaturannya baru dibuka kalau memang mau diubah.
+                ============================================== */}
             <div className="section-title">Izin Peran</div>
             <p className="section-hint">
-              Centang tugas yang boleh dilakukan tiap peran. Perubahan <b>langsung berlaku</b> — di tampilan
-              maupun di database. <b>Superadmin selalu punya semua izin</b> dan tidak bisa diubah.
-              <b> Kelola Akses</b> sendiri permanen khusus Superadmin.
-              <br />
-              Kolom <b>Dibatasi tim</b> mempersempit izin ke tim tertentu. Kosong berarti berlaku untuk semua tim —
-              tanpa ini, satu centang &ldquo;Manager&rdquo; akan memberi izin ke seluruh 17 manager termasuk Finance dan HRD.
-            </p>
-            <p className="section-hint">
-              Tiga hal <b>tidak</b> diatur di sini karena bukan soal peran: tahap kerja tiap tim di Board,
-              dinding unit bisnis KC/GME/KIG, dan aturan &ldquo;milik sendiri&rdquo;. Setiap perubahan tercatat di
-              <b> Log Aktivitas</b>.
+              Siapa boleh melakukan apa. Perubahan <b>langsung berlaku</b>, dan tercatat di Log Aktivitas.
+              Superadmin selalu punya semua izin.
             </p>
 
             {tugasDefs.length === 0 ? (
               <p className="empty">Memuat…</p>
             ) : (
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th style={{ minWidth: 230 }}>TUGAS</th>
-                      <th style={{ width: 110, textAlign: 'center' }}>MANAGER</th>
-                      <th style={{ width: 110, textAlign: 'center' }}>TIM</th>
-                      <th>DIBATASI TIM</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tugasDefs.map((t) => (
-                      <tr key={t.tugas}>
-                        <td>
-                          <b>{t.label}</b>
-                          {t.terkunci && (
-                            <span className="hint" style={{ marginLeft: 6, color: 'var(--text-3)' }}>· dikunci</span>
-                          )}
-                          {t.keterangan && <div className="sub" style={{ fontSize: 11 }}>{t.keterangan}</div>}
-                        </td>
-                        {(['manager', 'tim'] as Role[]).map((r) => (
-                          <td key={r} style={{ textAlign: 'center' }}>
-                            <input
-                              type="checkbox"
-                              checked={dicentang(t.tugas, r)}
-                              disabled={t.terkunci || izinBusy === t.tugas + '|' + r}
-                              title={t.terkunci ? 'Baris ini dikunci — aturannya bukan soal peran' : undefined}
-                              onChange={(e) => ubahCentang(t.tugas, r, e.target.checked)}
-                            />
-                          </td>
-                        ))}
-                        <td>
-                          {(['manager', 'tim'] as Role[]).map((r) => {
-                            if (!dicentang(t.tugas, r)) return null;
-                            const dipakai = timUntuk(t.tugas, r);
-                            const kunci = t.tugas + '|' + r;
-                            return (
-                              <div key={r} style={{ marginBottom: 4 }}>
-                                <span className="sub" style={{ fontSize: 11, marginRight: 6 }}>{r}:</span>
-                                {dipakai.length === 0
-                                  ? <span className="hint" style={{ marginRight: 6 }}>semua tim</span>
-                                  : dipakai.map((tm) => (
-                                      <button
-                                        key={tm}
-                                        className="btn act"
-                                        style={{ marginRight: 4, padding: '0 7px' }}
-                                        disabled={t.terkunci}
-                                        title={'Lepas pembatas ' + TEAM_LABEL[tm]}
-                                        onClick={() => ubahPembatas(t.tugas, r, tm, false)}
-                                      >
-                                        {TEAM_LABEL[tm]} ✕
-                                      </button>
-                                    ))}
-                                {!t.terkunci && (
-                                  bukaTim === kunci ? (
-                                    <select
-                                      autoFocus
-                                      defaultValue=""
-                                      onBlur={() => setBukaTim(null)}
-                                      onChange={(e) => {
-                                        const tm = e.target.value as Team;
-                                        setBukaTim(null);
-                                        if (tm) ubahPembatas(t.tugas, r, tm, true);
-                                      }}
-                                    >
-                                      <option value="">— pilih tim —</option>
-                                      {TEAM_GROUPS.map((g) => (
-                                        <optgroup key={g.label} label={g.label}>
-                                          {g.teams.filter((tm) => !dipakai.includes(tm)).map((tm) => (
-                                            <option key={tm} value={tm}>{TEAM_LABEL[tm]}</option>
-                                          ))}
-                                        </optgroup>
-                                      ))}
-                                    </select>
-                                  ) : (
-                                    <button className="btn act" style={{ padding: '0 7px' }}
-                                      onClick={() => setBukaTim(kunci)}>+ tim</button>
-                                  )
+              // Dikelompokkan memakai kolom `kelompok` yang selama ini sudah ada
+              // di database tapi tidak pernah dipakai di layar. 23 baris datar
+              // jadi 5 blok yang bisa dicerna.
+              Array.from(new Set(tugasDefs.map((t) => t.kelompok))).map((kel) => (
+                <div key={kel} style={{ marginBottom: 22 }}>
+                  <div style={{
+                    fontSize: 11, fontWeight: 700, letterSpacing: '.08em',
+                    color: 'var(--text-3)', textTransform: 'uppercase',
+                    padding: '0 2px 6px',
+                  }}>
+                    {kel}
+                  </div>
+
+                  <div style={{ border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' }}>
+                    {tugasDefs.filter((t) => t.kelompok === kel).map((t, i) => {
+                      const bisa = orangYangBisa(t.tugas);
+                      const buka = bukaIzin === t.tugas;
+                      const ringkas = (['manager', 'tim'] as Role[])
+                        .map((r) => ringkasPeran(t.tugas, r))
+                        .filter(Boolean) as string[];
+
+                      return (
+                        <div key={t.tugas} style={{ borderTop: i === 0 ? 0 : '1px solid var(--border)' }}>
+                          <button
+                            onClick={() => setBukaIzin(buka ? null : t.tugas)}
+                            disabled={t.terkunci}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+                              padding: '11px 14px', border: 0, background: buka ? 'var(--raised)' : 'transparent',
+                              font: 'inherit', color: 'inherit', textAlign: 'left',
+                              cursor: t.terkunci ? 'default' : 'pointer',
+                              opacity: t.terkunci ? 0.55 : 1,
+                            }}
+                          >
+                            <span style={{ minWidth: 0, flex: 1 }}>
+                              <span style={{ display: 'block', fontSize: 13, fontWeight: 600 }}>
+                                {t.label}
+                                {t.terkunci && (
+                                  <span className="hint" style={{ marginLeft: 6 }}>· dikunci</span>
                                 )}
+                              </span>
+                              {/* Ringkasan aturannya, bukan chip yang bisa diklik —
+                                  supaya barisnya bisa dibaca sekilas tanpa jadi
+                                  dinding tombol. */}
+                              <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-3)', marginTop: 2 }}>
+                                {ringkas.length ? ringkas.join('  ·  ') : 'Belum diberikan ke siapa pun'}
+                              </span>
+                            </span>
+
+                            {/* Inilah jawaban yang dicari: berapa orang, siapa saja. */}
+                            <span style={{ flexShrink: 0, textAlign: 'right' }}>
+                              <span style={{
+                                display: 'block', fontSize: 13, fontWeight: 700,
+                                color: bisa.length ? 'var(--accent)' : 'var(--text-3)',
+                              }}>
+                                {bisa.length} orang
+                              </span>
+                              <span style={{
+                                display: 'block', fontSize: 10.5, color: 'var(--text-3)',
+                                maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                              }}>
+                                {bisa.slice(0, 4).map((u) => u.full_name || u.email).join(', ')}
+                                {bisa.length > 4 ? ` +${bisa.length - 4}` : ''}
+                              </span>
+                            </span>
+
+                            {!t.terkunci && (
+                              <span style={{
+                                flexShrink: 0, color: 'var(--text-3)', fontSize: 11,
+                                transform: buka ? 'rotate(90deg)' : 'none', transition: 'transform .12s',
+                              }}>▸</span>
+                            )}
+                          </button>
+
+                          {buka && !t.terkunci && (
+                            <div style={{ padding: '4px 14px 14px', background: 'var(--raised)' }}>
+                              {t.keterangan && (
+                                <p className="hint" style={{ marginTop: 0 }}>{t.keterangan}</p>
+                              )}
+
+                              {(['manager', 'tim'] as Role[]).map((r) => {
+                                const aktif = dicentang(t.tugas, r);
+                                const dipakai = timUntuk(t.tugas, r);
+                                const kunci = t.tugas + '|' + r;
+                                return (
+                                  <div key={r} style={{ marginTop: 10 }}>
+                                    <label style={{
+                                      display: 'flex', alignItems: 'center', gap: 8,
+                                      fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                                    }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={aktif}
+                                        disabled={izinBusy === kunci}
+                                        onChange={(e) => ubahCentang(t.tugas, r, e.target.checked)}
+                                      />
+                                      {r === 'manager' ? 'Manager' : 'Tim'}
+                                    </label>
+
+                                    {aktif && (
+                                      <div style={{ margin: '6px 0 0 24px' }}>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
+                                          {dipakai.length === 0 && (
+                                            <span className="hint" style={{ marginRight: 4 }}>
+                                              berlaku untuk semua tim
+                                            </span>
+                                          )}
+                                          {dipakai.map((tm) => (
+                                            <button
+                                              key={tm}
+                                              className="btn act"
+                                              style={{ padding: '0 7px' }}
+                                              title={'Lepas pembatas ' + TEAM_LABEL[tm]}
+                                              onClick={() => ubahPembatas(t.tugas, r, tm, false)}
+                                            >
+                                              {TEAM_LABEL[tm]} ✕
+                                            </button>
+                                          ))}
+                                          {bukaTim === kunci ? (
+                                            <select
+                                              autoFocus
+                                              defaultValue=""
+                                              onBlur={() => setBukaTim(null)}
+                                              onChange={(e) => {
+                                                const tm = e.target.value as Team;
+                                                setBukaTim(null);
+                                                if (tm) ubahPembatas(t.tugas, r, tm, true);
+                                              }}
+                                            >
+                                              <option value="">— pilih tim —</option>
+                                              {TEAM_GROUPS.map((g) => (
+                                                <optgroup key={g.label} label={g.label}>
+                                                  {g.teams.filter((tm) => !dipakai.includes(tm)).map((tm) => (
+                                                    <option key={tm} value={tm}>{TEAM_LABEL[tm]}</option>
+                                                  ))}
+                                                </optgroup>
+                                              ))}
+                                            </select>
+                                          ) : (
+                                            <button className="btn act" style={{ padding: '0 7px' }}
+                                              onClick={() => setBukaTim(kunci)}>+ batasi tim</button>
+                                          )}
+                                        </div>
+
+                                        {/* Peringatan ditaruh DI SINI, bukan di
+                                            kepala halaman — di sinilah orangnya
+                                            sedang akan melakukannya. */}
+                                        {dipakai.length === 0 && (
+                                          <div className="hint" style={{ color: 'var(--amber)', marginTop: 4 }}>
+                                            Begitu satu tim ditambahkan, izinnya menyempit jadi tim itu saja —
+                                            daftarkan sekalian semua tim yang harus tetap boleh.
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+
+                              {/* Hasil akhirnya dieja lengkap, supaya tidak ada
+                                  yang perlu ditebak sebelum menutup barisnya. */}
+                              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                                <div className="budget-detail-label">Berlaku untuk {bisa.length} orang</div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                                  {bisa.length === 0
+                                    ? <span className="hint">Tidak ada seorang pun selain superadmin.</span>
+                                    : bisa.map((u) => (
+                                        <span key={u.id} className="chip-btn" style={{ cursor: 'default' }}>
+                                          {u.full_name || u.email}
+                                          {u.team ? ` · ${TEAM_LABEL[u.team]}` : ''}
+                                        </span>
+                                      ))}
+                                </div>
                               </div>
-                            );
-                          })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
             )}
+
             <p className="section-hint">
-              Orang yang sedang login perlu <b>memuat ulang halaman</b> untuk melihat efeknya di tombol-tombolnya.
-              Pembatasan di database berlaku seketika tanpa perlu muat ulang.
+              Tiga hal <b>tidak</b> diatur di sini karena bukan soal peran: tahap kerja tiap tim di Board,
+              dinding unit bisnis KC/GME/KIG, dan aturan &ldquo;milik sendiri&rdquo;. Orang yang sedang login perlu
+              <b> memuat ulang halaman</b> untuk melihat efeknya di tombol; pembatasan di database berlaku seketika.
             </p>
             </>)}
           </>
