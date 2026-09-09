@@ -1,10 +1,11 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import PilihCari from '@/components/PilihCari';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
-  PLATFORMS, accountUrl, boleh, canCreateContent, canDeleteContent, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses, TUGAS,
+  PLATFORMS, TEAM_LABEL, accountUrl, boleh, canCreateContent, canDeleteContent, canEditRow, initials, platformDef, statusDef, tagColor, targetableStatuses, TUGAS,
   type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type Team, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
@@ -2793,10 +2794,17 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
                 <div className="field-row">
                   <div className="field">
                     <label>Akun{noteBtn('account')}</label>
-                    <select value={form.account_id} disabled={readOnly} onChange={(e) => setForm({ ...form, account_id: e.target.value })}>
-                      <option value="">— pilih —</option>
-                      {accountsOfProject(form.project_id).map((a) => <option key={a.id} value={a.id}>{a.handle}</option>)}
-                    </select>
+                    <PilihCari
+                      value={form.account_id}
+                      disabled={readOnly}
+                      placeholder="Ketik nama akun…"
+                      onChange={(id) => setForm({ ...form, account_id: id })}
+                      options={accountsOfProject(form.project_id).map((a) => ({
+                        id: a.id,
+                        label: a.handle,
+                        sub: a.label || undefined,
+                      }))}
+                    />
                   </div>
                   <div className="field">
                     <label>Platform{noteBtn('platform')}</label>
@@ -2812,18 +2820,18 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
                   </div>
                   <div className="field">
                     <label>Category Content{noteBtn('category_id')}</label>
-                    <select
+                    <PilihCari
                       value={form.category_id}
                       disabled={readOnly || !form.project_id}
-                      onChange={(e) => setForm({ ...form, category_id: e.target.value })}
-                    >
-                      <option value="">— tanpa kategori —</option>
-                      {modalCategories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}{c.is_active ? '' : ' (nonaktif)'}
-                        </option>
-                      ))}
-                    </select>
+                      kosongLabel="— tanpa kategori —"
+                      placeholder="Ketik nama kategori…"
+                      onChange={(id) => setForm({ ...form, category_id: id })}
+                      options={modalCategories.map((c) => ({
+                        id: c.id,
+                        label: c.name + (c.is_active ? '' : ' (nonaktif)'),
+                        warna: tagColor(c.name),
+                      }))}
+                    />
                     {form.project_id && modalCategories.length === 0 && (
                       <div className="hint">
                         Project ini belum punya kategori — tambahkan di <b>Kelola Akses → Kategori Konten</b>.
@@ -2861,33 +2869,57 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
                 <div className="field-row">
                   <div className="field">
                     <label>PIC Copywriter{noteBtn('pic')}</label>
-                    <select value={form.pic_copywriter} disabled={readOnly} onChange={(e) => setForm({ ...form, pic_copywriter: e.target.value })}>
-                      <option value="">—</option>
-                      {membersOf('creative', form.pic_copywriter).map((m) => <option key={m.id} value={m.id}>{labelAnggota(m)}</option>)}
-                    </select>
+                    <PilihCari
+                      value={form.pic_copywriter}
+                      disabled={readOnly}
+                      kosongLabel="—"
+                      placeholder="Ketik nama…"
+                      onChange={(id) => setForm({ ...form, pic_copywriter: id })}
+                      options={membersOf('creative', form.pic_copywriter).map((m) => ({
+                        id: m.id, label: labelAnggota(m), sub: TEAM_LABEL[m.team],
+                      }))}
+                    />
                   </div>
                   <div className="field">
                     <label>PIC Content</label>
-                    <select value={form.pic_creative} disabled={readOnly} onChange={(e) => setForm({ ...form, pic_creative: e.target.value })}>
-                      <option value="">—</option>
-                      {membersOf('creative', form.pic_creative).map((m) => <option key={m.id} value={m.id}>{labelAnggota(m)}</option>)}
-                    </select>
+                    <PilihCari
+                      value={form.pic_creative}
+                      disabled={readOnly}
+                      kosongLabel="—"
+                      placeholder="Ketik nama…"
+                      onChange={(id) => setForm({ ...form, pic_creative: id })}
+                      options={membersOf('creative', form.pic_creative).map((m) => ({
+                        id: m.id, label: labelAnggota(m), sub: TEAM_LABEL[m.team],
+                      }))}
+                    />
                   </div>
                 </div>
                 <div className="field-row">
                   <div className="field">
                     <label>PIC Distribution</label>
-                    <select value={form.pic_distribution} disabled={readOnly} onChange={(e) => setForm({ ...form, pic_distribution: e.target.value })}>
-                      <option value="">—</option>
-                      {membersOf('distribution', form.pic_distribution).map((m) => <option key={m.id} value={m.id}>{labelAnggota(m)}</option>)}
-                    </select>
+                    <PilihCari
+                      value={form.pic_distribution}
+                      disabled={readOnly}
+                      kosongLabel="—"
+                      placeholder="Ketik nama…"
+                      onChange={(id) => setForm({ ...form, pic_distribution: id })}
+                      options={membersOf('distribution', form.pic_distribution).map((m) => ({
+                        id: m.id, label: labelAnggota(m), sub: TEAM_LABEL[m.team],
+                      }))}
+                    />
                   </div>
                   <div className="field">
                     <label>PIC Ads</label>
-                    <select value={form.pic_ads} disabled={readOnly} onChange={(e) => setForm({ ...form, pic_ads: e.target.value })}>
-                      <option value="">—</option>
-                      {membersOf('ads', form.pic_ads).map((m) => <option key={m.id} value={m.id}>{labelAnggota(m)}</option>)}
-                    </select>
+                    <PilihCari
+                      value={form.pic_ads}
+                      disabled={readOnly}
+                      kosongLabel="—"
+                      placeholder="Ketik nama…"
+                      onChange={(id) => setForm({ ...form, pic_ads: id })}
+                      options={membersOf('ads', form.pic_ads).map((m) => ({
+                        id: m.id, label: labelAnggota(m), sub: TEAM_LABEL[m.team],
+                      }))}
+                    />
                   </div>
                 </div>
                 <div className="field">
