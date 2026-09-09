@@ -41,6 +41,22 @@ export default function ComplaintView({ profile }: Props) {
 
   const isLead = boleh(profile, TUGAS.komplainLihat);
   const bisaUbah = boleh(profile, TUGAS.komplainUbah);
+  /**
+   * Boleh menghapus komplain.
+   *
+   * Cerminan dari policy `complaints_delete` yang memakai boleh('komplain_hapus').
+   * Sengaja TIDAK ditulis `role === 'superadmin'`: yang menentukan siapa boleh
+   * adalah matriks Izin Peran, dan matriksnya sekarang cuma menyisakan
+   * superadmin. Kalau suatu saat izinnya dibuka lagi lewat Kelola Akses,
+   * tombolnya ikut muncul sendiri tanpa perlu deploy ulang.
+   */
+  const bisaHapus = boleh(profile, TUGAS.komplainHapus);
+
+  /** Komplain yang dicentang untuk dihapus sekaligus. */
+  const [terpilih, setTerpilih] = useState<string[]>([]);
+  /** Daftar id yang sedang dikonfirmasi. `judul` hanya diisi kalau satuan. */
+  const [konfirmHapus, setKonfirmHapus] = useState<{ ids: string[]; judul: string | null } | null>(null);
+  const [hapusBusy, setHapusBusy] = useState(false);
 
   // --- notifikasi in-app (window.alert diblokir di browser) ---
   const [toast, setToast] = useState('');
@@ -78,6 +94,15 @@ export default function ComplaintView({ profile }: Props) {
   // Sinkronkan modal thread yang sedang terbuka dengan data terbaru.
   useEffect(() => {
     setActive((cur) => (cur ? rows.find((r) => r.id === cur.id) || cur : cur));
+  }, [rows]);
+
+  /**
+   * Buang centang yang barisnya sudah tidak ada lagi — mis. dihapus dari
+   * perangkat lain. Kalau dibiarkan, tombol "Hapus 3" akan mengirim id hantu
+   * dan hasilnya cuma 1 yang terhapus tanpa penjelasan.
+   */
+  useEffect(() => {
+    setTerpilih((cur) => cur.filter((id) => rows.some((r) => r.id === id)));
   }, [rows]);
 
   const loadMessages = async (id: string) => {
@@ -161,10 +186,65 @@ export default function ComplaintView({ profile }: Props) {
     load(true);
   };
 
+  /**
+   * Menghapus komplain — satu atau sekaligus.
+   *
+   * Balasannya ikut terhapus lewat `ON DELETE CASCADE` di
+   * `complaint_messages.complaint_id`, jadi tidak ada thread yatim yang
+   * tertinggal di database.
+   *
+   * `.select('id')` WAJIB: penolakan RLS mengenai 0 baris TANPA memunculkan
+   * error, jadi tanpa ini penghapusan yang ditolak akan terlihat berhasil.
+   */
+  const jalankanHapus = async () => {
+    if (!konfirmHapus) return;
+    const ids = konfirmHapus.ids;
+    if (ids.length === 0) { setKonfirmHapus(null); return; }
+    setHapusBusy(true);
+    const { data, error: err } = await supabase
+      .from('complaints').delete().in('id', ids).select('id');
+    setHapusBusy(false);
+    const terhapus = data ? data.length : 0;
+    setKonfirmHapus(null);
+    if (err || terhapus === 0) {
+      flashToast('Gagal menghapus — izin "Hapus komplain" tidak ada di akunmu.');
+      return;
+    }
+    // Thread yang sedang terbuka ikut ditutup kalau barisnya termasuk yang
+    // dihapus — kalau tidak, modalnya menggantung menampilkan data hantu.
+    if (active && ids.indexOf(active.id) !== -1) setActive(null);
+    setTerpilih((cur) => cur.filter((id) => ids.indexOf(id) === -1));
+    if (terhapus < ids.length) {
+      flashToast(`${terhapus} dari ${ids.length} komplain dihapus — sisanya ditolak database.`);
+    } else {
+      flashToast(terhapus > 1 ? `${terhapus} komplain dihapus.` : 'Komplain dihapus.');
+    }
+    load(true);
+  };
+
   const filtered = useMemo(
     () => rows.filter((r) => filter === 'all' || r.status === filter),
     [rows, filter]
   );
+
+  /** Centang hanya berlaku untuk baris yang sedang tampil di filter aktif. */
+  const terpilihTampil = useMemo(
+    () => terpilih.filter((id) => filtered.some((r) => r.id === id)),
+    [terpilih, filtered],
+  );
+  const semuaTercentang = filtered.length > 0 && terpilihTampil.length === filtered.length;
+
+  const toggleSatu = (id: string) => {
+    setTerpilih((cur) => (cur.indexOf(id) === -1 ? cur.concat([id]) : cur.filter((x) => x !== id)));
+  };
+  const toggleSemua = () => {
+    if (semuaTercentang) {
+      setTerpilih((cur) => cur.filter((id) => !filtered.some((r) => r.id === id)));
+    } else {
+      const tambah = filtered.map((r) => r.id).filter((id) => terpilih.indexOf(id) === -1);
+      setTerpilih((cur) => cur.concat(tambah));
+    }
+  };
 
   const stats = useMemo(() => {
     const byCat: Record<string, number> = {};
@@ -195,6 +275,8 @@ export default function ComplaintView({ profile }: Props) {
       d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
     );
   };
+
+  const jumlahKolom = bisaHapus ? 6 : 5;
 
   return (
     <>
@@ -261,11 +343,36 @@ export default function ComplaintView({ profile }: Props) {
           ) : (
             <table>
               <thead>
-                <tr><th>Komplain</th><th>Kategori</th><th>Pelapor</th><th>Status</th><th style={{ width: 110 }}></th></tr>
+                <tr>
+                  {bisaHapus && (
+                    <th style={{ width: 34 }}>
+                      <input
+                        type="checkbox"
+                        aria-label="Centang semua komplain yang tampil"
+                        checked={semuaTercentang}
+                        ref={(el) => {
+                          if (el) el.indeterminate = terpilihTampil.length > 0 && !semuaTercentang;
+                        }}
+                        onChange={toggleSemua}
+                      />
+                    </th>
+                  )}
+                  <th>Komplain</th><th>Kategori</th><th>Pelapor</th><th>Status</th><th style={{ width: 110 }}></th>
+                </tr>
               </thead>
               <tbody>
                 {filtered.map((c) => (
                   <tr key={c.id}>
+                    {bisaHapus && (
+                      <td>
+                        <input
+                          type="checkbox"
+                          aria-label={`Centang komplain ${c.title}`}
+                          checked={terpilih.indexOf(c.id) !== -1}
+                          onChange={() => toggleSatu(c.id)}
+                        />
+                      </td>
+                    )}
                     <td>
                       <b>{c.title}</b>
                       {c.detail && <div className="sub" style={{ fontFamily: 'inherit' }}>{c.detail.slice(0, 90)}{c.detail.length > 90 ? '…' : ''}</div>}
@@ -299,11 +406,31 @@ export default function ComplaintView({ profile }: Props) {
                   </tr>
                 ))}
               </tbody>
+              {bisaHapus && terpilihTampil.length > 0 && (
+                <tfoot>
+                  <tr>
+                    <td colSpan={jumlahKolom} style={{ background: 'var(--raised)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                        <b style={{ fontSize: 12.5 }}>{terpilihTampil.length} komplain dicentang</b>
+                        <button
+                          className="btn"
+                          style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                          onClick={() => setKonfirmHapus({ ids: terpilihTampil, judul: null })}
+                        >
+                          Hapus {terpilihTampil.length} komplain
+                        </button>
+                        <button className="btn ghost" onClick={() => setTerpilih([])}>Batalkan centang</button>
+                      </div>
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           )}
         </div>
         <p className="cal-legend">
           Komplain kamu hanya terlihat olehmu dan lead. Semua laporan &amp; perubahan statusnya tercatat di Log Aktivitas.
+          {bisaHapus && ' Menghapus komplain ikut menghapus seluruh balasannya, dan tidak bisa dibatalkan.'}
         </p>
       </div>
 
@@ -393,11 +520,62 @@ export default function ComplaintView({ profile }: Props) {
               </div>
             </div>
             <div className="modal-foot">
+              {bisaHapus && (
+                <button
+                  className="btn"
+                  style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
+                  onClick={() => setKonfirmHapus({ ids: [active.id], judul: active.title })}
+                >
+                  Hapus
+                </button>
+              )}
               {bisaUbah && active.status !== 'selesai' && (
                 <button className="btn" onClick={() => setStatus(active, 'selesai')}>✓ Tandai selesai</button>
               )}
               <div className="right">
                 <button className="btn primary" onClick={() => setActive(null)}>Tutup</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Konfirmasi hapus (pengganti window.confirm yang diblokir browser) */}
+      {konfirmHapus && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !hapusBusy && setKonfirmHapus(null)}>
+          <div className="modal" style={{ maxWidth: 400 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow">
+                  <span className="sq" style={{ background: 'var(--red)' }} />
+                  Hapus komplain
+                </div>
+                <div className="modal-title">
+                  {konfirmHapus.ids.length > 1
+                    ? `Hapus ${konfirmHapus.ids.length} komplain?`
+                    : 'Hapus komplain ini?'}
+                </div>
+                {konfirmHapus.judul && <div className="modal-sub">{konfirmHapus.judul}</div>}
+              </div>
+              <button className="btn ghost modal-close" disabled={hapusBusy} onClick={() => setKonfirmHapus(null)}>&#10005;</button>
+            </div>
+            <div style={{ padding: '16px 24px' }}>
+              <p className="thread-detail">
+                Komplain beserta <b>seluruh balasannya</b> akan hilang permanen dan tidak bisa dikembalikan.
+                Pelapornya tidak diberi tahu.
+              </p>
+            </div>
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" onClick={() => setKonfirmHapus(null)} disabled={hapusBusy}>Batal</button>
+                <button
+                  className="btn primary"
+                  style={{ background: 'var(--red)', borderColor: 'var(--red)' }}
+                  onClick={jalankanHapus}
+                  disabled={hapusBusy}
+                >
+                  {hapusBusy ? 'Menghapus…' : (konfirmHapus.ids.length > 1 ? `Ya, hapus ${konfirmHapus.ids.length}` : 'Ya, hapus')}
+                </button>
               </div>
             </div>
           </div>
