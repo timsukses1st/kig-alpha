@@ -452,6 +452,24 @@ const v = (r: Record<string, unknown>, k: string): unknown => {
 
 const ya = (x: unknown) => (x ? 'Ya' : 'Tidak');
 
+/**
+ * Daftar tautan hasil pengerjaan lembur jadi satu sel.
+ *
+ * Ditulis satu tautan per baris, bukan dipisah koma: koma membuat tautan
+ * panjang saling menempel dan sulit disalin satu-satu.
+ */
+function tautanLembur(nilai: unknown): string {
+  if (!Array.isArray(nilai) || !nilai.length) return '';
+  return nilai
+    .map((l) => {
+      const o = (l || {}) as { url?: string; label?: string };
+      if (!o.url) return '';
+      return o.label ? `${o.label} — ${o.url}` : o.url;
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
 /** Potong 'T' pada timestamp supaya kolom tanggal terbaca enak di Excel. */
 const tgl = (x: unknown) => (typeof x === 'string' ? x.slice(0, 10) : '');
 const tglJam = (x: unknown) => (typeof x === 'string' ? x.slice(0, 16).replace('T', ' ') : '');
@@ -663,6 +681,7 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
           { header: 'Selesai', key: 'selesai', width: 10 },
           { header: 'Durasi (jam)', key: 'durasi', width: 12 },
           { header: 'Uraian', key: 'uraian', width: 52 },
+          { header: 'Link Hasil', key: 'link', width: 40 },
           { header: 'Status', key: 'status', width: 13 },
           { header: 'Penyetuju', key: 'approver', width: 22 },
           { header: 'Diputus', key: 'diputus', width: 17 },
@@ -677,6 +696,9 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
           // Angka, bukan teks "3j" — supaya bisa dijumlah sendiri di Excel.
           durasi: bulat2(jamLembur(r.start_time, r.end_time)),
           uraian: v(r, 'description'),
+          // Satu tautan per baris di dalam selnya. Sel Excel sudah melipat
+          // teks bertingkat, jadi tiga tautan tetap terbaca utuh.
+          link: tautanLembur(r.work_links),
           status: v(r, 'status'),
           approver: v(r, 'approver_name'),
           diputus: tglJam(r.decided_at),

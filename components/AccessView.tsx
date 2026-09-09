@@ -314,7 +314,7 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
 
-  type TabKey = 'user' | 'project' | 'akun' | 'kategori' | 'tim' | 'izin';
+  type TabKey = 'user' | 'bagan' | 'project' | 'akun' | 'kategori' | 'tim' | 'izin';
 
   /**
    * Tab mana yang boleh dibuka orang ini.
@@ -330,6 +330,9 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
   const isSuperadmin = profile?.role === 'superadmin';
   const izinTab: Record<TabKey, boolean> = {
     user:     !!isSuperadmin,
+    // Bagan menentukan siapa menyetujui cuti siapa — itu keputusan struktur,
+    // bukan tugas harian. Dikunci di kode untuk superadmin seperti User Login.
+    bagan:    !!isSuperadmin,
     izin:     !!isSuperadmin,
     project:  !!isSuperadmin,
     akun:     boleh(profile, TUGAS.akunMediaKelola),
@@ -337,10 +340,10 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
     tim:      boleh(profile, TUGAS.anggotaPicKelola),
   };
   const TAB_LABEL: Record<TabKey, string> = {
-    user: 'User Login', project: 'Project & Vertical', akun: 'Akun Media',
+    user: 'User Login', bagan: 'Bagan Tim', project: 'Project & Vertical', akun: 'Akun Media',
     kategori: 'Kategori Konten', tim: 'Anggota Tim', izin: 'Izin Peran',
   };
-  const URUTAN_TAB: TabKey[] = ['user', 'project', 'akun', 'kategori', 'tim', 'izin'];
+  const URUTAN_TAB: TabKey[] = ['user', 'bagan', 'project', 'akun', 'kategori', 'tim', 'izin'];
   const tabBoleh = URUTAN_TAB.filter((k) => izinTab[k]);
 
   // Tab awal = tab pertama yang boleh dibuka, bukan selalu 'user'.
@@ -352,7 +355,7 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
   useEffect(() => {
     if (!izinTab[tab] && tabBoleh.length > 0) setTab(tabBoleh[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, izinTab.user, izinTab.izin, izinTab.project, izinTab.akun, izinTab.kategori, izinTab.tim]);
+  }, [tab, izinTab.user, izinTab.bagan, izinTab.izin, izinTab.project, izinTab.akun, izinTab.kategori, izinTab.tim]);
 
   /* ================= IZIN PERAN =================
      Cerminan tabel role_permissions & role_permission_teams. Yang tampil di
@@ -652,11 +655,6 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
     const ch = supabase
       .channel('akses-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'accounts' }, segarkan)
-      // `projects` sempat terlewat: App.tsx sudah mendengarkannya untuk dropdown
-      // di sidebar, tapi tabel Project & Vertical di layar ini punya state dan
-      // load() sendiri — jadi project baru (mis. hasil "Kirim ke Alpha" dari
-      // SIGMA) tidak muncul di sini sampai halaman dimuat ulang.
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, segarkan)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, segarkan)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'content_categories' }, segarkan)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, segarkan)
@@ -702,6 +700,83 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
     setMsg(m);
     if (flashTimer.current) clearTimeout(flashTimer.current);
     flashTimer.current = setTimeout(() => setMsg(''), 4000);
+  };
+
+  /* ================= BAGAN TIM =================
+     Menentukan siapa atasan langsung siapa. Yang ditunjuk di sini MENANG atas
+     tangga otomatis di database (manager tim yang sama → HO → Pimpinan).
+
+     Perlu ada karena tangga otomatis tidak bisa memilih waktu satu tim punya
+     lebih dari satu manager: Distribution punya Aditya DAN Fiko, Creative
+     punya Bagus DAN Merilla. Tanpa penunjukan, keduanya sama-sama kebagian
+     antrean persetujuan dan notifikasi anak buah yang sama.
+     ============================================ */
+
+  /**
+   * Daftar orang untuk tab Bagan. Sengaja TIDAK memakai usersTersaring:
+   * penyaring pencarian & unit itu milik tab User Login, kotaknya tidak ada di
+   * layar ini. Kalau dipakai bersama, seseorang yang tadi mencari satu nama di
+   * tab sebelah akan melihat bagan yang isinya cuma satu baris tanpa tahu
+   * sebabnya.
+   */
+  const orangBagan = useMemo(
+    () => users
+      .filter((u) => u.is_active)
+      .sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email, 'id')),
+    [users],
+  );
+
+  /** Siapa saja yang masuk akal jadi atasan: manager & superadmin yang aktif. */
+  const calonAtasan = useMemo(
+    () => users
+      .filter((u) => u.is_active && (u.role === 'manager' || u.role === 'superadmin'))
+      .sort((a, b) => (a.full_name || a.email).localeCompare(b.full_name || b.email, 'id')),
+    [users],
+  );
+
+  const namaOrang = (id: string | null | undefined) => {
+    if (!id) return '';
+    const u = users.find((x) => x.id === id);
+    return u ? (u.full_name || u.email) : '(akun terhapus)';
+  };
+
+  /**
+   * Atasan menurut tangga otomatis — dipakai HANYA untuk memberi tahu, supaya
+   * superadmin tahu siapa yang akan kebagian kalau baganya dibiarkan kosong.
+   * Aturannya disalin dari fungsi siapa_lead() di database.
+   */
+  const atasanOtomatis = (u: Profile): Profile[] => {
+    if (u.team === 'pimpinan') return [];
+    return users.filter((a) => {
+      if (!a.is_active || a.role !== 'manager' || a.id === u.id) return false;
+      if (a.vertical !== 'ALL' && a.vertical !== u.vertical) return false;
+      if (u.team === 'ho') return a.team === 'pimpinan';
+      if (u.role === 'manager') return a.team === 'ho';
+      return a.team === u.team;
+    });
+  };
+
+  /**
+   * Menyimpan penunjukan atasan.
+   *
+   * Sengaja TIDAK memakai updateUser(): pesan error dari database perlu
+   * ditampilkan apa adanya di sini. Kalau bagannya berputar, penjaga di
+   * database menolak dengan alasan yang jelas — kalau pesannya diganti jadi
+   * "Gagal menyimpan", orangnya tidak akan tahu apa yang salah.
+   */
+  const [baganBusy, setBaganBusy] = useState<string | null>(null);
+  const simpanAtasan = async (orangId: string, atasanId: string) => {
+    setBaganBusy(orangId);
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ lead_id: atasanId || null })
+      .eq('id', orangId)
+      .select('id');
+    setBaganBusy(null);
+    if (error) { flash(error.message); return; }
+    if (!data || data.length === 0) { flash('Tidak tersimpan — kamu tidak punya izin mengubah ini.'); return; }
+    flash(atasanId ? `Atasan diubah jadi ${namaOrang(atasanId)}.` : 'Penunjukan dilepas — kembali ikut aturan otomatis.');
+    load();
   };
 
   const updateUser = async (id: string, patch: Partial<Profile>) => {
@@ -1119,6 +1194,118 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
               </table>
             </div>
 
+            </>)}
+
+            {tab === 'bagan' && izinTab.bagan && (<>
+              <div className="section-title">
+                Bagan Tim
+                <span className="sub" style={{ marginLeft: 8, fontWeight: 400, fontSize: 11.5 }}>
+                  siapa menyetujui cuti &amp; menerima notifikasi siapa
+                </span>
+              </div>
+              <p className="section-hint">
+                Kosongkan kalau strukturnya sudah jelas dari timnya — yang kosong ikut aturan otomatis
+                (manager di tim yang sama &rarr; Head of Operational &rarr; Pimpinan). Penunjukan di sini
+                diperlukan ketika satu tim punya <b>lebih dari satu manager</b>, karena aturan otomatis
+                tidak bisa memilih dan akhirnya keduanya sama-sama kebagian.
+              </p>
+
+              {/* Ringkasan bagan dulu, baru pengaturannya. Melihat bentuk
+                  strukturnya lebih dulu bikin salah pasang jadi kelihatan. */}
+              <div className="table-wrap" style={{ marginBottom: 18 }}>
+                <table>
+                  <thead><tr><th>Atasan</th><th>Anak buah yang ditunjuk</th></tr></thead>
+                  <tbody>
+                    {calonAtasan
+                      .map((a) => ({ a, anak: users.filter((u) => u.lead_id === a.id && u.is_active) }))
+                      .filter((x) => x.anak.length > 0)
+                      .map(({ a, anak }) => (
+                        <tr key={a.id}>
+                          <td>
+                            <span className="row-avatar">{initials(a.full_name || a.email)}</span>
+                            <b>{a.full_name || a.email}</b>
+                            <div className="sub" style={{ marginLeft: 40 }}>
+                              {a.team ? TEAM_LABEL[a.team] : '—'}
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                              {anak.map((k) => (
+                                <span key={k.id} className="chip-btn" style={{ cursor: 'default' }}>
+                                  {k.full_name || k.email}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    {users.filter((u) => u.lead_id && u.is_active).length === 0 && (
+                      <tr><td colSpan={2} className="empty">
+                        Belum ada yang ditunjuk — semuanya masih ikut aturan otomatis.
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="section-title">Atur atasan per orang</div>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Nama</th><th>Tim</th><th style={{ width: 220 }}>Atasan langsung</th><th>Berlaku sekarang</th></tr>
+                  </thead>
+                  <tbody>
+                    {orangBagan.map((u) => {
+                      const otomatis = atasanOtomatis(u);
+                      return (
+                        <tr key={u.id}>
+                          <td>
+                            <span className="row-avatar">{initials(u.full_name || u.email)}</span>
+                            <b>{u.full_name || '(tanpa nama)'}</b>
+                            <div className="sub" style={{ marginLeft: 40 }}>{u.role}</div>
+                          </td>
+                          <td>{u.team ? TEAM_LABEL[u.team] : '—'}</td>
+                          <td>
+                            <select
+                              value={u.lead_id || ''}
+                              disabled={baganBusy === u.id}
+                              onChange={(e) => simpanAtasan(u.id, e.target.value)}
+                              style={u.lead_id ? { color: 'var(--accent)', borderColor: 'var(--accent)' } : undefined}
+                            >
+                              <option value="">— ikut aturan otomatis —</option>
+                              {calonAtasan
+                                .filter((a) => a.id !== u.id)
+                                .map((a) => (
+                                  <option key={a.id} value={a.id}>
+                                    {(a.full_name || a.email) + (a.team ? ` · ${TEAM_LABEL[a.team]}` : '')}
+                                  </option>
+                                ))}
+                            </select>
+                          </td>
+                          <td>
+                            {u.lead_id ? (
+                              <span style={{ color: 'var(--accent)' }}>{namaOrang(u.lead_id)}</span>
+                            ) : otomatis.length === 0 ? (
+                              <span style={{ color: 'var(--text-3)' }}>tidak ada — lewat superadmin</span>
+                            ) : otomatis.length === 1 ? (
+                              <span style={{ color: 'var(--text-2)' }}>{otomatis[0].full_name || otomatis[0].email}</span>
+                            ) : (
+                              // Inilah kasus yang bikin fitur ini perlu ada.
+                              <span style={{ color: 'var(--amber)' }} title="Semuanya kebagian antrean orang ini">
+                                {otomatis.map((a) => a.full_name || a.email).join(' & ')} &mdash; sebaiknya ditunjuk
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <p className="cal-legend">
+                Perubahan langsung berlaku untuk pengajuan <b>Cuti &amp; WFH</b> berikutnya. Pengajuan yang
+                sudah berjalan tetap memakai jalur yang berlaku saat diajukan.
+              </p>
             </>)}
 
             {tab === 'project' && izinTab.project && (<>

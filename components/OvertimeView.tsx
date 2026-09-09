@@ -3,8 +3,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
-  boleh, initials, MAKS_FOTO_LEMBUR, TUGAS,
-  type OvertimeProof, type OvertimeRequest, type Profile, type Project,
+  boleh, domainSingkat, initials, MAKS_FOTO_LEMBUR, MAKS_LINK_LEMBUR, rapikanLink, TUGAS,
+  type OvertimeLink, type OvertimeProof, type OvertimeRequest, type Profile, type Project,
 } from '@/lib/types';
 
 interface Props {
@@ -63,6 +63,11 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     start_time: '17:00', end_time: '20:00',
     description: '', project_ids: [] as string[],
   });
+  /** Tautan hasil pengerjaan yang sedang disusun di modal. */
+  const [links, setLinks] = useState<OvertimeLink[]>([]);
+  /** Isian tautan yang belum ditambahkan ke daftar. */
+  const [linkBaru, setLinkBaru] = useState('');
+  const [labelBaru, setLabelBaru] = useState('');
   /** Foto bukti. Maks 5 MB per foto — storage Supabase gratis cuma 1 GB dan
       sudah dipakai bersama bukti Sebaran Harian. Maks 3 foto per pengajuan. */
   const MAX_MB = 5;
@@ -106,6 +111,26 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     } else {
       setError('');
     }
+  };
+
+  /** Tautan tersimpan milik satu pengajuan. Baris lama belum punya kolomnya,
+   *  jadi dijaga agar tetap terbaca sebagai daftar kosong. */
+  const linkDari = (o: OvertimeRequest): OvertimeLink[] =>
+    (Array.isArray(o.work_links) ? o.work_links : []);
+
+  /** Menambahkan tautan dari isian ke daftar. Dipakai tombol dan tombol Enter. */
+  const tambahLink = () => {
+    if (links.length >= MAKS_LINK_LEMBUR) {
+      setError(`Maksimal ${MAKS_LINK_LEMBUR} tautan per pengajuan.`);
+      return;
+    }
+    const rapi = rapikanLink(linkBaru);
+    if (!rapi) { setError('Tautannya belum benar. Contoh: kig-beta.vercel.app/dashboard'); return; }
+    if (links.some((l) => l.url === rapi)) { setError('Tautan itu sudah ada di daftar.'); return; }
+    setLinks(links.concat([{ url: rapi, label: labelBaru.trim() }]));
+    setLinkBaru('');
+    setLabelBaru('');
+    setError('');
   };
 
   /** Foto tersimpan milik satu pengajuan, sudah menangani baris lama yang
@@ -211,6 +236,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     setFileBaru([]);
     setFotoLama([]);
     setFotoDibuang([]);
+    setLinks([]);
+    setLinkBaru('');
+    setLabelBaru('');
     setError('');
     setOpen(true);
   };
@@ -228,6 +256,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     setFileBaru([]);
     setFotoLama(fotoDari(o));
     setFotoDibuang([]);
+    setLinks(linkDari(o));
+    setLinkBaru('');
+    setLabelBaru('');
     setError('');
     setOpen(true);
   };
@@ -270,6 +301,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
       start_time: form.start_time,
       end_time: form.end_time,
       description: form.description.trim(),
+      // Ditulis apa adanya — daftar hasil susunan di modal, jadi menghapus
+      // tautan pun ikut tersimpan.
+      work_links: links,
     };
     // Daftar foto selalu ditulis apa adanya: gabungan foto lama yang tidak
     // dibuang + foto baru. Jadi menghapus foto pun tersimpan.
@@ -563,6 +597,14 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                           📎 {fotoDari(o).length}
                         </span>
                       )}
+                      {linkDari(o).length > 0 && (
+                        <span
+                          title={`${linkDari(o).length} link hasil pengerjaan`}
+                          style={{ marginLeft: 6, fontSize: 11.5, color: 'var(--text-3)', whiteSpace: 'nowrap' }}
+                        >
+                          🔗 {linkDari(o).length}
+                        </span>
+                      )}
                       {o.reject_reason && <div className="sub" style={{ color: 'var(--red)' }}>Ditolak: {o.reject_reason}</div>}
                     </td>
                     <td><span className="row-avatar">{initials(o.requester_name)}</span>{o.requester_name}</td>
@@ -705,6 +747,45 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
             <div style={{ padding: '16px 24px' }}>
               <div className="budget-detail-label">Yang dikerjakan</div>
               <p className="thread-detail" style={{ whiteSpace: 'pre-wrap' }}>{detail.description}</p>
+
+              {/* Tautan ditaruh SEBELUM foto bukti: yang memutus biasanya ingin
+                  melihat hasilnya dulu, foto cuma pelengkap. */}
+              {linkDari(detail).length > 0 && (
+                <>
+                  <div className="budget-detail-label" style={{ marginTop: 16 }}>
+                    Link hasil pengerjaan ({linkDari(detail).length})
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {linkDari(detail).map((l) => (
+                      <a
+                        key={l.url}
+                        href={l.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '7px 9px', borderRadius: 8, textDecoration: 'none',
+                          border: '1px solid var(--line)', background: 'var(--raised)',
+                          color: 'inherit',
+                        }}
+                      >
+                        <span style={{ fontSize: 13, flexShrink: 0 }}>🔗</span>
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--accent)' }}>
+                            {l.label || domainSingkat(l.url)} ↗
+                          </span>
+                          <span style={{
+                            display: 'block', fontSize: 11, color: 'var(--text-3)',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {l.url}
+                          </span>
+                        </span>
+                      </a>
+                    ))}
+                  </div>
+                </>
+              )}
               {fotoDari(detail).length > 0 && (
                 <>
                   <div className="budget-detail-label" style={{ marginTop: 16 }}>
@@ -909,6 +990,77 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                   {form.project_ids.length
                     ? `${form.project_ids.length} project dipilih`
                     : 'Belum ada yang dipilih — akan dicatat sebagai lembur umum'}
+                </div>
+              </div>
+
+              <div className="field">
+                <label>
+                  Link hasil pengerjaan <span style={{ color: 'var(--text-3)' }}>(opsional, maks {MAKS_LINK_LEMBUR})</span>
+                </label>
+
+                {links.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                    {links.map((l) => (
+                      <div
+                        key={l.url}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '6px 8px', borderRadius: 8,
+                          border: '1px solid var(--line)', background: 'var(--raised)',
+                        }}
+                      >
+                        <span style={{ fontSize: 13, flexShrink: 0 }}>🔗</span>
+                        <span style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ display: 'block', fontSize: 12.5, fontWeight: 600 }}>
+                            {l.label || domainSingkat(l.url)}
+                          </span>
+                          <span style={{
+                            display: 'block', fontSize: 11, color: 'var(--text-3)',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {l.url}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          className="btn act"
+                          title="Buang tautan ini"
+                          style={{ padding: '0 6px', lineHeight: '18px', flexShrink: 0 }}
+                          onClick={() => { setLinks(links.filter((x) => x.url !== l.url)); setError(''); }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {links.length < MAKS_LINK_LEMBUR && (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      style={{ flex: 2, minWidth: 0 }}
+                      value={linkBaru}
+                      disabled={busy}
+                      placeholder="kig-beta.vercel.app/dashboard"
+                      onChange={(e) => setLinkBaru(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tambahLink(); } }}
+                    />
+                    <input
+                      style={{ flex: 1, minWidth: 0 }}
+                      value={labelBaru}
+                      disabled={busy}
+                      placeholder="Nama (opsional)"
+                      onChange={(e) => setLabelBaru(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tambahLink(); } }}
+                    />
+                    <button type="button" className="btn" disabled={busy || !linkBaru.trim()} onClick={tambahLink}>
+                      Tambah
+                    </button>
+                  </div>
+                )}
+                <div className="hint">
+                  Tanpa https:// pun boleh — nanti ditambahkan sendiri. Berguna untuk
+                  menunjukkan hasilnya: dashboard, dokumen, atau sheet yang dikerjakan.
                 </div>
               </div>
 

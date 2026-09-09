@@ -98,6 +98,12 @@ export interface Profile {
   vertical: string | null;
   is_active: boolean;
   created_at: string;
+  /**
+   * Atasan langsung yang DITUNJUK di Bagan Tim. Kosong = ikut tangga otomatis
+   * (manager di tim yang sama → HO → Pimpinan). Perlu ditunjuk kalau satu tim
+   * punya lebih dari satu manager, karena tangga otomatis tidak bisa memilih.
+   */
+  lead_id: string | null;
 }
 
 export interface TeamMember {
@@ -364,6 +370,43 @@ export interface OvertimeProof {
  *  `overtime_proofs_maks_3` di database. */
 export const MAKS_FOTO_LEMBUR = 3;
 
+/**
+ * Tautan hasil pengerjaan lembur — dashboard, dokumen, sheet, apa pun yang
+ * bisa dibuka. `label` boleh kosong; kalau kosong, tampilan memakai nama
+ * domainnya supaya daftar tautan tetap enak dibaca.
+ */
+export interface OvertimeLink {
+  url: string;
+  label: string;
+}
+
+/** Maksimal tautan per pengajuan lembur. Dijaga juga oleh constraint
+ *  `overtime_links_maks_3` di database. */
+export const MAKS_LINK_LEMBUR = 3;
+
+/**
+ * Membersihkan tautan yang diketik orang.
+ *
+ * Orang biasa menempel "kig-beta.vercel.app/..." tanpa https://, dan tanpa
+ * skema itu href-nya dianggap alamat relatif — kliknya nyasar ke dalam Alpha
+ * sendiri, bukan ke tujuannya. Kembalinya null kalau memang bukan tautan.
+ */
+export function rapikanLink(mentah: string): string | null {
+  const t = (mentah || '').trim();
+  if (!t) return null;
+  const lengkap = /^https?:\/\//i.test(t) ? t : `https://${t}`;
+  // Harus punya titik pada nama host — menahan ketikan seperti "dashboard"
+  // yang jelas bukan alamat.
+  if (!/^https?:\/\/[^\s/]+\.[^\s/]+/i.test(lengkap)) return null;
+  return lengkap;
+}
+
+/** Nama domain untuk dipakai sebagai label bawaan. */
+export function domainSingkat(url: string): string {
+  const m = url.match(/^https?:\/\/([^/?#]+)/i);
+  return m ? m[1].replace(/^www\./i, '') : url;
+}
+
 export interface OvertimeRequest {
   id: string;
   /** Project utama — dipertahankan karena policy RLS lama masih memakainya. */
@@ -376,6 +419,8 @@ export interface OvertimeRequest {
   proof_name: string | null;
   /** Foto bukti di bucket `lembur`, maksimal 3. Kosong = tidak melampirkan. */
   proofs: OvertimeProof[];
+  /** Tautan hasil pengerjaan, maksimal 3. Kosong = tidak melampirkan. */
+  work_links: OvertimeLink[];
   work_date: string;
   start_time: string;
   end_time: string;
