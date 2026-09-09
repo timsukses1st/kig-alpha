@@ -16,6 +16,12 @@ const PLATFORMS = [
   { key: 'telegram', label: 'Telegram', color: '#0088cc' },
 ];
 const platMeta = (k: string) => PLATFORMS.find((p) => p.key === k) || { label: k, color: 'var(--text-3)' };
+/** Urutan platform di dalam satu tanggal — tetap, tidak ikut jumlah laporan,
+ *  supaya letaknya tidak berpindah tiap kali ada laporan baru masuk. */
+const urutPlat = (k: string) => {
+  const i = PLATFORMS.findIndex((p) => p.key === k);
+  return i === -1 ? 99 : i;
+};
 
 // hitung SHA-256 file -> hex (untuk deteksi duplikat)
 async function fileHash(f: File): Promise<string> {
@@ -26,12 +32,54 @@ async function fileHash(f: File): Promise<string> {
 
 const MAX_MB = 10;
 
+/** Rentang yang ditarik dari database. Bukan cuma soal enak dibaca — inilah
+ *  yang menahan layar ini tetap ringan waktu isinya sudah puluhan ribu baris. */
+const RENTANG = [
+  { key: '30', label: '30 hari terakhir', hari: 30 },
+  { key: '90', label: '90 hari terakhir', hari: 90 },
+  { key: 'all', label: 'Semua waktu', hari: 0 },
+];
+
+interface RingkasBaris {
+  tanggal: string;
+  platform: string;
+  content_category: string;
+  laporan: number;
+  grup: number;
+}
+interface RekapOrang {
+  reporter_id: string | null;
+  reporter_name: string | null;
+  laporan: number;
+  grup: number;
+}
+
 export default function SebaranView({ profile, projects, projectFilter }: Props) {
-  const [rows, setRows] = useState<DistributionLog[]>([]);
+  /**
+   * Layar ini TIDAK lagi menarik seluruh baris `distribution_logs`.
+   *
+   * Yang ditarik cuma ringkasannya (tanggal × platform × kategori + hitungan)
+   * lewat fungsi `sebaran_ringkas`. Barisnya sendiri baru diambil saat sebuah
+   * tanggal dibuka, dan hanya untuk tanggal itu. Satu hari bisa ratusan
+   * laporan begitu semua project jalan — menarik semuanya di depan cuma untuk
+   * digambar sebagai daftar panjang itu mubazir, dan makin lama makin berat.
+   */
+  const [ringkas, setRingkas] = useState<RingkasBaris[]>([]);
+  const [rekap, setRekap] = useState<RekapOrang[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rentang, setRentang] = useState('30');
   const [scope, setScope] = useState<'saya' | 'tim'>('saya');
   const [platFilter, setPlatFilter] = useState('all');
   const [catFilter, setCatFilter] = useState('all');
+
+  /** Tanggal & platform yang sedang dibuka. Semua tertutup saat layar dibuka. */
+  const [bukaTgl, setBukaTgl] = useState<Record<string, boolean>>({});
+  const [bukaPlat, setBukaPlat] = useState<Record<string, boolean>>({});
+  /** Baris per tanggal, diambil sekali lalu dipakai ulang oleh semua platform
+   *  di tanggal itu — bukan sekali per platform. */
+  const [barisTgl, setBarisTgl] = useState<Record<string, DistributionLog[]>>({});
+  const [muatTgl, setMuatTgl] = useState<Record<string, boolean>>({});
+
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -55,25 +103,95 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
   };
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
 
-  const load = useCallback(async (silent = false) => {
+  // Kunci tanggal versi WIB (UTC+7) — batas hari jam 00.00 WIB, bukan 07.00
+  const wibKey = (iso: string) =>
+    new Date(new Date(iso).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+
+  const todayKey = wibKey(new Date().toISOString());
+  const kemarinKey = wibKey(new Date(Date.now() - 86400000).toISOString());
+
+  const dariTanggal = useMemo(() => {
+    const def = RENTANG.find((r) => r.key === rentang);
+    if (!def || def.hari === 0) return null;
+    return wibKey(new Date(Date.now() - (def.hari - 1) * 86400000).toISOString());
+  }, [rentang]);
+
+  /* ---------------- pengambilan data ---------------- */
+
+  const muatRingkas = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
-    let q = supabase.from('distribution_logs').select('*').order('created_at', { ascending: false });
+    const p = {
+      p_project: projectFilter === 'all' ? null : projectFilter,
+      p_hanya_saya: scope === 'saya',
+      p_dari: dariTanggal,
+      p_sampai: null,
+    };
+    const { data, error: err } = await supabase.rpc('sebaran_ringkas', p);
+    if (!err) setRingkas((data as RingkasBaris[]) || []);
+    if (!silent) setLoading(false);
+  }, [projectFilter, scope, dariTanggal]);
+
+  const muatRekap = useCallback(async () => {
+    if (scope !== 'tim') { setRekap([]); return; }
+    const { data, error: err } = await supabase.rpc('sebaran_rekap_orang', {
+      p_project: projectFilter === 'all' ? null : projectFilter,
+      p_dari: dariTanggal,
+      p_sampai: null,
+    });
+    if (!err) setRekap((data as RekapOrang[]) || []);
+  }, [projectFilter, scope, dariTanggal]);
+
+  /** Batas hari versi WIB diterjemahkan ke UTC, karena `created_at` disimpan
+   *  dalam UTC. `2026-09-09` WIB = 2026-09-08T17:00Z sampai 2026-09-09T17:00Z. */
+  const batasHariUtc = (tgl: string) => {
+    const awal = new Date(`${tgl}T00:00:00+07:00`);
+    const akhir = new Date(awal.getTime() + 86400000);
+    return { awal: awal.toISOString(), akhir: akhir.toISOString() };
+  };
+
+  const muatBarisTanggal = useCallback(async (tgl: string) => {
+    setMuatTgl((m) => ({ ...m, [tgl]: true }));
+    const { awal, akhir } = batasHariUtc(tgl);
+    let q = supabase.from('distribution_logs').select('*')
+      .gte('created_at', awal).lt('created_at', akhir)
+      .order('created_at', { ascending: false });
     if (projectFilter !== 'all') q = q.eq('project_id', projectFilter);
     const { data } = await q;
-    setRows((data as DistributionLog[]) || []);
-    if (!silent) setLoading(false);
+    setBarisTgl((b) => ({ ...b, [tgl]: (data as DistributionLog[]) || [] }));
+    setMuatTgl((m) => ({ ...m, [tgl]: false }));
   }, [projectFilter]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { muatRingkas(); }, [muatRingkas]);
+  useEffect(() => { muatRekap(); }, [muatRekap]);
+
+  /**
+   * Ganti project atau rentang = daftar tanggalnya berubah. Baris yang sudah
+   * terlanjur diambil untuk project lama harus dibuang, bukan dipakai ulang.
+   */
+  useEffect(() => {
+    setBarisTgl({});
+    setBukaTgl({});
+    setBukaPlat({});
+  }, [projectFilter, rentang]);
 
   // --- REALTIME: laporan sebaran dari anggota lain ---
-  const loadRef = useRef(load);
-  useEffect(() => { loadRef.current = load; }, [load]);
+  const segarRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    segarRef.current = () => {
+      muatRingkas(true);
+      muatRekap();
+      // Tanggal yang sedang terbuka ikut ditarik ulang — kalau tidak, laporan
+      // baru dari rekan hanya menambah angka di kepala folder tanpa munculkan
+      // barisnya, dan itu terlihat seperti Alpha-nya salah hitung.
+      Object.keys(bukaTgl).forEach((t) => { if (bukaTgl[t]) muatBarisTanggal(t); });
+    };
+  }, [muatRingkas, muatRekap, muatBarisTanggal, bukaTgl]);
+
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
     const segarkan = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { loadRef.current(true); }, 250);
+      timer = setTimeout(() => { segarRef.current(); }, 400);
     };
     const ch = supabase
       .channel('sebaran-realtime')
@@ -84,8 +202,92 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
 
   // Tutup modal detail otomatis kalau barisnya sudah dihapus orang lain.
   useEffect(() => {
-    setDetail((cur) => (cur ? rows.find((r) => r.id === cur.id) || null : cur));
-  }, [rows]);
+    setDetail((cur) => {
+      if (!cur) return cur;
+      const kunci = wibKey(cur.created_at);
+      const daftar = barisTgl[kunci];
+      if (!daftar) return cur; // tanggalnya belum/tidak dimuat — biarkan
+      return daftar.find((r) => r.id === cur.id) || null;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [barisTgl]);
+
+  /* ---------------- susunan folder ---------------- */
+
+  const ringkasTersaring = useMemo(
+    () => ringkas.filter((r) =>
+      (platFilter === 'all' || r.platform === platFilter)
+      && (catFilter === 'all' || r.content_category === catFilter)),
+    [ringkas, platFilter, catFilter],
+  );
+
+  interface FolderPlat { platform: string; laporan: number; grup: number }
+  interface FolderTgl { tanggal: string; laporan: number; grup: number; plat: FolderPlat[] }
+
+  const folder = useMemo<FolderTgl[]>(() => {
+    const peta: Record<string, { laporan: number; grup: number; plat: Record<string, FolderPlat> }> = {};
+    ringkasTersaring.forEach((r) => {
+      if (!peta[r.tanggal]) peta[r.tanggal] = { laporan: 0, grup: 0, plat: {} };
+      const d = peta[r.tanggal];
+      d.laporan += r.laporan;
+      d.grup += r.grup;
+      if (!d.plat[r.platform]) d.plat[r.platform] = { platform: r.platform, laporan: 0, grup: 0 };
+      d.plat[r.platform].laporan += r.laporan;
+      d.plat[r.platform].grup += r.grup;
+    });
+    return Object.keys(peta).sort().reverse().map((tgl) => ({
+      tanggal: tgl,
+      laporan: peta[tgl].laporan,
+      grup: peta[tgl].grup,
+      plat: Object.keys(peta[tgl].plat)
+        .map((k) => peta[tgl].plat[k])
+        .sort((a, b) => urutPlat(a.platform) - urutPlat(b.platform)),
+    }));
+  }, [ringkasTersaring]);
+
+  const totalLaporan = useMemo(() => folder.reduce((a, f) => a + f.laporan, 0), [folder]);
+
+  const stats = useMemo(() => {
+    const hariIni = folder.find((f) => f.tanggal === todayKey);
+    return {
+      todayCount: hariIni ? hariIni.laporan : 0,
+      todayGroups: hariIni ? hariIni.grup : 0,
+      totalGroups: folder.reduce((a, f) => a + f.grup, 0),
+    };
+  }, [folder, todayKey]);
+
+  const adaYangTerbuka = useMemo(
+    () => Object.keys(bukaTgl).some((k) => bukaTgl[k]),
+    [bukaTgl],
+  );
+
+  const toggleTgl = (tgl: string) => {
+    const nanti = !bukaTgl[tgl];
+    setBukaTgl((b) => ({ ...b, [tgl]: nanti }));
+    if (nanti && !barisTgl[tgl] && !muatTgl[tgl]) muatBarisTanggal(tgl);
+    // Kalau tanggalnya cuma punya satu platform, platformnya ikut dibuka —
+    // menyuruh orang mengklik dua kali untuk sesuatu yang tidak bercabang itu
+    // cuma bikin kesal.
+    if (nanti) {
+      const f = folder.find((x) => x.tanggal === tgl);
+      if (f && f.plat.length === 1) {
+        setBukaPlat((b) => ({ ...b, [`${tgl}|${f.plat[0].platform}`]: true }));
+      }
+    }
+  };
+
+  const tutupSemua = () => { setBukaTgl({}); setBukaPlat({}); };
+
+  /** Baris untuk satu kotak tanggal+platform, sudah lewat semua penyaring. */
+  const barisUntuk = (tgl: string, platform: string): DistributionLog[] => {
+    const semua = barisTgl[tgl] || [];
+    return semua.filter((r) =>
+      r.platform === platform
+      && (scope === 'saya' ? r.reporter_id === profile?.id : true)
+      && (catFilter === 'all' || (r.content_category || '') === catFilter));
+  };
+
+  /* ---------------- lapor / detail / hapus ---------------- */
 
   const openModal = () => {
     setForm({ platform: 'whatsapp', content_category: 'lagi_ramai', group_names: '', content_url: '', note: '', project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || '') });
@@ -127,7 +329,7 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
     const seen = new Set<string>();
     const out: string[] = [];
     text
-      .split(/[\n,;|/\u2022\u00b7]+/)
+      .split(/[\n,;|/•·]+/)
       .map((s) => s.replace(/^\s*(?:\d+[.)]|[-*+>])\s*/, '').trim())
       .filter(Boolean)
       .forEach((s) => {
@@ -138,10 +340,6 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
   };
 
   const countGroups = (text: string) => parseGroups(text).length || 1;
-
-  // Kunci tanggal versi WIB (UTC+7) — batas hari jam 00.00 WIB, bukan 07.00
-  const wibKey = (iso: string) =>
-    new Date(new Date(iso).getTime() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
   const submit = async () => {
     if (!profile) return;
@@ -174,7 +372,13 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
     if (err) { setError('Gagal menyimpan laporan.'); return; }
     setOpen(false);
     flashToast('Laporan sebaran tersimpan.');
-    load(true);
+    // Folder hari ini langsung dibuka supaya laporan yang barusan dikirim
+    // kelihatan, bukan tersembunyi di balik folder yang masih tertutup.
+    setBukaTgl((b) => ({ ...b, [todayKey]: true }));
+    setBukaPlat((b) => ({ ...b, [`${todayKey}|${form.platform}`]: true }));
+    muatRingkas(true);
+    muatRekap();
+    muatBarisTanggal(todayKey);
   };
 
   const openDetail = async (d: DistributionLog) => {
@@ -190,60 +394,56 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
     const d = confirmDel;
     if (!d) return;
     setActBusy(true);
-    const { error: err } = await supabase.from('distribution_logs').delete().eq('id', d.id);
+    // .select('id') supaya penolakan RLS — yang mengenai 0 baris TANPA error —
+    // tidak terlihat seperti berhasil.
+    const { data, error: err } = await supabase.from('distribution_logs').delete().eq('id', d.id).select('id');
     setActBusy(false);
-    if (err) { setConfirmDel(null); flashToast('Gagal menghapus — hanya pelapor atau superadmin.'); return; }
+    if (err || !data || data.length === 0) {
+      setConfirmDel(null);
+      flashToast('Gagal menghapus — hanya pelapor atau superadmin.');
+      return;
+    }
     setConfirmDel(null); setDetail(null);
     flashToast('Laporan sebaran dihapus.');
-    load(true);
+    muatRingkas(true);
+    muatRekap();
+    muatBarisTanggal(wibKey(d.created_at));
   };
 
   const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
+  const fmtJam = (iso: string) => new Date(iso).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
   const fmtDateTime = (iso: string) => new Date(iso).toLocaleString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const isImage = (name: string | null) => !!name && /\.(png|jpe?g|webp|gif)$/i.test(name);
 
-  const scoped = useMemo(
-    () => rows.filter((r) => (scope === 'saya' ? r.reporter_id === profile?.id : true)),
-    [rows, scope, profile],
-  );
-  const filtered = useMemo(
-    () => scoped.filter((r) =>
-      (platFilter === 'all' || r.platform === platFilter)
-      && (catFilter === 'all' || r.content_category === catFilter)),
-    [scoped, platFilter, catFilter],
-  );
+  const judulTanggal = (tgl: string) => {
+    const d = new Date(`${tgl}T00:00:00`);
+    const panjang = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+    const hari = d.toLocaleDateString('id-ID', { weekday: 'long' });
+    if (tgl === todayKey) return { utama: 'Hari ini', sub: `${hari}, ${panjang}` };
+    if (tgl === kemarinKey) return { utama: 'Kemarin', sub: `${hari}, ${panjang}` };
+    return { utama: panjang, sub: hari };
+  };
 
-  const todayKey = wibKey(new Date().toISOString());
-  const stats = useMemo(() => {
-    // pakai `scoped` agar konsisten dengan toggle "Sebaran saya / Semua tim"
-    const today = scoped.filter((r) => wibKey(r.created_at) === todayKey);
-    return {
-      todayCount: today.length,
-      todayGroups: today.reduce((a, r) => a + (r.group_count || 0), 0),
-      totalGroups: scoped.reduce((a, r) => a + (r.group_count || 0), 0),
-    };
-  }, [scoped, todayKey]);
-
-  // rekap per orang
-  const rekap = useMemo(() => {
-    const map = new Map<string, { name: string; logs: number; groups: number }>();
-    rows.forEach((r) => {
-      const key = r.reporter_id || r.reporter_name || '?';
-      const cur = map.get(key) || { name: r.reporter_name || '—', logs: 0, groups: 0 };
-      cur.logs += 1; cur.groups += r.group_count || 0;
-      map.set(key, cur);
-    });
-    return Array.from(map.values()).sort((a, b) => b.groups - a.groups);
-  }, [rows]);
+  const Panah = ({ buka }: { buka: boolean }) => (
+    <span
+      aria-hidden="true"
+      style={{
+        display: 'inline-block', width: 12, flexShrink: 0, fontSize: 10,
+        color: 'var(--text-3)', transition: 'transform .12s ease',
+        transform: buka ? 'rotate(90deg)' : 'none',
+      }}
+    >▶</span>
+  );
 
   return (
     <>
       <div className="topbar">
         <div style={{ display: 'flex', alignItems: 'baseline' }}>
           <h2>Sebaran Harian</h2>
-          <span className="top-note">{scoped.length} laporan</span>
+          <span className="top-note">{totalLaporan} laporan · {folder.length} hari</span>
         </div>
         <div className="top-actions">
+          {adaYangTerbuka && <button className="btn ghost" onClick={tutupSemua}>Tutup semua</button>}
           <button className="btn primary" onClick={openModal}>+ Lapor sebaran</button>
         </div>
       </div>
@@ -252,7 +452,12 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
         <div className="kpi-row">
           <div className="kpi"><div className="kpi-label">Laporan hari ini ({scope === 'saya' ? 'saya' : 'tim'})</div><div className="kpi-value">{stats.todayCount}</div></div>
           <div className="kpi"><div className="kpi-label">Grup hari ini ({scope === 'saya' ? 'saya' : 'tim'})</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{stats.todayGroups}</div></div>
-          <div className="kpi"><div className="kpi-label">Total grup ({scope === 'saya' ? 'saya' : 'tim'})</div><div className="kpi-value" style={{ fontSize: 20 }}>{stats.totalGroups}</div></div>
+          <div className="kpi">
+            <div className="kpi-label">
+              Total grup ({scope === 'saya' ? 'saya' : 'tim'} · {rentang === 'all' ? 'semua waktu' : `${rentang} hari`})
+            </div>
+            <div className="kpi-value" style={{ fontSize: 20 }}>{stats.totalGroups}</div>
+          </div>
         </div>
 
         <div className="team-filter" style={{ justifyContent: 'space-between' }}>
@@ -265,6 +470,9 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
               <option value="all">Semua kategori</option>
               {(Object.keys(PILLAR_LABEL) as Pillar[]).map((k) => <option key={k} value={k}>{PILLAR_LABEL[k]}</option>)}
             </select>
+            <select className="cat-filter" value={rentang} onChange={(e) => setRentang(e.target.value)}>
+              {RENTANG.map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+            </select>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button className={`chip-btn ${scope === 'saya' ? 'active' : ''}`} onClick={() => setScope('saya')}>Sebaran saya</button>
@@ -272,47 +480,161 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
           </div>
         </div>
 
-        <div className="table-wrap">
-          {loading ? <p className="empty">Memuat…</p> : filtered.length === 0 ? (
-            <p className="empty">Belum ada laporan sebaran pada filter ini.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr><th>Waktu lapor</th><th>Platform</th><th>Grup</th><th>Project</th><th>Pelapor</th><th>Bukti</th><th style={{ width: 90 }}></th></tr>
-              </thead>
-              <tbody>
-                {filtered.map((d) => (
-                  <tr key={d.id} className="tracker-row" onClick={() => openDetail(d)}>
-                    <td><b>{fmtDateTime(d.created_at)}</b><div className="sub" style={{ fontFamily: 'inherit' }}>timestamp server</div></td>
-                    <td><span className="plat-dot" style={{ background: platMeta(d.platform).color }} />{platMeta(d.platform).label}</td>
-                    <td><b>{d.group_count}</b> grup</td>
-                    <td>{projName(d.project_id)}</td>
-                    <td><span className="row-avatar">{initials(d.reporter_name)}</span>{d.reporter_name}</td>
-                    <td>{d.proof_path ? <span className="link-tag" style={{ color: 'var(--green)' }}>ada</span> : <span className="sub">—</span>}</td>
-                    <td>
-                      <div className="recap-actions" onClick={(e) => e.stopPropagation()}>
-                        <button className="btn act" onClick={() => openDetail(d)}>Detail</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        {/* ---- Folder: Tanggal → Platform → laporan ---- */}
+        {loading ? (
+          <p className="empty">Memuat…</p>
+        ) : folder.length === 0 ? (
+          <p className="empty">Belum ada laporan sebaran pada filter ini.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {folder.map((f) => {
+              const jt = judulTanggal(f.tanggal);
+              const terbuka = !!bukaTgl[f.tanggal];
+              return (
+                <div
+                  key={f.tanggal}
+                  style={{
+                    border: '1px solid var(--border)', borderRadius: 12,
+                    background: 'var(--panel)', overflow: 'hidden',
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleTgl(f.tanggal)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                      padding: '13px 16px', border: 0, background: terbuka ? 'var(--raised)' : 'transparent',
+                      textAlign: 'left', font: 'inherit', cursor: 'pointer',
+                    }}
+                  >
+                    <Panah buka={terbuka} />
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700 }}>
+                        {jt.utama}
+                        {f.tanggal === todayKey && (
+                          <span style={{
+                            marginLeft: 8, fontSize: 10, fontWeight: 700, letterSpacing: '.06em',
+                            textTransform: 'uppercase', color: 'var(--green)',
+                          }}>aktif</span>
+                        )}
+                      </span>
+                      <span className="sub" style={{ fontFamily: 'inherit', fontSize: 11.5 }}>{jt.sub}</span>
+                    </span>
+                    <span style={{ flexShrink: 0, display: 'flex', gap: 14, alignItems: 'center', fontSize: 12 }}>
+                      <span><b>{f.laporan}</b> laporan</span>
+                      <span style={{ color: 'var(--green)' }}><b>{f.grup}</b> grup</span>
+                      <span style={{ display: 'flex', gap: 4 }}>
+                        {f.plat.map((p) => (
+                          <span
+                            key={p.platform}
+                            title={`${platMeta(p.platform).label} · ${p.laporan} laporan`}
+                            style={{
+                              width: 8, height: 8, borderRadius: '50%',
+                              background: platMeta(p.platform).color, display: 'inline-block',
+                            }}
+                          />
+                        ))}
+                      </span>
+                    </span>
+                  </button>
+
+                  {terbuka && (
+                    <div style={{ borderTop: '1px solid var(--border)' }}>
+                      {f.plat.map((p) => {
+                        const kunci = `${f.tanggal}|${p.platform}`;
+                        const bukaP = !!bukaPlat[kunci];
+                        const baris = barisUntuk(f.tanggal, p.platform);
+                        const sedangMuat = !!muatTgl[f.tanggal];
+                        return (
+                          <div key={p.platform}>
+                            <button
+                              type="button"
+                              onClick={() => setBukaPlat((b) => ({ ...b, [kunci]: !bukaP }))}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+                                padding: '10px 16px 10px 34px', border: 0, background: 'transparent',
+                                textAlign: 'left', font: 'inherit', fontSize: 12.5, cursor: 'pointer',
+                              }}
+                            >
+                              <Panah buka={bukaP} />
+                              <span className="plat-dot" style={{ background: platMeta(p.platform).color }} />
+                              <span style={{ flex: 1, fontWeight: 600 }}>{platMeta(p.platform).label}</span>
+                              <span style={{ color: 'var(--text-3)' }}>
+                                <b style={{ color: 'var(--text)' }}>{p.laporan}</b> laporan ·{' '}
+                                <b style={{ color: 'var(--green)' }}>{p.grup}</b> grup
+                              </span>
+                            </button>
+
+                            {bukaP && (
+                              <div style={{ padding: '0 12px 12px 34px' }}>
+                                {sedangMuat && baris.length === 0 ? (
+                                  <p className="empty" style={{ padding: '14px 0' }}>Memuat laporan…</p>
+                                ) : baris.length === 0 ? (
+                                  <p className="empty" style={{ padding: '14px 0' }}>
+                                    Tidak ada laporan di sini pada filter yang aktif.
+                                  </p>
+                                ) : (
+                                  <div className="table-wrap">
+                                    <table>
+                                      <thead>
+                                        <tr>
+                                          <th>Waktu lapor</th><th>Grup</th><th>Project</th>
+                                          <th>Kategori</th><th>Pelapor</th><th>Bukti</th>
+                                          <th style={{ width: 90 }}></th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {baris.map((d) => (
+                                          <tr key={d.id} className="tracker-row" onClick={() => openDetail(d)}>
+                                            <td>
+                                              <b>{fmtJam(d.created_at)}</b>
+                                              <div className="sub" style={{ fontFamily: 'inherit' }}>timestamp server</div>
+                                            </td>
+                                            <td><b>{d.group_count}</b> grup</td>
+                                            <td>{projName(d.project_id)}</td>
+                                            <td>{d.content_category ? (PILLAR_LABEL[d.content_category as Pillar] || d.content_category) : '—'}</td>
+                                            <td><span className="row-avatar">{initials(d.reporter_name)}</span>{d.reporter_name}</td>
+                                            <td>{d.proof_path ? <span className="link-tag" style={{ color: 'var(--green)' }}>ada</span> : <span className="sub">—</span>}</td>
+                                            <td>
+                                              <div className="recap-actions" onClick={(e) => e.stopPropagation()}>
+                                                <button className="btn act" onClick={() => openDetail(d)}>Detail</button>
+                                              </div>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {rekap.length > 0 && scope === 'tim' && (
           <>
-            <div className="section-title" style={{ marginTop: 28 }}>Rekap per Orang</div>
+            <div className="section-title" style={{ marginTop: 28 }}>
+              Rekap per Orang <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>
+                ({rentang === 'all' ? 'semua waktu' : `${rentang} hari terakhir`})
+              </span>
+            </div>
             <div className="table-wrap">
               <table>
                 <thead><tr><th>Nama</th><th>Jumlah laporan</th><th>Total grup disebar</th></tr></thead>
                 <tbody>
                   {rekap.map((r, i) => (
-                    <tr key={i}>
-                      <td><span className="row-avatar">{initials(r.name)}</span><b>{r.name}</b></td>
-                      <td>{r.logs}×</td>
-                      <td><b>{r.groups}</b> grup</td>
+                    <tr key={r.reporter_id || i}>
+                      <td><span className="row-avatar">{initials(r.reporter_name)}</span><b>{r.reporter_name || '—'}</b></td>
+                      <td>{r.laporan}×</td>
+                      <td><b>{r.grup}</b> grup</td>
                     </tr>
                   ))}
                 </tbody>
@@ -322,7 +644,11 @@ export default function SebaranView({ profile, projects, projectFilter }: Props)
         )}
 
         <p className="cal-legend">
-          Waktu lapor memakai <b>timestamp server</b> (tidak bisa diubah). Foto bukti dicek otomatis terhadap duplikat. Verifikasi akhir tetap oleh atasan.
+          Laporan dikelompokkan otomatis per <b>tanggal</b> lalu per <b>platform</b> — tidak ada folder yang perlu dibuat dulu,
+          dan laporan baru langsung mendarat di tempatnya. Isi tiap folder baru diambil saat dibuka, jadi layarnya tetap ringan
+          walau laporannya sudah puluhan ribu. Project mengikuti pilihan di sidebar.
+          Waktu lapor memakai <b>timestamp server</b> (tidak bisa diubah). Foto bukti dicek otomatis terhadap duplikat.
+          Verifikasi akhir tetap oleh atasan.
         </p>
       </div>
 
