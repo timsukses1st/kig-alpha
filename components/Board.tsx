@@ -2607,13 +2607,36 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
             </div>
           )}
 
-          <p className="cal-legend">
-            Ketik langsung di kolomnya — tersimpan otomatis saat pindah kolom atau tekan Enter, Esc untuk batal.
-            Klik judul konten untuk membuka brief lengkapnya, atau klik kanan pada baris (tekan-tahan di HP) untuk duplikat, salin caption, dan hapus.
-            Centang beberapa baris untuk mengubah statusnya sekaligus lewat tombol <b>⇄ Ubah status</b> yang muncul di bawah,
-            atau <b>🔗 Salin tautan</b> untuk membuat satu alamat berisi brief yang tercentang — tinggal ditempel di kolom link pengajuan lembur.
-            Filter tanggal mengikuti <b>Tanggal tayang</b> — konten yang belum dijadwalkan hanya muncul di rentang <b>Semua</b>. Kolom yang tidak bisa diketik berarti tahapnya sedang dikelola tim lain.
-          </p>
+          {/*
+            Dulu ini satu paragraf panjang. Di layar lebar `.cal-legend` tidak
+            punya batas lebar, jadi kalimatnya memanjang satu baris penuh dari
+            tepi ke tepi dan terbaca menyambung semua — tidak ada yang membacanya
+            sampai habis. Dipecah jadi baris-baris pendek dan dibatasi lebarnya.
+          */}
+          <div className="cal-legend" style={{ maxWidth: 760 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <div>
+                <b>Mengisi</b> — ketik langsung di kolomnya; tersimpan otomatis saat pindah kolom
+                atau tekan Enter, Esc untuk batal.
+              </div>
+              <div>
+                <b>Membuka brief</b> — klik judul kontennya. Klik kanan pada baris
+                (tekan-tahan di HP) untuk duplikat, salin caption, dan hapus.
+              </div>
+              <div>
+                <b>Beberapa sekaligus</b> — centang barisnya, lalu <b>⇄ Ubah status</b> untuk
+                memindahkan tahapnya, atau <b>🔗 Salin tautan</b> untuk membuat satu alamat
+                berisi brief tercentang; tinggal ditempel di kolom link pengajuan lembur.
+              </div>
+              <div>
+                <b>Filter tanggal</b> — mengikuti Tanggal tayang. Konten yang belum dijadwalkan
+                hanya muncul di rentang <b>Semua</b>.
+              </div>
+              <div>
+                <b>Kolom yang tidak bisa diketik</b> — tahapnya sedang dikelola tim lain.
+              </div>
+            </div>
+          </div>
 
           {adaPerubahan && (
             <div
