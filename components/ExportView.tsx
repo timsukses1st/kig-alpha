@@ -4,9 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { downloadXlsx, type XlsxSheet } from '@/lib/xlsx';
 import {
-  PILLAR_LABEL, platformDef, statusDef, TEAM_LABEL,
-  type Account, type ContentCategory, type ContentStatus, type Profile, type Project,
-  type Team, type TeamMember,
+  jamLemburAngka, jamTeksMenit, menitLembur, PILLAR_LABEL, platformDef, ringkasBlokJam,
+  sesiLembur, statusDef, TEAM_LABEL,
+  type Account, type ContentCategory, type ContentStatus, type OvertimeRequest,
+  type Profile, type Project, type Team, type TeamMember,
 } from '@/lib/types';
 
 /**
@@ -477,33 +478,18 @@ const tglJam = (x: unknown) => (typeof x === 'string' ? x.slice(0, 16).replace('
 // ------------------------------------------------------------ durasi lembur
 
 /**
- * Lama lembur dalam jam.
+ * Lama lembur dalam MENIT.
  *
- * Rumusnya SENGAJA disalin persis dari OvertimeView.tsx — kalau dua layar
- * menghitung dengan cara berbeda, angka di Excel tidak akan cocok dengan angka
- * di layar Lembur, dan yang disalahkan biasanya orangnya, bukan rumusnya.
+ * Rumusnya TIDAK LAGI disalin ke sini. Dulu ada dua salinan — di sini dan di
+ * OvertimeView — dan begitu satu pengajuan boleh berisi beberapa blok jam,
+ * salinan itu langsung salah: selisih jam pertama ke jam terakhir menghitung
+ * 09.00–10.00 + 14.00–17.00 + 19.00–22.00 sebagai 13 jam, bukan 7.
  *
- * `mins < 0` berarti lembur melewati tengah malam (mis. 22:00 → 01:00), bukan
- * kesalahan input — jadi ditambah 24 jam, tidak dibuang.
+ * Sumber angkanya sekarang `total_menit` dari database (trigger
+ * `jaga_sesi_lembur`), dibaca lewat satu penolong bersama di lib/types.ts.
  */
-function jamLembur(start: unknown, end: unknown): number {
-  if (typeof start !== 'string' || typeof end !== 'string') return 0;
-  const s = start.split(':').map(Number);
-  const e = end.split(':').map(Number);
-  if (s.length < 2 || e.length < 2) return 0;
-  let mins = e[0] * 60 + e[1] - (s[0] * 60 + s[1]);
-  if (mins < 0) mins += 24 * 60;
-  return mins / 60;
-}
-
-/** Dibulatkan 2 angka di belakang koma supaya Excel tidak menampilkan 2.5833333. */
-const bulat2 = (n: number) => Math.round(n * 100) / 100;
-
-/** 6 → "6j"; 2.583 → "2j 35m". Untuk dibaca manusia, bukan dijumlah Excel. */
-function jamTeks(h: number): string {
-  const H = Math.floor(h);
-  const M = Math.round((h - H) * 60);
-  return M ? `${H}j ${M}m` : `${H}j`;
+function menitLemburBaris(r: Record<string, unknown>): number {
+  return menitLembur(r as unknown as OvertimeRequest);
 }
 
 /**
@@ -516,8 +502,10 @@ function jamTeks(h: number): string {
  */
 interface BarisRekapLembur {
   nama: string;
-  nSetuju: number; jamSetuju: number;
-  nAjukan: number; jamAjukan: number;
+  /** Disimpan dalam MENIT, baru dibagi 60 saat ditulis ke sel — supaya
+   *  penjumlahan blok jam tidak kehilangan menit karena pembulatan. */
+  nSetuju: number; menitSetuju: number;
+  nAjukan: number; menitAjukan: number;
   nTolak: number;
   total: number;
 }
@@ -529,28 +517,28 @@ function sheetRekapLembur(rows: Record<string, unknown>[]): XlsxSheet {
     const nama = (r.requester_name as string) || '(tanpa nama)';
     const kunci = (r.requester_id as string) || `nama:${nama}`;
     if (!peta[kunci]) {
-      peta[kunci] = { nama, nSetuju: 0, jamSetuju: 0, nAjukan: 0, jamAjukan: 0, nTolak: 0, total: 0 };
+      peta[kunci] = { nama, nSetuju: 0, menitSetuju: 0, nAjukan: 0, menitAjukan: 0, nTolak: 0, total: 0 };
     }
     const b = peta[kunci];
-    const jam = jamLembur(r.start_time, r.end_time);
+    const menit = menitLemburBaris(r);
     b.total += 1;
-    if (r.status === 'disetujui') { b.nSetuju += 1; b.jamSetuju += jam; }
-    else if (r.status === 'diajukan') { b.nAjukan += 1; b.jamAjukan += jam; }
+    if (r.status === 'disetujui') { b.nSetuju += 1; b.menitSetuju += menit; }
+    else if (r.status === 'diajukan') { b.nAjukan += 1; b.menitAjukan += menit; }
     else if (r.status === 'ditolak') { b.nTolak += 1; }
   }
 
   // Object.keys + map, bukan sebaran Map — tsconfig repo ini jatuh ke ES5.
   const daftar = Object.keys(peta)
     .map((k) => peta[k])
-    .sort((a, b) => b.jamSetuju - a.jamSetuju || a.nama.localeCompare(b.nama));
+    .sort((a, b) => b.menitSetuju - a.menitSetuju || a.nama.localeCompare(b.nama));
 
   const baris: Record<string, unknown>[] = daftar.map((b) => ({
     nama: b.nama,
     nSetuju: b.nSetuju,
-    jamSetuju: bulat2(b.jamSetuju),
-    bacaan: jamTeks(b.jamSetuju),
+    jamSetuju: jamLemburAngka(b.menitSetuju),
+    bacaan: jamTeksMenit(b.menitSetuju),
     nAjukan: b.nAjukan,
-    jamAjukan: bulat2(b.jamAjukan),
+    jamAjukan: jamLemburAngka(b.menitAjukan),
     nTolak: b.nTolak,
     total: b.total,
   }));
@@ -560,19 +548,19 @@ function sheetRekapLembur(rows: Record<string, unknown>[]): XlsxSheet {
   if (daftar.length) {
     const t = daftar.reduce(
       (a, b) => ({
-        nSetuju: a.nSetuju + b.nSetuju, jamSetuju: a.jamSetuju + b.jamSetuju,
-        nAjukan: a.nAjukan + b.nAjukan, jamAjukan: a.jamAjukan + b.jamAjukan,
+        nSetuju: a.nSetuju + b.nSetuju, menitSetuju: a.menitSetuju + b.menitSetuju,
+        nAjukan: a.nAjukan + b.nAjukan, menitAjukan: a.menitAjukan + b.menitAjukan,
         nTolak: a.nTolak + b.nTolak, total: a.total + b.total,
       }),
-      { nSetuju: 0, jamSetuju: 0, nAjukan: 0, jamAjukan: 0, nTolak: 0, total: 0 },
+      { nSetuju: 0, menitSetuju: 0, nAjukan: 0, menitAjukan: 0, nTolak: 0, total: 0 },
     );
     baris.push({
       nama: 'TOTAL',
       nSetuju: t.nSetuju,
-      jamSetuju: bulat2(t.jamSetuju),
-      bacaan: jamTeks(t.jamSetuju),
+      jamSetuju: jamLemburAngka(t.menitSetuju),
+      bacaan: jamTeksMenit(t.menitSetuju),
       nAjukan: t.nAjukan,
-      jamAjukan: bulat2(t.jamAjukan),
+      jamAjukan: jamLemburAngka(t.menitAjukan),
       nTolak: t.nTolak,
       total: t.total,
     });
@@ -679,6 +667,7 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
           { header: 'Pengaju', key: 'pengaju', width: 22 },
           { header: 'Mulai', key: 'mulai', width: 10 },
           { header: 'Selesai', key: 'selesai', width: 10 },
+          { header: 'Blok Jam', key: 'blok', width: 34 },
           { header: 'Durasi (jam)', key: 'durasi', width: 12 },
           { header: 'Uraian', key: 'uraian', width: 52 },
           { header: 'Link Hasil', key: 'link', width: 40 },
@@ -691,10 +680,15 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
           tanggal: v(r, 'work_date'),
           project: L.projName(r.project_id as string | null),
           pengaju: v(r, 'requester_name'),
+          // Mulai/Selesai adalah SELUBUNG terluar. Untuk pengajuan berblok,
+          // kolom "Blok Jam" di sebelahnya yang menyimpan jam sebenarnya.
           mulai: v(r, 'start_time'),
           selesai: v(r, 'end_time'),
+          blok: sesiLembur(r as unknown as OvertimeRequest).length > 1
+            ? ringkasBlokJam(r as unknown as OvertimeRequest)
+            : '',
           // Angka, bukan teks "3j" — supaya bisa dijumlah sendiri di Excel.
-          durasi: bulat2(jamLembur(r.start_time, r.end_time)),
+          durasi: jamLemburAngka(menitLemburBaris(r)),
           uraian: v(r, 'description'),
           // Satu tautan per baris di dalam selnya. Sel Excel sudah melipat
           // teks bertingkat, jadi tiga tautan tetap terbaca utuh.

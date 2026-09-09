@@ -3,8 +3,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
-  boleh, domainSingkat, initials, MAKS_FOTO_LEMBUR, MAKS_LINK_LEMBUR, rapikanLink, TUGAS,
-  type OvertimeLink, type OvertimeProof, type OvertimeRequest, type Profile, type Project,
+  boleh, domainSingkat, initials, jamTeksMenit, MAKS_FOTO_LEMBUR, MAKS_LINK_LEMBUR,
+  MAKS_SESI_LEMBUR, menitBlok, menitLembur, rapikanLink, sesiLembur, TUGAS,
+  type OvertimeLink, type OvertimeProof, type OvertimeRequest, type OvertimeSession,
+  type Profile, type Project,
 } from '@/lib/types';
 
 interface Props {
@@ -30,19 +32,32 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-// hitung durasi jam (mendukung lintas tengah malam)
-function durationHours(start: string, end: string): number {
-  const [sh, sm] = start.split(':').map(Number);
-  const [eh, em] = end.split(':').map(Number);
-  let mins = eh * 60 + em - (sh * 60 + sm);
-  if (mins < 0) mins += 24 * 60; // lewat tengah malam
-  return mins / 60;
+/**
+ * Cerminan pengecekan tumpang-tindih di trigger `jaga_sesi_lembur`.
+ *
+ * Ada di dua tempat DENGAN SENGAJA: database yang menolak (itu yang mengikat),
+ * layar yang memberi tahu lebih dulu supaya orang tidak menekan Ajukan lalu
+ * menerima pesan mentah dari Postgres. Kalau salah satunya diubah, ubah
+ * dua-duanya.
+ */
+function blokBertumpuk(sesi: OvertimeSession[]): boolean {
+  const urut = sesi
+    .map((s) => {
+      const m = s.mulai.split(':').map(Number);
+      const awal = m[0] * 60 + m[1];
+      return { awal, akhir: awal + menitBlok(s.mulai, s.selesai) };
+    })
+    .sort((a, b) => a.awal - b.awal);
+  for (let i = 1; i < urut.length; i++) {
+    if (urut[i].awal < urut[i - 1].akhir) return true;
+  }
+  // Blok terakhir yang lewat tengah malam menabrak blok pertama.
+  if (urut.length > 1) {
+    const akhirMaks = Math.max.apply(null, urut.map((u) => u.akhir));
+    if (akhirMaks > 1440 && akhirMaks - 1440 > urut[0].awal) return true;
+  }
+  return false;
 }
-const fmtDur = (h: number) => {
-  const H = Math.floor(h);
-  const M = Math.round((h - H) * 60);
-  return M ? `${H}j ${M}m` : `${H}j`;
-};
 
 export default function OvertimeView({ profile, projects, projectFilter }: Props) {
   const [rows, setRows] = useState<OvertimeRequest[]>([]);
@@ -60,7 +75,8 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   const [error, setError] = useState('');
   const [form, setForm] = useState({
     work_date: todayLocal(),
-    start_time: '17:00', end_time: '20:00',
+    /** Blok jam kerja. Selalu minimal satu — lihat openModal(). */
+    sesi: [{ mulai: '17:00', selesai: '20:00' }] as OvertimeSession[],
     description: '', project_ids: [] as string[],
   });
   /** Tautan hasil pengerjaan yang sedang disusun di modal. */
@@ -93,6 +109,41 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   }, [fileBaru]);
 
   const sisaSlot = MAKS_FOTO_LEMBUR - (fotoLama.length + fileBaru.length);
+
+  /* ---------------- blok jam di modal ---------------- */
+
+  const menitForm = useMemo(
+    () => form.sesi.reduce((a, s) => a + menitBlok(s.mulai, s.selesai), 0),
+    [form.sesi],
+  );
+
+  const ubahBlok = (i: number, patch: Partial<OvertimeSession>) => {
+    setForm((f) => ({
+      ...f,
+      sesi: f.sesi.map((s, j) => (j === i ? { ...s, ...patch } : s)),
+    }));
+    setError('');
+  };
+
+  const tambahBlok = () => {
+    if (form.sesi.length >= MAKS_SESI_LEMBUR) {
+      setError(`Maksimal ${MAKS_SESI_LEMBUR} blok jam per pengajuan.`);
+      return;
+    }
+    // Blok baru dimulai dari jam selesai blok terakhir — itu yang paling
+    // sering benar, dan sekaligus tidak pernah bertumpuk.
+    const akhir = form.sesi[form.sesi.length - 1];
+    const m = akhir ? akhir.selesai : '17:00';
+    const jam = Number(m.slice(0, 2));
+    const lanjut = `${String(Math.min(jam + 1, 23)).padStart(2, '0')}:${m.slice(3, 5)}`;
+    setForm((f) => ({ ...f, sesi: f.sesi.concat([{ mulai: m, selesai: lanjut }]) }));
+    setError('');
+  };
+
+  const buangBlok = (i: number) => {
+    setForm((f) => ({ ...f, sesi: f.sesi.filter((_, j) => j !== i) }));
+    setError('');
+  };
 
   /** Menambahkan file dari input. Dipotong di sisa slot, ditolak kalau
    *  kebesaran — supaya tidak baru ketahuan saat menekan Simpan. */
@@ -230,7 +281,8 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     setEditId(null);
     setForm({
       work_date: todayLocal(),
-      start_time: '17:00', end_time: '20:00', description: '',
+      sesi: [{ mulai: '17:00', selesai: '20:00' }],
+      description: '',
       project_ids: projectFilter !== 'all' ? [projectFilter] : [],
     });
     setFileBaru([]);
@@ -248,8 +300,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     setEditId(o.id);
     setForm({
       work_date: o.work_date,
-      start_time: o.start_time.slice(0, 5),
-      end_time: o.end_time.slice(0, 5),
+      sesi: sesiLembur(o),
       description: o.description,
       project_ids: idsProject(o),
     });
@@ -266,7 +317,16 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   const submit = async () => {
     if (!profile) return;
     if (!form.description.trim()) { setError('Isi dulu apa yang dikerjakan.'); return; }
-    if (form.start_time === form.end_time) { setError('Jam mulai dan selesai tidak boleh sama.'); return; }
+    if (form.sesi.length === 0) { setError('Isi minimal satu blok jam.'); return; }
+    if (form.sesi.some((s) => !s.mulai || !s.selesai)) {
+      setError('Ada blok jam yang belum lengkap.'); return;
+    }
+    if (form.sesi.some((s) => s.mulai === s.selesai)) {
+      setError('Jam mulai dan selesai dalam satu blok tidak boleh sama.'); return;
+    }
+    if (blokBertumpuk(form.sesi)) {
+      setError('Ada blok jam yang bertumpuk — jamnya akan terhitung dua kali.'); return;
+    }
     if (fotoLama.length + fileBaru.length > MAKS_FOTO_LEMBUR) {
       setError(`Maksimal ${MAKS_FOTO_LEMBUR} foto per pengajuan.`); return;
     }
@@ -292,14 +352,22 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     }
     const bukti: OvertimeProof[] = fotoLama.concat(terunggah);
 
+    // Urutkan dulu supaya selubung yang dikirim masuk akal walau bloknya
+    // diisi acak. Database tetap menghitung ulang sendiri lewat trigger
+    // `jaga_sesi_lembur` — ini cuma supaya nilai awalnya tidak aneh.
+    const sesiUrut = form.sesi.slice().sort((a, b) => a.mulai.localeCompare(b.mulai));
+
     const payload: Record<string, unknown> = {
       // project_id tetap diisi project pertama: policy RLS lama masih
       // memakainya, jadi kalau dikosongkan pengajuannya bisa ditolak database.
       project_id: form.project_ids[0] || null,
       project_ids: form.project_ids,
       work_date: form.work_date,
-      start_time: form.start_time,
-      end_time: form.end_time,
+      sessions: sesiUrut,
+      // start_time/end_time tetap dikirim karena kolomnya NOT NULL. Nilainya
+      // ditimpa trigger jadi selubung terluar yang sebenarnya.
+      start_time: sesiUrut[0].mulai,
+      end_time: sesiUrut[sesiUrut.length - 1].selesai,
       description: form.description.trim(),
       // Ditulis apa adanya — daftar hasil susunan di modal, jadi menghapus
       // tautan pun ikut tersimpan.
@@ -334,7 +402,11 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
         await supabase.storage.from('lembur').remove(terunggah.map((p) => p.path));
       }
       setBusy(false);
-      setError(err ? 'Gagal menyimpan pengajuan.' : 'Tidak tersimpan — kamu tidak punya izin mengubah pengajuan ini.');
+      // Pesan dari trigger blok jam sudah berbahasa manusia, jadi ditampilkan
+      // apa adanya. Sisanya diganti kalimat yang lebih membantu.
+      const pesanTrigger = err && /blok jam/i.test(err.message) ? err.message : null;
+      setError(pesanTrigger
+        || (err ? 'Gagal menyimpan pengajuan.' : 'Tidak tersimpan — kamu tidak punya izin mengubah pengajuan ini.'));
       return;
     }
 
@@ -435,6 +507,12 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   };
   const fmtDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
 
+  /** Ringkasan jam untuk baris tabel: blok pertama + berapa blok lagi. */
+  const jamRingkas = (o: OvertimeRequest) => {
+    const s = sesiLembur(o);
+    return { pertama: `${s[0].mulai}–${s[0].selesai}`, sisa: s.length - 1 };
+  };
+
   /**
    * Kunci identitas pemohon. Pakai requester_id kalau ada — nama bisa berubah
    * atau kembar, ID tidak. Baris lama yang tidak punya id disimpan dengan
@@ -486,22 +564,22 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
    */
   const rekap = useMemo(() => {
     const map = new Map<string, {
-      key: string; name: string; hours: number; count: number;
+      key: string; name: string; menit: number; count: number;
       /** Rincian pengajuannya, supaya barisnya bisa dibuka untuk melihat
        *  pekerjaan apa saja yang menghasilkan jam tersebut. */
       items: OvertimeRequest[];
     }>();
     scoped.filter((r) => r.status === 'disetujui').forEach((r) => {
       const key = peopleKey(r);
-      const cur = map.get(key) || { key, name: r.requester_name || '—', hours: 0, count: 0, items: [] };
-      cur.hours += durationHours(r.start_time, r.end_time);
+      const cur = map.get(key) || { key, name: r.requester_name || '—', menit: 0, count: 0, items: [] };
+      cur.menit += menitLembur(r);
       cur.count += 1;
       cur.items.push(r);
       map.set(key, cur);
     });
     return Array.from(map.values())
       .map((v) => ({ ...v, items: v.items.sort((a, b) => b.work_date.localeCompare(a.work_date)) }))
-      .sort((a, b) => b.hours - a.hours);
+      .sort((a, b) => b.menit - a.menit);
   }, [scoped]);
 
   /** Baris rekap yang sedang dibuka rinciannya. */
@@ -526,7 +604,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
         <div className="kpi-row">
           <div className="kpi"><div className="kpi-label">Menunggu keputusan</div><div className="kpi-value" style={{ color: 'var(--st-review)' }}>{myPending}</div></div>
           <div className="kpi"><div className="kpi-label">Disetujui (pengajuan)</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{scoped.filter((r) => r.status === 'disetujui').length}</div></div>
-          <div className="kpi"><div className="kpi-label">Total jam disetujui</div><div className="kpi-value" style={{ fontSize: 20 }}>{fmtDur(rekap.reduce((a, r) => a + r.hours, 0))}</div></div>
+          <div className="kpi"><div className="kpi-label">Total jam disetujui</div><div className="kpi-value" style={{ fontSize: 20 }}>{jamTeksMenit(rekap.reduce((a, r) => a + r.menit, 0))}</div></div>
         </div>
 
         <div className="team-filter" style={{ justifyContent: 'space-between' }}>
@@ -581,11 +659,26 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                 <tr><th>Tanggal</th><th>Jam</th><th>Durasi</th><th>Project</th><th>Yang dikerjakan</th><th>Pemohon</th><th>Status</th><th style={{ width: 150 }}></th></tr>
               </thead>
               <tbody>
-                {filtered.map((o) => (
+                {filtered.map((o) => {
+                  const jr = jamRingkas(o);
+                  return (
                   <tr key={o.id} className="tracker-row" onClick={() => setDetail(o)}>
                     <td><b>{fmtDate(o.work_date)}</b></td>
-                    <td>{o.start_time.slice(0, 5)}–{o.end_time.slice(0, 5)}</td>
-                    <td><b>{fmtDur(durationHours(o.start_time, o.end_time))}</b></td>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      {jr.pertama}
+                      {jr.sisa > 0 && (
+                        <span
+                          title={sesiLembur(o).map((s) => `${s.mulai}–${s.selesai}`).join('\n')}
+                          style={{
+                            marginLeft: 6, fontSize: 10.5, fontWeight: 700, padding: '1px 6px',
+                            borderRadius: 20, background: 'var(--accent-soft)', color: 'var(--accent)',
+                          }}
+                        >
+                          +{jr.sisa} blok
+                        </span>
+                      )}
+                    </td>
+                    <td><b>{jamTeksMenit(menitLembur(o))}</b></td>
                     <td>{namaProject(o)}</td>
                     <td>
                       <span className="ot-desc-clip">{o.description}</span>
@@ -629,7 +722,8 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -673,7 +767,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                             }}>▸</span>
                           </td>
                           <td>{r.count}×</td>
-                          <td><b>{fmtDur(r.hours)}</b></td>
+                          <td><b>{jamTeksMenit(r.menit)}</b></td>
                         </tr>
 
                         {buka && (
@@ -694,11 +788,11 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                                   <div style={{ minWidth: 108, flexShrink: 0 }}>
                                     <div style={{ fontSize: 12.5, fontWeight: 700 }}>{fmtDate(o.work_date)}</div>
                                     <div className="sub" style={{ fontSize: 11 }}>
-                                      {o.start_time.slice(0, 5)}–{o.end_time.slice(0, 5)}
+                                      {sesiLembur(o).map((s) => `${s.mulai}–${s.selesai}`).join(', ')}
                                     </div>
                                   </div>
                                   <div style={{ minWidth: 54, flexShrink: 0, fontSize: 12.5, fontWeight: 700 }}>
-                                    {fmtDur(durationHours(o.start_time, o.end_time))}
+                                    {jamTeksMenit(menitLembur(o))}
                                   </div>
                                   <div style={{ minWidth: 0, flex: 1 }}>
                                     <div style={{ fontSize: 12.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
@@ -725,6 +819,8 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
 
         <p className="cal-legend">
           Semua user boleh mengajukan · <b>Manager</b> menyetujui/menolak · rekap jam dihitung dari pengajuan yang disetujui. Jam diisi manual.
+          Satu pengajuan boleh berisi sampai {MAKS_SESI_LEMBUR} blok jam terpisah (mis. 09.00–10.00, 14.00–17.00, 19.00–22.00) —
+          durasinya dijumlah dari tiap blok, bukan dari jam pertama sampai jam terakhir.
         </p>
       </div>
 
@@ -739,13 +835,34 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                 </div>
                 <div className="modal-title">{fmtDate(detail.work_date)}</div>
                 <div className="modal-sub">
-                  {detail.start_time.slice(0,5)}–{detail.end_time.slice(0,5)} · {fmtDur(durationHours(detail.start_time, detail.end_time))} · {namaProject(detail)}
+                  {jamTeksMenit(menitLembur(detail))}
+                  {sesiLembur(detail).length > 1 ? ` · ${sesiLembur(detail).length} blok` : ''}
+                  {' · '}{namaProject(detail)}
                 </div>
               </div>
               <button className="btn ghost modal-close" onClick={() => setDetail(null)}>✕</button>
             </div>
             <div style={{ padding: '16px 24px' }}>
-              <div className="budget-detail-label">Yang dikerjakan</div>
+              <div className="budget-detail-label">Blok jam</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 4 }}>
+                {sesiLembur(detail).map((s, i) => (
+                  <span
+                    key={`${s.mulai}-${s.selesai}-${i}`}
+                    style={{
+                      display: 'inline-flex', alignItems: 'baseline', gap: 6,
+                      padding: '4px 10px', borderRadius: 20, fontSize: 12.5, fontWeight: 600,
+                      border: '1px solid var(--line)', background: 'var(--raised)',
+                    }}
+                  >
+                    {s.mulai}–{s.selesai}
+                    <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-3)' }}>
+                      {jamTeksMenit(menitBlok(s.mulai, s.selesai))}
+                    </span>
+                  </span>
+                ))}
+              </div>
+
+              <div className="budget-detail-label" style={{ marginTop: 16 }}>Yang dikerjakan</div>
               <p className="thread-detail" style={{ whiteSpace: 'pre-wrap' }}>{detail.description}</p>
 
               {/* Tautan ditaruh SEBELUM foto bukti: yang memutus biasanya ingin
@@ -861,8 +978,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                 </div>
                 <div className="modal-title">{fmtDate(confirmDel.work_date)}</div>
                 <div className="modal-sub">
-                  {confirmDel.requester_name} · {confirmDel.start_time.slice(0, 5)}–{confirmDel.end_time.slice(0, 5)} ·{' '}
-                  {fmtDur(durationHours(confirmDel.start_time, confirmDel.end_time))}
+                  {confirmDel.requester_name} ·{' '}
+                  {sesiLembur(confirmDel).map((s) => `${s.mulai}–${s.selesai}`).join(', ')} ·{' '}
+                  {jamTeksMenit(menitLembur(confirmDel))}
                 </div>
               </div>
             </div>
@@ -898,7 +1016,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                 </div>
                 <div className="modal-title">{fmtDate(rejectFor.work_date)}</div>
                 <div className="modal-sub">
-                  {rejectFor.requester_name} · {fmtDur(durationHours(rejectFor.start_time, rejectFor.end_time))}
+                  {rejectFor.requester_name} · {jamTeksMenit(menitLembur(rejectFor))}
                 </div>
               </div>
               <button className="btn ghost modal-close" onClick={() => setRejectFor(null)}>✕</button>
@@ -948,20 +1066,81 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                 <label>Tanggal</label>
                 <input type="date" value={form.work_date} onChange={(e) => setForm({ ...form, work_date: e.target.value })} />
               </div>
-              <div className="field-row">
-                <div className="field">
-                  <label>Mulai</label>
-                  <input type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} />
+
+              <div className="field">
+                <label>
+                  Blok jam kerja{' '}
+                  <span style={{ color: 'var(--text-3)' }}>
+                    (boleh terputus, maks {MAKS_SESI_LEMBUR})
+                  </span>
+                </label>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {form.sesi.map((s, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '6px 8px', borderRadius: 8,
+                        border: '1px solid var(--line)', background: 'var(--raised)',
+                      }}
+                    >
+                      <span style={{
+                        flexShrink: 0, width: 16, fontSize: 11, fontWeight: 700,
+                        color: 'var(--text-3)', fontFamily: 'var(--mono)',
+                      }}>{i + 1}</span>
+                      <input
+                        type="time"
+                        value={s.mulai}
+                        disabled={busy}
+                        onChange={(e) => ubahBlok(i, { mulai: e.target.value })}
+                        style={{ flex: 1, minWidth: 0 }}
+                      />
+                      <span style={{ flexShrink: 0, color: 'var(--text-3)' }}>–</span>
+                      <input
+                        type="time"
+                        value={s.selesai}
+                        disabled={busy}
+                        onChange={(e) => ubahBlok(i, { selesai: e.target.value })}
+                        style={{ flex: 1, minWidth: 0 }}
+                      />
+                      <span style={{
+                        flexShrink: 0, minWidth: 52, textAlign: 'right',
+                        fontSize: 12, fontWeight: 700,
+                      }}>
+                        {jamTeksMenit(menitBlok(s.mulai, s.selesai))}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn act"
+                        title={form.sesi.length > 1 ? 'Buang blok ini' : 'Minimal satu blok jam'}
+                        disabled={busy || form.sesi.length <= 1}
+                        onClick={() => buangBlok(i)}
+                        style={{ padding: '0 6px', lineHeight: '18px', flexShrink: 0 }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <div className="field">
-                  <label>Selesai</label>
-                  <input type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} />
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
+                  {form.sesi.length < MAKS_SESI_LEMBUR && (
+                    <button type="button" className="btn" disabled={busy} onClick={tambahBlok}>
+                      + Tambah blok jam
+                    </button>
+                  )}
+                  <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span className="hint" style={{ margin: 0 }}>Total</span>
+                    <div className="dur-pill">{jamTeksMenit(menitForm)}</div>
+                  </div>
                 </div>
-                <div className="field" style={{ justifyContent: 'flex-end' }}>
-                  <label>Durasi</label>
-                  <div className="dur-pill">{fmtDur(durationHours(form.start_time, form.end_time))}</div>
+                <div className="hint">
+                  Untuk lembur yang terputus — mis. 09.00–10.00, lalu lanjut 14.00–17.00.
+                  Durasi dijumlah per blok, bukan dari jam pertama sampai jam terakhir.
                 </div>
               </div>
+
               <div className="field">
                 <label>
                   Project terkait <span style={{ color: 'var(--text-3)' }}>(boleh lebih dari satu)</span>

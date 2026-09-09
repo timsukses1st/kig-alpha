@@ -452,6 +452,90 @@ export function alamatTautanBoard(kode: string): string {
   return `${origin}${pathname || '/'}?${PARAM_TAUTAN_BOARD}=${kode}`;
 }
 
+/* ------------------------------------------------------------------ *
+ * Blok jam lembur
+ * ------------------------------------------------------------------ */
+
+/** Satu blok jam kerja dalam sebuah pengajuan lembur. Format "HH:MM". */
+export interface OvertimeSession {
+  mulai: string;
+  selesai: string;
+}
+
+/** Maksimal blok jam per pengajuan. Dijaga juga oleh constraint
+ *  `overtime_sesi_maks_5` dan trigger `jaga_sesi_lembur` di database. */
+export const MAKS_SESI_LEMBUR = 5;
+
+/**
+ * Lama satu blok dalam menit.
+ *
+ * `menit < 0` berarti bloknya melewati tengah malam (22:00 → 01:00), bukan
+ * kesalahan input — jadi ditambah 24 jam, tidak dibuang.
+ */
+export function menitBlok(mulai: string, selesai: string): number {
+  if (typeof mulai !== 'string' || typeof selesai !== 'string') return 0;
+  const m = mulai.split(':').map(Number);
+  const s = selesai.split(':').map(Number);
+  if (m.length < 2 || s.length < 2) return 0;
+  let menit = s[0] * 60 + s[1] - (m[0] * 60 + m[1]);
+  if (menit < 0) menit += 24 * 60;
+  return menit;
+}
+
+/**
+ * Blok jam sebuah pengajuan, sudah menangani baris lama.
+ *
+ * Pola yang sama dengan `fotoDari()`: kolom barunya kosong berarti pakai cara
+ * lama, bukan berarti datanya hilang.
+ */
+export function sesiLembur(o: {
+  sessions?: OvertimeSession[] | null;
+  start_time: string;
+  end_time: string;
+}): OvertimeSession[] {
+  const s = Array.isArray(o.sessions) ? o.sessions : [];
+  if (s.length) return s;
+  return [{ mulai: (o.start_time || '').slice(0, 5), selesai: (o.end_time || '').slice(0, 5) }];
+}
+
+/**
+ * Total menit sebuah pengajuan.
+ *
+ * `total_menit` dari database yang dipakai kalau ada — dialah satu-satunya
+ * sumber kebenaran. Hitungan dari blok cuma jaring pengaman untuk baris yang
+ * kebetulan belum sempat dihitung ulang (mis. tepat saat migrasi berjalan).
+ */
+export function menitLembur(o: {
+  total_menit?: number | null;
+  sessions?: OvertimeSession[] | null;
+  start_time: string;
+  end_time: string;
+}): number {
+  if (typeof o.total_menit === 'number' && o.total_menit > 0) return o.total_menit;
+  return sesiLembur(o).reduce((a, s) => a + menitBlok(s.mulai, s.selesai), 0);
+}
+
+/** 360 → "6j"; 155 → "2j 35m". Untuk dibaca manusia. */
+export function jamTeksMenit(menit: number): string {
+  const H = Math.floor(menit / 60);
+  const M = Math.round(menit % 60);
+  return M ? `${H}j ${M}m` : `${H}j`;
+}
+
+/** Jam dalam angka desimal — untuk dijumlah di Excel, bukan dibaca. */
+export function jamLemburAngka(menit: number): number {
+  return Math.round((menit / 60) * 100) / 100;
+}
+
+/** "09:00–10:00, 14:00–17:00, 19:00–22:00" */
+export function ringkasBlokJam(o: {
+  sessions?: OvertimeSession[] | null;
+  start_time: string;
+  end_time: string;
+}): string {
+  return sesiLembur(o).map((s) => `${s.mulai}–${s.selesai}`).join(', ');
+}
+
 export interface OvertimeRequest {
   id: string;
   /** Project utama — dipertahankan karena policy RLS lama masih memakainya. */
@@ -466,6 +550,20 @@ export interface OvertimeRequest {
   proofs: OvertimeProof[];
   /** Tautan hasil pengerjaan, maksimal 3. Kosong = tidak melampirkan. */
   work_links: OvertimeLink[];
+  /**
+   * Blok jam kerja, maksimal 5. Kosong = pengajuan satu blok — jamnya dibaca
+   * dari `start_time`/`end_time` seperti sebelumnya. Baca lewat `sesiLembur()`,
+   * jangan langsung, supaya baris lama ikut tertangani.
+   */
+  sessions: OvertimeSession[];
+  /**
+   * Total menit kerja, DIHITUNG DATABASE oleh trigger `jaga_sesi_lembur`.
+   *
+   * Jangan pernah menghitungnya ulang di layar dari start/end: untuk pengajuan
+   * berblok (09–10, 14–17, 19–22) selisih selubungnya 13 jam, sedangkan yang
+   * benar 7 jam — dan angka ini yang masuk rekap jam HRD.
+   */
+  total_menit: number;
   work_date: string;
   start_time: string;
   end_time: string;
