@@ -894,6 +894,13 @@ export function akuLeadUntuk(saya: Profile | null, pemohon: OrangRingkas | null)
 export function akuHrdUntuk(saya: Profile | null, pemohon: OrangRingkas | null): boolean {
   if (!saya || !pemohon) return false;
   if (saya.role === 'superadmin') return true;
+  // Tidak seorang pun memutus pengajuannya sendiri, termasuk HRD.
+  //
+  // Sempat terlewat: tingkat lead sudah menolaknya sejak awal, tingkat HRD
+  // belum. Karena HRD cuma satu orang, dia bisa meloloskan cutinya sendiri di
+  // tahap kedua. Sekarang pengajuannya berhenti di antrean HRD sampai
+  // superadmin turun tangan — dan memang begitu seharusnya.
+  if (pemohon.id === saya.id) return false;
   if (saya.team !== 'hrd') return false;
   if (saya.vertical === 'ALL') return true;
   return saya.vertical === pemohon.vertical;
