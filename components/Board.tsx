@@ -206,6 +206,21 @@ const nomorBrief = (judul: string): number | null => {
   return m ? parseInt(m[1], 10) : null;
 };
 
+/** Urutan brief di dalam satu kelompok tanggal. */
+type UrutBrief = 'asal' | 'nomorNaik' | 'nomorTurun' | 'abjadNaik' | 'abjadTurun';
+
+/**
+ * Pilihan urutan — satu daftar dipakai bersama oleh tulisan di tombol dan isi
+ * menunya, supaya keduanya tidak mungkin berbeda kalau nanti ada yang ditambah.
+ */
+const URUT_PILIHAN: { key: UrutBrief; tombol: string; menu: string }[] = [
+  { key: 'asal',       tombol: '⇅ Sort',       menu: 'Urutan asal (terbaru dulu)' },
+  { key: 'nomorNaik',  tombol: '↑ Nomor 1→9',  menu: 'Nomor brief 1 → 9' },
+  { key: 'nomorTurun', tombol: '↓ Nomor 9→1',  menu: 'Nomor brief 9 → 1' },
+  { key: 'abjadNaik',  tombol: '↑ Judul A→Z',  menu: 'Judul A → Z' },
+  { key: 'abjadTurun', tombol: '↓ Judul Z→A',  menu: 'Judul Z → A' },
+];
+
 /**
  * Judul yang sudah dibersihkan untuk dibandingkan secara abjad.
  *
@@ -581,8 +596,8 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
    * brief tanggal 8, 9, dan 10 akan berbaur jadi satu dan justru lebih susah
    * dibaca daripada sekarang.
    */
-  const [urutBrief, setUrutBrief] =
-    useState<'asal' | 'nomorNaik' | 'nomorTurun' | 'abjadNaik' | 'abjadTurun'>('asal');
+  const [urutBrief, setUrutBrief] = useState<UrutBrief>('asal');
+  const [urutMenu, setUrutMenu] = useState(false);
   /** Tanggal yang sedang dilipat. Kunci 'BELUM' untuk yang belum dijadwalkan. */
   const [tglTertutup, setTglTertutup] = useState<string[]>([]);
   const [dupRows, setDupRows] = useState<ContentRow[] | null>(null);
@@ -2084,44 +2099,78 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
           🗓 Per tanggal
         </button>
 
-        {/* Dua tombol terpisah, BUKAN satu dropdown tersembunyi.
-            Masing-masing berputar tiga keadaan: mati → naik → turun → mati.
-            Menekan yang satu mematikan yang lain — dua urutan sekaligus tidak
-            punya arti, dan tombol yang menyala jadi penunjuk yang sedang aktif
-            tanpa perlu membuka menu apa pun. Keduanya bekerja DI DALAM tiap
-            kelompok tanggal. */}
-        {([
-          {
-            naik: 'nomorNaik' as const, turun: 'nomorTurun' as const,
-            mati: '↕ Urut nomor', teksNaik: '↑ Nomor 1→9', teksTurun: '↓ Nomor 9→1',
-            bantuMati: 'Urutkan menurut nomor di depan judul brief. Judul tanpa nomor turun ke bawah.',
-          },
-          {
-            naik: 'abjadNaik' as const, turun: 'abjadTurun' as const,
-            mati: '↕ Urut abjad', teksNaik: '↑ Judul A→Z', teksTurun: '↓ Judul Z→A',
-            bantuMati: 'Urutkan judul brief menurut abjad.',
-          },
-        ]).map((t) => {
-          const aktif = urutBrief === t.naik || urutBrief === t.turun;
-          return (
-            <button
-              key={t.naik}
-              className="btn"
-              onClick={() => setUrutBrief((v) =>
-                v === t.naik ? t.turun : v === t.turun ? 'asal' : t.naik)}
-              title={aktif ? 'Klik untuk membalik, sekali lagi untuk kembali ke urutan asal.' : t.bantuMati}
-              style={{
-                borderColor: aktif ? 'var(--accent)' : undefined,
-                color: aktif ? 'var(--accent)' : undefined,
-                background: aktif ? 'var(--accent-soft)' : undefined,
-                fontWeight: aktif ? 600 : undefined,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {urutBrief === t.naik ? t.teksNaik : urutBrief === t.turun ? t.teksTurun : t.mati}
-            </button>
-          );
-        })}
+        {/*
+          SATU tombol, bukan dua. Bar ini sudah berisi delapan kontrol; menambah
+          dua lagi cuma untuk urutan itu boros.
+          Bentuknya tombol + menu kecil, BUKAN tombol yang berputar lima keadaan:
+          dengan lima keadaan, memilih "Judul A→Z" dari keadaan mati butuh tiga
+          klik, dan kembali ke asal butuh dua lagi. Menu ini satu klik untuk
+          membuka, satu klik untuk memilih — apa pun tujuannya.
+          Urutan yang sedang aktif tetap tertulis DI TOMBOLNYA, jadi tidak ada
+          yang tersembunyi di balik menu.
+        */}
+        <div style={{ position: 'relative' }}>
+          <button
+            className="btn"
+            onClick={() => setUrutMenu((v) => !v)}
+            title="Menata brief di dalam tiap kelompok tanggal — tanggalnya tidak tercampur"
+            style={{
+              borderColor: urutBrief !== 'asal' ? 'var(--accent)' : undefined,
+              color: urutBrief !== 'asal' ? 'var(--accent)' : undefined,
+              background: urutBrief !== 'asal' ? 'var(--accent-soft)' : undefined,
+              fontWeight: urutBrief !== 'asal' ? 600 : undefined,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {URUT_PILIHAN.find((u) => u.key === urutBrief)?.tombol || '⇅ Sort'}
+            <span style={{ marginLeft: 6, fontSize: 9, opacity: 0.7 }}>▾</span>
+          </button>
+
+          {urutMenu && (
+            <>
+              {/* Lapisan penutup: klik di mana pun menutup menunya. */}
+              <div
+                style={{ position: 'fixed', inset: 0, zIndex: 59 }}
+                onMouseDown={() => setUrutMenu(false)}
+              />
+              <div
+                style={{
+                  position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 60,
+                  minWidth: 196, padding: 5, borderRadius: 10,
+                  background: 'var(--panel)', border: '1px solid var(--border-strong)',
+                  boxShadow: '0 14px 36px rgba(0,0,0,.5)',
+                }}
+              >
+                <div style={{
+                  fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '.1em',
+                  textTransform: 'uppercase', color: 'var(--text-3)', padding: '6px 10px 8px',
+                }}>
+                  Sort di tiap tanggal
+                </div>
+                {URUT_PILIHAN.map((u) => (
+                  <button
+                    key={u.key}
+                    onClick={() => { setUrutBrief(u.key); setUrutMenu(false); }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                      padding: '8px 10px', borderRadius: 8, border: 0, textAlign: 'left',
+                      font: 'inherit', fontSize: 12.5, cursor: 'pointer',
+                      background: urutBrief === u.key ? 'var(--raised)' : 'transparent',
+                      color: urutBrief === u.key ? 'var(--accent)' : 'inherit',
+                      fontWeight: urutBrief === u.key ? 700 : 500,
+                    }}
+                  >
+                    <span style={{ width: 12, flexShrink: 0 }}>{urutBrief === u.key ? '✓' : ''}</span>
+                    {u.menu}
+                  </button>
+                ))}
+                <div className="hint" style={{ padding: '4px 10px 6px', margin: 0 }}>
+                  Kelompok tanggal tetap utuh — isinya saja yang tertata.
+                </div>
+              </div>
+            </>
+          )}
+        </div>
 
         {kelompokTgl && grupTanggal && grupTanggal.length > 1 && (
           <button
@@ -2744,9 +2793,9 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
                 berisi brief tercentang; tinggal ditempel di kolom link pengajuan lembur.
               </div>
               <div>
-                <b>Urut nomor / Urut abjad</b> — menata brief di dalam tiap tanggal; tanggalnya
-                tidak pernah tercampur. Klik sekali untuk naik, sekali lagi untuk turun, sekali
-                lagi kembali ke urutan asal. Pada urut nomor, judul tanpa nomor turun ke bawah.
+                <b>Sort</b> — menata brief menurut nomor atau abjad, di dalam tiap tanggal;
+                tanggalnya tidak pernah tercampur. Pada urutan nomor, judul tanpa nomor turun
+                ke bawah.
               </div>
               <div>
                 <b>Filter tanggal</b> — mengikuti Tanggal tayang. Konten yang belum dijadwalkan
