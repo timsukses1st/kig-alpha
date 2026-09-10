@@ -26,14 +26,16 @@ import ComplaintView from '@/components/ComplaintView';
 import ComplaintWidget from '@/components/ComplaintWidget';
 import ChatView from '@/components/ChatView';
 import TrackerView from '@/components/TrackerView';
+import PitchingView from '@/components/PitchingView';
 
-type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'recap' | 'budget' | 'lembur' | 'cuti' | 'sebaran' | 'chat' | 'laporan' | 'ekspor' | 'komplain' | 'log' | 'access';
+type View = 'board' | 'kalender' | 'tracker' | 'ads' | 'pitching' | 'recap' | 'budget' | 'lembur' | 'cuti' | 'sebaran' | 'chat' | 'laporan' | 'ekspor' | 'komplain' | 'log' | 'access';
 
 const NAV: { key: View; label: string }[] = [
   { key: 'board', label: 'Board Pipeline' },
   { key: 'kalender', label: 'Kalender Tayang' },
   { key: 'tracker', label: 'Tracker' },
   { key: 'ads', label: 'Ads Tracker' },
+  { key: 'pitching', label: 'Board Pitching' },
   { key: 'recap', label: 'Recap Report' },
   { key: 'budget', label: 'Pengajuan Budget' },
   { key: 'lembur', label: 'Lembur' },
@@ -77,6 +79,11 @@ const ICON_PATHS: Record<View, React.ReactNode> = {
       <path d="M3 11v3l14 4V7L3 11z" />
       <path d="M20 9.5a3 3 0 0 1 0 6" />
       <path d="M7 14.6V19a1 1 0 0 0 1 1h2" />
+    </>
+  ),
+  pitching: (
+    <>
+      <path d="M3 4h18l-7 8v7l-4 2v-9z" />
     </>
   ),
   recap: (
@@ -550,9 +557,14 @@ export default function App() {
     || boleh(profile, TUGAS.kategoriKelola)
     || boleh(profile, TUGAS.akunMediaKelola)
     || boleh(profile, TUGAS.anggotaPicKelola);
+  /** Board Pitching berisi nilai penawaran ke klien — menunya disembunyikan
+   *  dari yang tidak berhak, bukan cuma isinya. Cerminan policy
+   *  `pitches_select` yang memakai boleh('pitching_lihat'). */
+  const canSeePitching = boleh(profile, TUGAS.pitchingLihat);
   const navItems = NAV.filter((n) => {
     if (n.key === 'access') return canSeeAccess;
     if (n.key === 'log') return canSeeLog;
+    if (n.key === 'pitching') return canSeePitching;
     return true;
   });
 
@@ -826,6 +838,7 @@ export default function App() {
             desc="Rekap budget, status kampanye, kode ads, dan hasil reach per konten yang diiklankan. Menyusul di fase berikutnya."
           />
         )}
+        {view === 'pitching' && canSeePitching && <PitchingView profile={profile} />}
         {view === 'recap' && (
           <RecapView profile={profile} projects={projects} projectFilter={activeProject} />
         )}

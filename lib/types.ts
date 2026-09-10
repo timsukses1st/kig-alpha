@@ -503,6 +503,58 @@ export function alamatTautanBoard(kode: string): string {
 }
 
 /* ------------------------------------------------------------------ *
+ * Board Pitching
+ * ------------------------------------------------------------------ */
+
+export type PitchStatus =
+  | 'listing' | 'deck_strategy' | 'offering' | 'waiting_confirm' | 'hold' | 'cancel';
+
+/**
+ * Tahap pitching, urut sesuai jalannya penawaran.
+ *
+ * Cerminan constraint `pitches_status_sah` di database — kalau menambah tahap,
+ * ubah dua-duanya. Sengaja `text` + CHECK di sana, bukan enum Postgres: nilai
+ * enum tidak bisa dibuang lagi, sedangkan daftar tahap penjualan itu hal yang
+ * pasti berubah.
+ */
+export const PITCH_STATUS: { key: PitchStatus; label: string; color: string }[] = [
+  { key: 'listing',         label: 'Listing',         color: '#94a3b8' },
+  { key: 'deck_strategy',   label: 'Deck Strategy',   color: 'var(--accent)' },
+  { key: 'offering',        label: 'Offering',        color: 'var(--amber)' },
+  { key: 'waiting_confirm', label: 'Waiting Confirm', color: 'var(--st-review)' },
+  { key: 'hold',            label: 'Hold',            color: '#a78bfa' },
+  { key: 'cancel',          label: 'Cancel',          color: 'var(--red)' },
+];
+
+export const pitchStatusDef = (k: string) =>
+  PITCH_STATUS.find((s) => s.key === k) || { key: k as PitchStatus, label: k, color: 'var(--text-3)' };
+
+/** Tahap yang dianggap masih berjalan — dipakai menghitung nilai pipeline.
+ *  Hold masih dihitung: ditahan bukan berarti batal. */
+export const PITCH_AKTIF: PitchStatus[] = ['listing', 'deck_strategy', 'offering', 'waiting_confirm', 'hold'];
+
+export interface Pitch {
+  id: string;
+  campaign: string;
+  brand: string | null;
+  client: string | null;
+  pic_id: string | null;
+  /** Salinan nama PIC saat disimpan, supaya riwayat tetap terbaca kalau
+   *  akunnya kelak dihapus dan pic_id jadi NULL. */
+  pic_name: string | null;
+  estimated_revenue: number;
+  status: PitchStatus;
+  note: string | null;
+  /** Unit bisnis. Pitching belum punya project, jadi tembok unitnya disimpan
+   *  di baris ini sendiri — bukan diwarisi dari project seperti tabel lain. */
+  vertical: string;
+  created_by: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/* ------------------------------------------------------------------ *
  * Blok jam lembur
  * ------------------------------------------------------------------ */
 
@@ -819,6 +871,8 @@ export const TUGAS = {
   logLihat:          'log_lihat',
   rekapHapusOrang:   'rekap_hapus_orang',
   sebaranUbahOrang:  'sebaran_ubah_orang',
+  pitchingLihat:     'pitching_lihat',
+  pitchingKelola:    'pitching_kelola',
 } as const;
 
 export interface TugasDef {
@@ -874,6 +928,14 @@ function bawaan(profile: Profile, tugas: string): boolean {
     case TUGAS.logLihat:
     case TUGAS.rekapHapusOrang:
       return manager;
+    // Board Pitching — hanya tim yang mengurus penjualan. Ini cuma nilai
+    // BAWAAN kalau matriks belum termuat; yang mengikat tetap baris di
+    // role_permissions + role_permission_teams, dan bisa diatur dari
+    // Kelola Akses → Izin Peran.
+    case TUGAS.pitchingLihat:
+    case TUGAS.pitchingKelola:
+      return manager && !!profile.team
+        && ['pimpinan', 'ho', 'lo', 'sm', 'pm'].indexOf(profile.team) !== -1;
     // Sisanya superadmin saja — sudah dijawab di boleh() sebelum sampai sini.
     default:
       return false;
