@@ -190,6 +190,24 @@ const CLIP: React.CSSProperties = {
 const plainTitle = (s: string) => (s || '').replace(/\*\*/g, '').split('\n')[0].trim();
 
 /**
+ * Nomor brief yang ditulis di depan judul, sebagai ANGKA.
+ *
+ * Judul brief film memang bernomor: "**21. PERIH! Gak CUMA kehilangan suami",
+ * "30. Bikin mewek!". Di project The Hole seluruh 80 kontennya begitu.
+ *
+ * Diambil sebagai angka, bukan diurut sebagai teks — kalau teks, "10" naik ke
+ * atas "2", dan "**16." dianggap berbeda dari "16." cuma karena bintangnya.
+ * Tanda di depan (bintang, pagar, strip, titik, spasi) dibuang lebih dulu.
+ *
+ * null = judulnya memang tidak bernomor.
+ */
+const nomorBrief = (judul: string): number | null => {
+  const bersih = plainTitle(judul).replace(/^[\s*#\-–—.]+/, '');
+  const m = bersih.match(/^(\d{1,5})/);
+  return m ? parseInt(m[1], 10) : null;
+};
+
+/**
  * Tanggal dalam zona waktu pengguna. Jangan pakai toISOString() untuk ini —
  * dia mengubah ke UTC, sehingga konten yang dibuat lewat tengah malam WIB
  * terbaca sebagai hari sebelumnya.
@@ -549,6 +567,13 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
   /** Baris yang sedang disorot setelah dibuka dari Kalender Tayang. */
   const [sorotId, setSorotId] = useState<string | null>(null);
   const [kelompokTgl, setKelompokTgl] = useState(true);
+  /**
+   * Urutan nomor brief. Dipakai DI DALAM tiap kelompok tanggal, bukan
+   * menggantikannya — kalau seluruh daftar diurut nomor tanpa peduli tanggal,
+   * brief tanggal 8, 9, dan 10 akan berbaur jadi satu dan justru lebih susah
+   * dibaca daripada sekarang.
+   */
+  const [urutBrief, setUrutBrief] = useState<'asal' | 'naik' | 'turun'>('asal');
   /** Tanggal yang sedang dilipat. Kunci 'BELUM' untuk yang belum dijadwalkan. */
   const [tglTertutup, setTglTertutup] = useState<string[]>([]);
   const [dupRows, setDupRows] = useState<ContentRow[] | null>(null);
@@ -793,6 +818,30 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
    * Yang belum dijadwalkan ditaruh PALING ATAS, bukan paling bawah — justru
    * itu yang butuh perhatian, bukan yang sudah rapi terjadwal.
    */
+  /**
+   * Mengurutkan satu kumpulan baris menurut nomor briefnya.
+   *
+   * Yang judulnya tidak bernomor DITARUH DI BAWAH dengan urutan aslinya utuh —
+   * bukan dibuang dan bukan diselipkan di antara yang bernomor. Kalau
+   * diselipkan, orang mengira ada nomor yang bolong.
+   */
+  const urutkanBrief = useCallback((baris: ContentRow[]): ContentRow[] => {
+    if (urutBrief === 'asal') return baris;
+    // Peta indeks asal dipakai sebagai pemutus seri, supaya dua brief bernomor
+    // sama tidak bertukar tempat tiap kali tabelnya digambar ulang.
+    const asal: Record<string, number> = {};
+    baris.forEach((r, i) => { asal[r.id] = i; });
+    return baris.slice().sort((a, b) => {
+      const na = nomorBrief(a.title);
+      const nb = nomorBrief(b.title);
+      if (na === null && nb === null) return asal[a.id] - asal[b.id];
+      if (na === null) return 1;
+      if (nb === null) return -1;
+      if (na !== nb) return urutBrief === 'naik' ? na - nb : nb - na;
+      return asal[a.id] - asal[b.id];
+    });
+  }, [urutBrief]);
+
   const grupTanggal = useMemo(() => {
     if (!kelompokTgl) return null;
     const peta: Record<string, ContentRow[]> = {};
@@ -807,13 +856,15 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
       if (b === 'BELUM') return 1;
       return b.localeCompare(a);
     });
-    return urut.map((k) => ({ kunci: k, baris: peta[k] }));
-  }, [filtered, kelompokTgl]);
+    // Pengurutan nomor dilakukan DI DALAM tiap tanggal — kelompoknya utuh,
+    // isinya saja yang tertata.
+    return urut.map((k) => ({ kunci: k, baris: urutkanBrief(peta[k]) }));
+  }, [filtered, kelompokTgl, urutkanBrief]);
 
   /** Satu bentuk untuk dua mode, supaya bagian render tidak bercabang dua kali. */
   const daftarTampil = useMemo(
-    () => grupTanggal || [{ kunci: '__semua__', baris: filtered }],
-    [grupTanggal, filtered]
+    () => grupTanggal || [{ kunci: '__semua__', baris: urutkanBrief(filtered) }],
+    [grupTanggal, filtered, urutkanBrief]
   );
 
   const visibleRequests = useMemo(
@@ -2008,6 +2059,30 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
           🗓 Per tanggal
         </button>
 
+        {/* Urutan nomor brief. Tiga keadaan dalam satu tombol, bukan dropdown:
+            yang dibutuhkan cuma "1→9", "9→1", dan kembali ke asal — bar filter
+            ini sudah berisi delapan tombol, jangan ditambahi kontrol lagi. */}
+        <button
+          className="btn"
+          onClick={() => setUrutBrief((v) => (v === 'asal' ? 'naik' : v === 'naik' ? 'turun' : 'asal'))}
+          title={
+            urutBrief === 'asal'
+              ? 'Urutkan brief menurut nomor di depan judulnya (di dalam tiap tanggal)'
+              : urutBrief === 'naik'
+                ? 'Sedang urut nomor kecil → besar. Klik untuk membalik.'
+                : 'Sedang urut nomor besar → kecil. Klik untuk kembali ke urutan asal.'
+          }
+          style={{
+            borderColor: urutBrief !== 'asal' ? 'var(--accent)' : undefined,
+            color: urutBrief !== 'asal' ? 'var(--accent)' : undefined,
+            background: urutBrief !== 'asal' ? 'var(--accent-soft)' : undefined,
+            fontWeight: urutBrief !== 'asal' ? 600 : undefined,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {urutBrief === 'asal' ? '↕ Urut nomor' : urutBrief === 'naik' ? '↑ Nomor 1→9' : '↓ Nomor 9→1'}
+        </button>
+
         {kelompokTgl && grupTanggal && grupTanggal.length > 1 && (
           <button
             className="btn ghost"
@@ -2627,6 +2702,10 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
                 <b>Beberapa sekaligus</b> — centang barisnya, lalu <b>⇄ Ubah status</b> untuk
                 memindahkan tahapnya, atau <b>🔗 Salin tautan</b> untuk membuat satu alamat
                 berisi brief tercentang; tinggal ditempel di kolom link pengajuan lembur.
+              </div>
+              <div>
+                <b>Urut nomor</b> — mengurutkan brief menurut nomor di depan judulnya, di dalam
+                tiap tanggal. Tanggalnya tidak pernah tercampur. Judul tanpa nomor turun ke bawah.
               </div>
               <div>
                 <b>Filter tanggal</b> — mengikuti Tanggal tayang. Konten yang belum dijadwalkan
