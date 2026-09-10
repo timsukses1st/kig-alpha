@@ -729,17 +729,41 @@ export default function App() {
           </>
         )}
 
-        {navItems.map((n) => (
-          <button
-            key={n.key}
-            className={`nav-item ${view === n.key ? 'active' : ''}`}
-            title={slim ? n.label : undefined}
-            onClick={() => { pindahLayar(n.key); setMobileNav(false); }}
-          >
-            <NavIcon view={n.key} />
-            {!slim && n.label}
-          </button>
-        ))}
+        {/*
+          Daftar menu digulir SENDIRI, bukan seluruh sidebarnya.
+
+          `.sidebar` di globals.css bertinggi 100vh tanpa overflow — begitu
+          menunya bertambah (Board Pitching jadi yang ke-16), sisanya terpotong
+          dan tidak bisa dijangkau sama sekali. Kalau yang digulir seluruh
+          sidebar, kaki sidebar (lonceng notifikasi, nama akun, tombol keluar)
+          ikut hanyut ke bawah — padahal justru itu yang harus selalu terlihat.
+          Jadi yang tumbuh & digulir hanya daftar menunya.
+
+          Pemilih project TIDAK ikut dibungkus: menunya melayang keluar batas,
+          dan `overflow` di sini akan memotongnya — persis kesalahan dropdown
+          pencarian kemarin.
+        */}
+        <div
+          style={{
+            flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden',
+            display: 'flex', flexDirection: 'column', gap: 3,
+            // Ruang sedikit di kanan supaya batang gulir tidak menempel
+            // menimpa tulisan menu.
+            marginRight: -4, paddingRight: 4,
+          }}
+        >
+          {navItems.map((n) => (
+            <button
+              key={n.key}
+              className={`nav-item ${view === n.key ? 'active' : ''}`}
+              title={slim ? n.label : undefined}
+              onClick={() => { pindahLayar(n.key); setMobileNav(false); }}
+            >
+              <NavIcon view={n.key} />
+              {!slim && n.label}
+            </button>
+          ))}
+        </div>
 
         <div className="sidebar-footer">
           {/* Lonceng ditaruh di kaki sidebar, bukan di topbar, karena topbar
