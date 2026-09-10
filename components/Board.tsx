@@ -202,10 +202,18 @@ const plainTitle = (s: string) => (s || '').replace(/\*\*/g, '').split('\n')[0].
  * null = judulnya memang tidak bernomor.
  */
 const nomorBrief = (judul: string): number | null => {
-  const bersih = plainTitle(judul).replace(/^[\s*#\-–—.]+/, '');
-  const m = bersih.match(/^(\d{1,5})/);
+  const m = judulUntukUrut(judul).match(/^(\d{1,5})/);
   return m ? parseInt(m[1], 10) : null;
 };
+
+/**
+ * Judul yang sudah dibersihkan untuk dibandingkan secara abjad.
+ *
+ * Tanda hias di depan dibuang. Kalau tidak, "**Ali" dan "Ali" terpisah jauh
+ * cuma karena bintangnya — bintang itu penanda tebal, bukan bagian judul.
+ */
+const judulUntukUrut = (judul: string): string =>
+  plainTitle(judul).replace(/^[\s*#\-–—."']+/, '');
 
 /**
  * Tanggal dalam zona waktu pengguna. Jangan pakai toISOString() untuk ini —
@@ -573,7 +581,8 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
    * brief tanggal 8, 9, dan 10 akan berbaur jadi satu dan justru lebih susah
    * dibaca daripada sekarang.
    */
-  const [urutBrief, setUrutBrief] = useState<'asal' | 'naik' | 'turun'>('asal');
+  const [urutBrief, setUrutBrief] =
+    useState<'asal' | 'nomorNaik' | 'nomorTurun' | 'abjadNaik' | 'abjadTurun'>('asal');
   /** Tanggal yang sedang dilipat. Kunci 'BELUM' untuk yang belum dijadwalkan. */
   const [tglTertutup, setTglTertutup] = useState<string[]>([]);
   const [dupRows, setDupRows] = useState<ContentRow[] | null>(null);
@@ -827,17 +836,33 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
    */
   const urutkanBrief = useCallback((baris: ContentRow[]): ContentRow[] => {
     if (urutBrief === 'asal') return baris;
-    // Peta indeks asal dipakai sebagai pemutus seri, supaya dua brief bernomor
+    // Peta indeks asal dipakai sebagai pemutus seri, supaya dua brief bernilai
     // sama tidak bertukar tempat tiap kali tabelnya digambar ulang.
     const asal: Record<string, number> = {};
     baris.forEach((r, i) => { asal[r.id] = i; });
+    const mundur = urutBrief === 'nomorTurun' || urutBrief === 'abjadTurun';
+
+    if (urutBrief === 'abjadNaik' || urutBrief === 'abjadTurun') {
+      return baris.slice().sort((a, b) => {
+        // localeCompare dengan numeric:true — supaya "Bab 2" tetap di atas
+        // "Bab 10", dan sensitivity 'base' supaya HURUF BESAR tidak dianggap
+        // kelompok tersendiri di atas huruf kecil.
+        const c = judulUntukUrut(a.title).localeCompare(
+          judulUntukUrut(b.title), 'id', { numeric: true, sensitivity: 'base' });
+        if (c !== 0) return mundur ? -c : c;
+        return asal[a.id] - asal[b.id];
+      });
+    }
+
     return baris.slice().sort((a, b) => {
       const na = nomorBrief(a.title);
       const nb = nomorBrief(b.title);
+      // Judul tanpa nomor SELALU di bawah, baik urutan naik maupun turun —
+      // dia bukan "nomor terkecil", dia memang tidak ikut penomoran.
       if (na === null && nb === null) return asal[a.id] - asal[b.id];
       if (na === null) return 1;
       if (nb === null) return -1;
-      if (na !== nb) return urutBrief === 'naik' ? na - nb : nb - na;
+      if (na !== nb) return mundur ? nb - na : na - nb;
       return asal[a.id] - asal[b.id];
     });
   }, [urutBrief]);
@@ -2059,29 +2084,44 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
           🗓 Per tanggal
         </button>
 
-        {/* Urutan nomor brief. Tiga keadaan dalam satu tombol, bukan dropdown:
-            yang dibutuhkan cuma "1→9", "9→1", dan kembali ke asal — bar filter
-            ini sudah berisi delapan tombol, jangan ditambahi kontrol lagi. */}
-        <button
-          className="btn"
-          onClick={() => setUrutBrief((v) => (v === 'asal' ? 'naik' : v === 'naik' ? 'turun' : 'asal'))}
-          title={
-            urutBrief === 'asal'
-              ? 'Urutkan brief menurut nomor di depan judulnya (di dalam tiap tanggal)'
-              : urutBrief === 'naik'
-                ? 'Sedang urut nomor kecil → besar. Klik untuk membalik.'
-                : 'Sedang urut nomor besar → kecil. Klik untuk kembali ke urutan asal.'
-          }
-          style={{
-            borderColor: urutBrief !== 'asal' ? 'var(--accent)' : undefined,
-            color: urutBrief !== 'asal' ? 'var(--accent)' : undefined,
-            background: urutBrief !== 'asal' ? 'var(--accent-soft)' : undefined,
-            fontWeight: urutBrief !== 'asal' ? 600 : undefined,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {urutBrief === 'asal' ? '↕ Urut nomor' : urutBrief === 'naik' ? '↑ Nomor 1→9' : '↓ Nomor 9→1'}
-        </button>
+        {/* Dua tombol terpisah, BUKAN satu dropdown tersembunyi.
+            Masing-masing berputar tiga keadaan: mati → naik → turun → mati.
+            Menekan yang satu mematikan yang lain — dua urutan sekaligus tidak
+            punya arti, dan tombol yang menyala jadi penunjuk yang sedang aktif
+            tanpa perlu membuka menu apa pun. Keduanya bekerja DI DALAM tiap
+            kelompok tanggal. */}
+        {([
+          {
+            naik: 'nomorNaik' as const, turun: 'nomorTurun' as const,
+            mati: '↕ Urut nomor', teksNaik: '↑ Nomor 1→9', teksTurun: '↓ Nomor 9→1',
+            bantuMati: 'Urutkan menurut nomor di depan judul brief. Judul tanpa nomor turun ke bawah.',
+          },
+          {
+            naik: 'abjadNaik' as const, turun: 'abjadTurun' as const,
+            mati: '↕ Urut abjad', teksNaik: '↑ Judul A→Z', teksTurun: '↓ Judul Z→A',
+            bantuMati: 'Urutkan judul brief menurut abjad.',
+          },
+        ]).map((t) => {
+          const aktif = urutBrief === t.naik || urutBrief === t.turun;
+          return (
+            <button
+              key={t.naik}
+              className="btn"
+              onClick={() => setUrutBrief((v) =>
+                v === t.naik ? t.turun : v === t.turun ? 'asal' : t.naik)}
+              title={aktif ? 'Klik untuk membalik, sekali lagi untuk kembali ke urutan asal.' : t.bantuMati}
+              style={{
+                borderColor: aktif ? 'var(--accent)' : undefined,
+                color: aktif ? 'var(--accent)' : undefined,
+                background: aktif ? 'var(--accent-soft)' : undefined,
+                fontWeight: aktif ? 600 : undefined,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {urutBrief === t.naik ? t.teksNaik : urutBrief === t.turun ? t.teksTurun : t.mati}
+            </button>
+          );
+        })}
 
         {kelompokTgl && grupTanggal && grupTanggal.length > 1 && (
           <button
@@ -2704,8 +2744,9 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
                 berisi brief tercentang; tinggal ditempel di kolom link pengajuan lembur.
               </div>
               <div>
-                <b>Urut nomor</b> — mengurutkan brief menurut nomor di depan judulnya, di dalam
-                tiap tanggal. Tanggalnya tidak pernah tercampur. Judul tanpa nomor turun ke bawah.
+                <b>Urut nomor / Urut abjad</b> — menata brief di dalam tiap tanggal; tanggalnya
+                tidak pernah tercampur. Klik sekali untuk naik, sekali lagi untuk turun, sekali
+                lagi kembali ke urutan asal. Pada urut nomor, judul tanpa nomor turun ke bawah.
               </div>
               <div>
                 <b>Filter tanggal</b> — mengikuti Tanggal tayang. Konten yang belum dijadwalkan
