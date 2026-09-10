@@ -740,6 +740,36 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
     [accounts, activeProjectId]
   );
 
+  /** Kotak cari & urutan daftar anggota. Daftarnya sudah 22 baris dan akan
+   *  terus tumbuh — menggulir sambil mencari satu nama itu melelahkan. */
+  const [cariAnggota, setCariAnggota] = useState('');
+  const [urutAnggota, setUrutAnggota] = useState<'tim' | 'az' | 'za'>('tim');
+
+  /**
+   * Daftar anggota setelah dicari dan diurutkan.
+   *
+   * Pencariannya ikut menyertakan nama tim: mengetik "distribution" menampilkan
+   * seluruh anggota tim itu — itu yang paling sering dicari orang, bukan cuma
+   * nama orangnya.
+   *
+   * Urutan bawaan tetap per tim (seperti sebelumnya) supaya yang sudah hafal
+   * letaknya tidak kehilangan arah; A-Z dan Z-A tinggal satu klik.
+   */
+  const anggotaTampil = useMemo(() => {
+    const q = cariAnggota.trim().toLowerCase();
+    const cocok = q
+      ? members.filter((m) =>
+        m.name.toLowerCase().indexOf(q) !== -1
+        || (TEAM_LABEL[m.team] || m.team).toLowerCase().indexOf(q) !== -1)
+      : members;
+    if (urutAnggota === 'tim') return cocok;
+    // localeCompare 'id' dengan sensitivity 'base' — HURUF BESAR tidak jadi
+    // kelompok sendiri di atas huruf kecil, dan angka dibaca sebagai angka.
+    const urut = cocok.slice().sort((a, b) =>
+      a.name.localeCompare(b.name, 'id', { numeric: true, sensitivity: 'base' }));
+    return urutAnggota === 'az' ? urut : urut.reverse();
+  }, [members, cariAnggota, urutAnggota]);
+
   // Daftar label yang PERNAH dipakai — jadi isi dropdown Label.
   // Tumbuh sendiri: begitu ada label baru diketik & tersimpan, dia ikut muncul
   // di daftar untuk akun berikutnya. Tidak perlu tabel/kolom baru.
@@ -1050,10 +1080,27 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
     const name = newMemberName.trim();
     if (!name) return;
     setMsg('');
-    const { error } = await supabase.from('team_members').insert({ name, team: newMemberTeam });
+    /**
+     * Ditautkan ke akun login yang namanya cocok, DI SINI, saat ditambahkan.
+     *
+     * `team_members.profile_id` itu yang dipakai trigger `notif_content` untuk
+     * mengirim "Kamu jadi PIC konten". Sebelumnya kolom ini tidak pernah diisi
+     * lewat layar — 22 baris yang ada tertaut karena dicocokkan sekali lewat
+     * migrasi, dan setiap anggota yang ditambahkan sesudah itu akan jadi PIC
+     * yang tidak pernah menerima notifikasi, tanpa pesan kesalahan apa pun.
+     *
+     * Ini terutama menggigit orang yang punya DUA baris peran (mis. Creative
+     * sekaligus Distribution): baris keduanya diam-diam tidak tertaut.
+     */
+    const cocok = users.find(
+      (u) => u.is_active && (u.full_name || '').trim().toLowerCase() === name.toLowerCase());
+    const { error } = await supabase.from('team_members')
+      .insert({ name, team: newMemberTeam, profile_id: cocok ? cocok.id : null });
     if (error) { flash('Gagal menambah anggota.'); return; }
     setNewMemberName('');
-    flash('Anggota ditambahkan.');
+    flash(cocok
+      ? `${name} ditambahkan & ditautkan ke akun ${cocok.email} — notifikasi PIC akan sampai.`
+      : `${name} ditambahkan. Belum ada akun login dengan nama persis itu, jadi notifikasi PIC tidak akan sampai ke orangnya.`);
     load();
   };
 
@@ -1636,6 +1683,8 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
               Opsi dropdown PIC di form konten — tidak wajib punya akun login. Daftar ini <b>terpisah dari tab Akun</b>:
               mengubah tim seseorang di sana tidak mengubah timnya di sini, jadi kalau ada yang pindah tim, ubah di dua-duanya.
               Anggota yang masih jadi PIC konten tidak bisa dihapus — nonaktifkan saja.
+              Satu orang boleh punya <b>lebih dari satu baris</b> kalau memang mengerjakan dua peran —
+              mis. Creative sekaligus Distribution; tambahkan saja namanya lagi dengan tim yang berbeda.
             </p>
             <div className="add-row">
               <input placeholder="Nama anggota" value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)}
@@ -1645,13 +1694,51 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
               </select>
               <button className="btn primary" onClick={addMember} disabled={!newMemberName.trim()}>+ Tambah</button>
             </div>
+
+            {/* Cari & urutkan. Satu kotak cari + SATU tombol urut tiga keadaan —
+                bukan dua tombol terpisah; barisnya sudah berisi form tambah. */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', margin: '4px 0 10px' }}>
+              <input
+                value={cariAnggota}
+                onChange={(e) => setCariAnggota(e.target.value)}
+                placeholder="Cari nama atau tim…"
+                style={{ flex: '1 1 220px', minWidth: 0, maxWidth: 320 }}
+              />
+              <button
+                className="btn"
+                onClick={() => setUrutAnggota((v) => (v === 'tim' ? 'az' : v === 'az' ? 'za' : 'tim'))}
+                title={urutAnggota === 'tim'
+                  ? 'Sedang urut per tim. Klik untuk urut nama A→Z.'
+                  : urutAnggota === 'az'
+                    ? 'Sedang urut nama A→Z. Klik untuk membalik.'
+                    : 'Sedang urut nama Z→A. Klik untuk kembali per tim.'}
+                style={{
+                  whiteSpace: 'nowrap',
+                  borderColor: urutAnggota !== 'tim' ? 'var(--accent)' : undefined,
+                  color: urutAnggota !== 'tim' ? 'var(--accent)' : undefined,
+                  background: urutAnggota !== 'tim' ? 'var(--accent-soft)' : undefined,
+                  fontWeight: urutAnggota !== 'tim' ? 600 : undefined,
+                }}
+              >
+                {urutAnggota === 'tim' ? '⇅ Per tim' : urutAnggota === 'az' ? '↑ Nama A→Z' : '↓ Nama Z→A'}
+              </button>
+              <span className="hint" style={{ margin: 0 }}>
+                {cariAnggota.trim()
+                  ? `${anggotaTampil.length} dari ${members.length} anggota`
+                  : `${members.length} anggota`}
+              </span>
+              {cariAnggota.trim() !== '' && (
+                <button className="btn ghost" onClick={() => setCariAnggota('')}>Hapus pencarian</button>
+              )}
+            </div>
+
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr><th>Nama</th><th>Tim</th><th>Status</th><th style={{ width: 150 }}></th></tr>
                 </thead>
                 <tbody>
-                  {members.map((m) => (
+                  {anggotaTampil.map((m) => (
                     <tr key={m.id}>
                       <td><span className="row-avatar">{initials(m.name)}</span><b>{m.name}</b></td>
                       <td>{TEAM_LABEL[m.team] || m.team}</td>
@@ -1667,7 +1754,13 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
                       </td>
                     </tr>
                   ))}
-                  {members.length === 0 && <tr><td colSpan={4} className="empty">Belum ada anggota.</td></tr>}
+                  {anggotaTampil.length === 0 && (
+                    <tr><td colSpan={4} className="empty">
+                      {members.length === 0
+                        ? 'Belum ada anggota.'
+                        : `Tidak ada anggota yang cocok dengan "${cariAnggota.trim()}".`}
+                    </td></tr>
+                  )}
                 </tbody>
               </table>
             </div>
