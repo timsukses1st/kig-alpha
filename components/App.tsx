@@ -5,7 +5,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import {
   akunUntukProject, bebasPilihVertical, boleh, canAddProject as bolehTambahProject, initials,
-  PARAM_TAUTAN_BOARD, pasangMatriks, TUGAS, VERTICALS,
+  PARAM_TAUTAN_BOARD, pasangMatriks, timAkun, TUGAS, VERTICALS,
   type Account, type IzinBaris, type IzinTim, type Profile, type Project, type Vertical,
 } from '@/lib/types';
 import Login from '@/components/Login';
@@ -799,7 +799,10 @@ export default function App() {
               <div className="user-avatar">{initials(displayName)}</div>
               <div>
                 <div className="u-name">{displayName}</div>
-                <div className="u-role">{profile ? `${profile.role}${profile.team ? ' · ' + profile.team : ''}` : '…'}</div>
+                {/* Akun multi-tim ikut ditampilkan ('tim · creative + distribution')
+                    supaya orangnya tahu kenapa dia bisa menggarap dua tahap —
+                    kalau hanya tim utama yang tampil, tambahannya jadi tak terlihat. */}
+                <div className="u-role">{profile ? `${profile.role}${timAkun(profile).length ? ' · ' + timAkun(profile).join(' + ') : ''}` : '…'}</div>
               </div>
               <button className="icon-btn" title="Keluar" onClick={logout}><LogoutIcon /></button>
             </div>

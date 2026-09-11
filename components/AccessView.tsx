@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { boleh, initials, KOLOM_URL_AKUN, PLATFORMS, ROLES, tagColor, TUGAS, TEAM_GROUPS, TEAM_LABEL, teamsForVertical, VERTICALS, type Account, type ContentCategory, type IzinBaris, type IzinTim, type Profile, type Project, type Role, type Team, type TeamMember, type TugasDef } from '@/lib/types';
+import { boleh, initials, KOLOM_URL_AKUN, PLATFORMS, ROLES, tagColor, TUGAS, TEAM_GROUPS, TEAM_LABEL, teamsForVertical, TIM_KONTEN, VERTICALS, type Account, type ContentCategory, type IzinBaris, type IzinTim, type Profile, type Project, type Role, type Team, type TeamMember, type TugasDef } from '@/lib/types';
 
 /**
  * Pilihan tim, dikelompokkan dan disaring menurut unit bisnisnya.
@@ -28,6 +28,67 @@ function TeamOptions({ vertical, current }: { vertical?: string | null; current?
     </>
   );
 }
+
+/**
+ * Tim TAMBAHAN di luar tim utama.
+ *
+ * Yang ditambah HANYA tahap konten yang boleh digarap di Board Pipeline.
+ * Rantai persetujuan lembur & cuti, baris Izin Peran per-tim, dan label tim
+ * yang tampil di layar semuanya TETAP memakai tim utama — supaya pertanyaan
+ * "siapa atasan orang ini" tidak pernah punya dua jawaban.
+ *
+ * Cerminannya kolom `profiles.teams` + `my_teams()` di database.
+ *
+ * Pilihannya sengaja dibatasi TIM_KONTEN: tim seperti HRD atau Finance tidak
+ * memegang tahap konten sama sekali, jadi menawarkannya cuma menyesatkan.
+ */
+function TimTambahan({ u, onUbah }: { u: Profile; onUbah: (teams: Team[]) => void }) {
+  const dipakai = (u.teams || []).filter((t) => !!t && t !== u.team);
+  const sisa = TIM_KONTEN.filter((t) => t !== u.team && dipakai.indexOf(t) === -1);
+  if (!dipakai.length && !sisa.length) return null;
+  return (
+    <div
+      style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}
+      title="Tim tambahan — hanya menambah tahap konten yang boleh digarap. Persetujuan lembur & cuti tetap lewat tim utama."
+    >
+      {dipakai.map((t) => (
+        <span
+          key={t}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 3,
+            fontSize: 11, lineHeight: 1.4, padding: '1px 4px 1px 6px',
+            borderRadius: 999, border: '1px solid var(--border)',
+            color: 'var(--text-2)', whiteSpace: 'nowrap',
+          }}
+        >
+          + {TEAM_LABEL[t] || t}
+          <button
+            type="button"
+            title={`Lepas ${TEAM_LABEL[t] || t}`}
+            onClick={() => onUbah(dipakai.filter((x) => x !== t))}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px',
+              color: 'var(--text-3)', fontSize: 13, lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      {sisa.length > 0 && (
+        <select
+          value=""
+          onChange={(e) => { if (e.target.value) onUbah(dipakai.concat([e.target.value as Team])); }}
+          style={{ width: 'auto', minWidth: 92, fontSize: 11, padding: '1px 4px' }}
+        >
+          <option value="">+ tim…</option>
+          {sisa.map((t) => <option key={t} value={t}>{TEAM_LABEL[t]}</option>)}
+        </select>
+      )}
+    </div>
+  );
+}
+
 /**
  * Pilihan vertical untuk AKUN PENGGUNA — sengaja berbeda dari VERTICALS yang
  * dipakai untuk project.
@@ -1199,6 +1260,12 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
             <p className="section-hint">
               Akun dibuat dengan password sementara — minta orangnya login lalu ganti lewat <b>Reset PW</b>.
             </p>
+            <p className="hint" style={{ marginTop: -4 }}>
+              <b>Tim tambahan</b> (tombol <b>+ tim…</b> di bawah kolom Team) untuk orang yang benar-benar
+              menggarap dua tahap — misalnya copywriter yang juga ikut distribusi. Yang bertambah
+              <b> hanya tahap konten</b> yang boleh digarap di Board Pipeline. Persetujuan lembur &amp; cuti
+              dan baris Izin Peran tetap mengikuti <b>tim utama</b>.
+            </p>
 
             {/* Penyaring unit. Dengan 35+ akun, satu daftar panjang bikin susah
                 menemukan orang — apalagi kalau nanti GME ikut masuk. */}
@@ -1266,10 +1333,22 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
                         </select>
                       </td>
                       <td>
-                        <select value={u.team || ''} onChange={(e) => updateUser(u.id, { team: (e.target.value || null) as Team | null })}>
+                        <select
+                          value={u.team || ''}
+                          onChange={(e) => {
+                            const t = (e.target.value || null) as Team | null;
+                            // Tim utama tidak boleh dobel jadi tim tambahan —
+                            // kalau dibiarkan, chip '+ Distribution' tetap
+                            // nempel padahal itu sudah jadi tim utamanya.
+                            updateUser(u.id, { team: t, teams: (u.teams || []).filter((x) => x !== t) });
+                          }}
+                        >
                           <option value="">—</option>
                           <TeamOptions vertical={u.vertical} current={u.team} />
                         </select>
+                        {u.role === 'tim' && (
+                          <TimTambahan u={u} onUbah={(teams) => updateUser(u.id, { teams })} />
+                        )}
                       </td>
                       <td>
                         <select

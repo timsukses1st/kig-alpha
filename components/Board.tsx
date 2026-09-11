@@ -5,7 +5,7 @@ import PilihCari from '@/components/PilihCari';
 import { supabase } from '@/lib/supabase';
 import {
   DIVISIONS, STATUSES,
-  PLATFORMS, TEAM_LABEL, accountUrl, akunUntukProject, alamatTautanBoard, boleh, canCreateContent, canDeleteContent, canEditRow, initials, MAKS_BRIEF_TAUTAN, platformDef, statusDef, tagColor, targetableStatuses, TUGAS,
+  PLATFORMS, TEAM_LABEL, accountUrl, akunUntukProject, alamatTautanBoard, boleh, canCreateContent, canDeleteContent, canEditRow, initials, MAKS_BRIEF_TAUTAN, platformDef, statusDef, tagColor, targetableStatuses, timAkun, TUGAS,
   type Account, type ContentCategory, type ContentRow, type ContentStatus, type Division, type Profile, type Team, type TeamMember, type ContentNote, type ContentRequest, type Project,
 } from '@/lib/types';
 
@@ -1559,21 +1559,26 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
 
   const nextActionFor = (s: ContentStatus): { target: ContentStatus; label: string; allowed: boolean } | null => {
     const priv = canAcc;
-    const team = profile?.team;
+    // Tim utama + tim tambahan. Akun multi-tim (mis. copywriter yang juga
+    // ikut distribusi) harus mendapat tombol alur dari KEDUA timnya —
+    // kalau hanya `profile.team` yang dibaca, tombolnya mati padahal RLS
+    // di database sudah mengizinkan, dan itu bentuk cerminan drift lagi.
+    const teams = timAkun(profile);
+    const diTim = (t: Team) => teams.indexOf(t) !== -1;
     switch (s) {
       case 'drafting':
-        return { target: 'review', label: 'Selesai → Kirim ke Review', allowed: priv || team === 'creative' || team === 'delta' };
+        return { target: 'review', label: 'Selesai → Kirim ke Review', allowed: priv || diTim('creative') || diTim('vmt') || diTim('delta') };
       case 'review':
         return { target: 'siap_upload', label: '✓ ACC → Siap Upload (lead)', allowed: priv };
       case 'siap_upload':
-        return { target: 'terjadwal', label: 'Jadwalkan → Terjadwal', allowed: priv || team === 'distribution' || team === 'delta' };
+        return { target: 'terjadwal', label: 'Jadwalkan → Terjadwal', allowed: priv || diTim('distribution') || diTim('delta') };
       case 'terjadwal':
-        return { target: 'published', label: 'Tandai Sudah Tayang', allowed: priv || team === 'distribution' || team === 'delta' };
+        return { target: 'published', label: 'Tandai Sudah Tayang', allowed: priv || diTim('distribution') || diTim('delta') };
       case 'published':
-        return { target: 'diiklankan', label: 'Tandai Diiklankan', allowed: priv || team === 'ads' || team === 'delta' };
+        return { target: 'diiklankan', label: 'Tandai Diiklankan', allowed: priv || diTim('ads') || diTim('delta') };
       case 'pelanggaran':
         // Jalan keluar dari pelanggaran = perbaiki dari awal.
-        return { target: 'drafting', label: 'Perbaiki → Kembalikan ke Drafting', allowed: priv || team === 'creative' || team === 'distribution' || team === 'delta' };
+        return { target: 'drafting', label: 'Perbaiki → Kembalikan ke Drafting', allowed: priv || diTim('creative') || diTim('vmt') || diTim('distribution') || diTim('delta') };
       default:
         return null;
     }

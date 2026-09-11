@@ -94,7 +94,23 @@ export interface Profile {
   email: string;
   full_name: string | null;
   role: Role;
+  /**
+   * Tim UTAMA. Ini yang menentukan rantai persetujuan lembur & cuti, baris
+   * mana yang dipakai Izin Peran per-tim, dan label yang tampil di layar.
+   * Satu akun hanya punya satu tim utama — sengaja, supaya pertanyaan
+   * "siapa atasan orang ini" tidak pernah ambigu.
+   */
   team: Team | null;
+  /**
+   * Tim TAMBAHAN, di luar `team`. HANYA memengaruhi tahap konten yang boleh
+   * diedit/dituju di Board Pipeline — tidak menyentuh persetujuan, Izin
+   * Peran, maupun tampilan tim. Cerminannya kolom `profiles.teams` dan
+   * fungsi `my_teams()` di database.
+   *
+   * Dipakai untuk orang yang benar-benar menggarap dua tahap, misalnya
+   * copywriter yang juga ikut distribusi.
+   */
+  teams?: Team[] | null;
   vertical: string | null;
   is_active: boolean;
   created_at: string;
@@ -815,6 +831,63 @@ export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
   ga: [],
 };
 
+/* -------------------------------------------------------------------
+   AKUN MULTI-TIM
+   -------------------------------------------------------------------
+   Satu orang bisa benar-benar menggarap dua tahap — copywriter yang juga
+   ikut distribusi, misalnya. Yang dijamakkan HANYA tahap konten:
+
+     profiles.team  -> tim utama. Persetujuan lembur/cuti, Izin Peran
+                       per-tim, dan label tampilan tetap memakai ini.
+     profiles.teams -> tim tambahan. Hanya menambah tahap yang boleh
+                       digarap di Board Pipeline.
+
+   Cerminannya di database: my_teams(), tahap_edit_tim(), tahap_target_tim().
+   Kalau salah satu sisi diubah, sisi lain WAJIB ikut pada deploy yang sama.
+------------------------------------------------------------------- */
+
+/**
+ * Semua tim yang melekat pada satu akun: tim utama lebih dulu, lalu tim
+ * tambahan. Tanpa duplikat. Cerminan `my_teams()` di database.
+ */
+export function timAkun(profile: Profile | null): Team[] {
+  if (!profile) return [];
+  const out: Team[] = [];
+  if (profile.team) out.push(profile.team);
+  const tambahan = profile.teams || [];
+  for (let i = 0; i < tambahan.length; i++) {
+    const t = tambahan[i];
+    if (t && out.indexOf(t) === -1) out.push(t);
+  }
+  return out;
+}
+
+/**
+ * Gabungan tahap dari beberapa tim — cukup SATU tim yang mengizinkan.
+ * Hasilnya diurutkan mengikuti urutan STATUSES supaya dropdown di Board
+ * tidak berubah-ubah urutannya tergantung urutan tim di akun.
+ *
+ * `?? []` penting: kalau ada nilai tim baru di database tapi file ini belum
+ * ikut ter-deploy, tanpa itu barisnya jadi undefined dan Board error total
+ * untuk pemilik tim tersebut.
+ */
+function tahapGabungan(teams: Team[], sumber: Record<Team, ContentStatus[]>): ContentStatus[] {
+  const out: ContentStatus[] = [];
+  for (let i = 0; i < teams.length; i++) {
+    const daftar = sumber[teams[i]] ?? [];
+    for (let j = 0; j < daftar.length; j++) {
+      if (out.indexOf(daftar[j]) === -1) out.push(daftar[j]);
+    }
+  }
+  const urut = STATUSES.map((s) => s.key);
+  return out.sort((a, b) => urut.indexOf(a) - urut.indexOf(b));
+}
+
+/** Tahap yang boleh diketik oleh akun ini, gabungan semua timnya. */
+export function tahapBolehEdit(profile: Profile | null): ContentStatus[] {
+  return tahapGabungan(timAkun(profile), TEAM_EDITABLE);
+}
+
 /**
  * Tim yang memang menggarap konten. Anggotanya — termasuk Lead-nya —
  * berurusan dengan status konten. Tim di luar daftar ini tidak, seberapa pun
@@ -1016,20 +1089,20 @@ export function canEditRow(profile: Profile | null, status: ContentStatus): bool
   // Cabang tahap-per-tim sengaja TETAP hardcode. Kalau dijadikan centang,
   // jadi 21 tim x 8 status = 168 kotak. Cerminannya team_can_edit() di database.
   if (profile.role !== 'tim') return false;
-  if (!profile.team) return false;
-  // `?? []` penting: kalau ada nilai enum baru ditambahkan di database tapi
-  // file ini belum ikut ter-deploy, tanpa ini barisnya jadi undefined.includes()
-  // dan seluruh Board error untuk pemilik tim tersebut.
-  return (TEAM_EDITABLE[profile.team] ?? []).includes(status);
+  // Tim utama + tim tambahan. Cukup satu tim yang memegang tahap ini.
+  const teams = timAkun(profile);
+  if (!teams.length) return false;
+  return tahapGabungan(teams, TEAM_EDITABLE).indexOf(status) !== -1;
 }
 
 export function targetableStatuses(profile: Profile | null, current: ContentStatus): ContentStatus[] {
   if (!profile) return [current];
   if (boleh(profile, TUGAS.kontenPindahBebas)) return STATUSES.map((s) => s.key);
   if (profile.role !== 'tim') return [current];
-  if (!profile.team) return [current];
-  const targets = TEAM_TARGETABLE[profile.team] ?? [];
-  return targets.includes(current) ? targets : [current];
+  const teams = timAkun(profile);
+  if (!teams.length) return [current];
+  const targets = tahapGabungan(teams, TEAM_TARGETABLE);
+  return targets.indexOf(current) !== -1 ? targets : [current];
 }
 
 export function statusDef(key: ContentStatus): StatusDef {
