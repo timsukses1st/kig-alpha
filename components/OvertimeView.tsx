@@ -200,31 +200,12 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   const isSuper = boleh(profile, TUGAS.lemburHapusOrang);
 
   /**
-   * Boleh membatalkan ACC lembur.
-   *
-   * Cerminan trigger `jaga_kolom_keputusan_lembur` di database, yang menuliskan
-   * syaratnya persis begini: hanya superadmin, dan HANYA dari status
-   * `disetujui`. Yang `ditolak` tidak boleh — itu bukan kasus salah ACC.
-   *
-   * Sengaja TIDAK memakai matriks Izin Peran, dan sengaja TIDAK memakai
-   * `isSuper` di atas. `isSuper` bertanya ke matriks (`lembur_hapus_orang`),
-   * yang bisa dicentangkan ke manager lewat Kelola Akses — sementara database
-   * menuntut role `superadmin`. Kalau layar memakai `isSuper`, manager yang
-   * dicentang akan melihat tombolnya lalu ditolak database. Tombol yang muncul
-   * tanpa bisa dipakai lebih buruk daripada tombol yang tidak ada.
-   */
-  const bisaBalikkan = (o: OvertimeRequest) =>
-    profile?.role === 'superadmin' && o.status === 'disetujui';
-
-  /**
    * window.confirm / prompt / alert DIBLOKIR di lingkungan ini — tombol yang
    * memakainya tidak melakukan apa pun tanpa pesan apa pun. Semua diganti
    * modal & toast di dalam aplikasi.
    */
   const [toast, setToast] = useState('');
   const [confirmDel, setConfirmDel] = useState<OvertimeRequest | null>(null);
-  /** Pengajuan yang sedang dikonfirmasi untuk ditarik kembali ke Diajukan. */
-  const [balikFor, setBalikFor] = useState<OvertimeRequest | null>(null);
   const [rejectFor, setRejectFor] = useState<OvertimeRequest | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [actBusy, setActBusy] = useState(false);
@@ -463,39 +444,6 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     setDetail(null);
     setRejectFor(null);
     setRejectReason('');
-    load(true);
-  };
-
-  /**
-   * Menarik ACC kembali ke Diajukan. Dipakai kalau ada salah setujui.
-   *
-   * Kolom keputusan (`approver_id`, `approver_name`, `decided_at`,
-   * `reject_reason`) sengaja TIDAK dikosongkan dari sini — trigger database
-   * yang melakukannya. Kalau layar yang mengosongkan, satu jalur update lain
-   * yang lupa ikut membersihkan akan menyisakan baris "Diajukan" yang masih
-   * menyimpan nama penyetuju.
-   */
-  const doBalik = async () => {
-    const o = balikFor;
-    if (!o) return;
-    setActBusy(true);
-    const { data, error: err } = await supabase
-      .from('overtime_requests').update({ status: 'diajukan' }).eq('id', o.id).select('id');
-    setActBusy(false);
-    setBalikFor(null);
-    if (err) {
-      // Pesan dari trigger sudah berbahasa manusia ("Hanya superadmin yang
-      // boleh…"), jadi ditampilkan apa adanya, bukan diganti kalimat umum.
-      flashToast(err.message);
-      return;
-    }
-    // RLS yang menolak lewat USING tidak memunculkan error, hanya 0 baris.
-    if (!data || data.length === 0) {
-      flashToast('Tidak ada yang berubah — wewenang akunmu tidak mencukupi untuk pengajuan ini.');
-      return;
-    }
-    flashToast('Pengajuan dikembalikan ke Diajukan — persetujuan sebelumnya dibatalkan.');
-    setDetail(null);
     load(true);
   };
 
@@ -765,16 +713,6 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                         )}
                         {o.status === 'diajukan' && o.requester_id === profile?.id && (
                           <button className="btn act" onClick={() => openEdit(o)}>Edit</button>
-                        )}
-                        {bisaBalikkan(o) && (
-                          <button
-                            className="btn act"
-                            style={{ borderColor: 'var(--amber)', color: 'var(--amber)' }}
-                            title="Batalkan ACC — kembalikan ke status Diajukan"
-                            onClick={() => setBalikFor(o)}
-                          >
-                            ↺ Batal ACC
-                          </button>
                         )}
                         {bolehHapus(o) && (
                           <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
@@ -1059,50 +997,6 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                   style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
                   onClick={() => doDelete(confirmDel)}>
                   {actBusy ? 'Menghapus…' : 'Hapus permanen'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ---- Batalkan ACC: kembali ke Diajukan (superadmin, status Disetujui) ---- */}
-      {balikFor && (
-        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !actBusy && setBalikFor(null)}>
-          <div className="modal" style={{ maxWidth: 440 }}>
-            <div className="modal-head">
-              <div>
-                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--amber)' }} />Batalkan ACC</div>
-                <div className="modal-title">Kembalikan ke status Diajukan?</div>
-                <div className="modal-sub">
-                  {fmtDate(balikFor.work_date)} · {balikFor.requester_name} ·{' '}
-                  {jamTeksMenit(menitLembur(balikFor))}
-                </div>
-              </div>
-              <button className="btn ghost modal-close" disabled={actBusy} onClick={() => setBalikFor(null)}>&#10005;</button>
-            </div>
-            <div style={{ padding: '16px 24px' }}>
-              <p className="thread-detail">
-                Catatan persetujuannya dihapus
-                {balikFor.approver_name ? <> — <b>{balikFor.approver_name}</b> tidak lagi tercatat sebagai penyetuju</> : null}
-                , dan pengajuan ini kembali masuk antrean persetujuan. Pengajunya diberi tahu lewat notifikasi.
-              </p>
-              <p className="hint" style={{ marginTop: 10 }}>
-                Isi pengajuannya sendiri (jam, uraian, foto bukti, link) tidak berubah, dan pemiliknya
-                bisa menyuntingnya lagi selama masih Diajukan. Pembatalan ini tercatat di Log Aktivitas.
-              </p>
-              <p className="hint" style={{ marginTop: 10, color: 'var(--amber)' }}>
-                Jamnya keluar dari <b>Rekap Jam</b> sampai disetujui ulang. Kalau rekap periode ini
-                sudah terlanjur dikirim, angkanya perlu dikirim ulang — Alpha tidak bisa menariknya kembali.
-              </p>
-            </div>
-            <div className="modal-foot">
-              <div className="right">
-                <button className="btn" onClick={() => setBalikFor(null)} disabled={actBusy}>Batal</button>
-                <button className="btn primary"
-                  style={{ background: 'var(--amber)', borderColor: 'var(--amber)' }}
-                  onClick={doBalik} disabled={actBusy}>
-                  {actBusy ? 'Memproses…' : 'Ya, kembalikan'}
                 </button>
               </div>
             </div>
