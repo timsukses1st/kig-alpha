@@ -126,6 +126,15 @@ export interface Profile {
    * yang mengetuk cuti atasannya sendiri.
    */
   cuti_lewati_hrd: boolean;
+  /**
+   * Kapan orangnya terakhir mengganti sandinya SENDIRI lewat Alpha.
+   *
+   * NULL = belum pernah, artinya masih memakai sandi sementara buatan Delta.
+   * Sengaja TIDAK diisi oleh Reset PW superadmin — yang ingin diketahui adalah
+   * "sudah diganti sendiri oleh orangnya", bukan "kapan kuncinya terakhir
+   * berubah". Cerminannya kolom `profiles.password_changed_at` di database.
+   */
+  password_changed_at?: string | null;
 }
 
 export interface TeamMember {

@@ -42,6 +42,13 @@ function TeamOptions({ vertical, current }: { vertical?: string | null; current?
  * Pilihannya sengaja dibatasi TIM_KONTEN: tim seperti HRD atau Finance tidak
  * memegang tahap konten sama sekali, jadi menawarkannya cuma menyesatkan.
  */
+/** "2026-09-18T..." -> "18 Sep 2026". Dipakai penanda terakhir ganti sandi. */
+function tglSingkat(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 function TimTambahan({ u, onUbah }: { u: Profile; onUbah: (teams: Team[]) => void }) {
   const dipakai = (u.teams || []).filter((t) => !!t && t !== u.team);
   const sisa = TIM_KONTEN.filter((t) => t !== u.team && dipakai.indexOf(t) === -1);
@@ -1320,6 +1327,21 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
                         <span className="row-avatar">{initials(u.full_name || u.email)}</span>
                         <b>{u.full_name || '(tanpa nama)'}</b>
                         <div className="sub" style={{ marginLeft: 40 }}>{u.email}</div>
+                        {/* Penanda sandi sengaja ditaruh di sel nama, bukan jadi kolom
+                            baru: tabelnya sudah 6 kolom dan sudah melebar di layar kecil.
+                            Kosong = belum pernah diganti sendiri, jadi masih memakai
+                            sandi sementara buatan Delta — itu yang perlu terlihat. */}
+                        <div className="sub" style={{ marginLeft: 40 }}>
+                          {u.password_changed_at ? (
+                            <span style={{ color: 'var(--text-3)' }}>
+                              Sandi diganti {tglSingkat(u.password_changed_at)}
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--amber)' }} title="Masih memakai sandi sementara dari Delta — minta orangnya mengganti lewat tombol gembok di kiri bawah">
+                              ⚠ Sandi belum pernah diganti
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td>
                         <select

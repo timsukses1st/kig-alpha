@@ -208,6 +208,15 @@ const LogoutIcon = () => (
   </svg>
 );
 
+/** Gembok — tombol ganti sandi sendiri di kaki sidebar. */
+const KunciIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="11" width="18" height="11" rx="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+);
+
 const CollapseIcon = ({ collapsed }: { collapsed: boolean }) => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -278,6 +287,67 @@ export default function App() {
   const [kodeTautan, setKodeTautan] = useState<string | null>(null);
   /** Pesan singkat kalau tautannya tidak ketemu. Padam sendiri. */
   const [tautanPesan, setTautanPesan] = useState('');
+  /* ---------------- ganti sandi sendiri ---------------- */
+  /**
+   * Sampai 18 Sep 2026 hanya superadmin yang bisa mengubah sandi, lewat
+   * Reset PW di Kelola Akses. Padahal Panduan Alpha sudah menyuruh setiap
+   * orang mengganti sandi sementaranya di hari pertama — janji yang belum
+   * ada jalannya.
+   */
+  const [sandiBuka, setSandiBuka] = useState(false);
+  const [sandiLama, setSandiLama] = useState('');
+  const [sandiBaru, setSandiBaru] = useState('');
+  const [sandiUlang, setSandiUlang] = useState('');
+  const [sandiLihat, setSandiLihat] = useState(false);
+  const [sandiBusy, setSandiBusy] = useState(false);
+  const [sandiError, setSandiError] = useState('');
+
+  const MIN_SANDI = 8;
+
+  const bukaSandi = () => {
+    setSandiLama(''); setSandiBaru(''); setSandiUlang('');
+    setSandiLihat(false); setSandiError(''); setSandiBuka(true);
+  };
+
+  /**
+   * Sandi lama sengaja diperiksa ulang lewat signInWithPassword, padahal
+   * updateUser() tidak memintanya. Tanpa itu, siapa pun yang menemukan laptop
+   * dalam keadaan masih login bisa mengambil alih akunnya dalam dua klik.
+   *
+   * Login yang gagal TIDAK membatalkan sesi yang sedang berjalan, jadi salah
+   * ketik sandi lama aman — orangnya tidak terlempar keluar.
+   */
+  const gantiSandi = async () => {
+    const email = profile?.email || session?.user.email || '';
+    if (!email) { setSandiError('Email akun tidak terbaca. Muat ulang halaman lalu coba lagi.'); return; }
+    if (sandiBaru.length < MIN_SANDI) { setSandiError(`Sandi baru minimal ${MIN_SANDI} karakter.`); return; }
+    if (sandiBaru !== sandiUlang) { setSandiError('Ulangi sandi baru belum sama.'); return; }
+    if (sandiBaru === sandiLama) { setSandiError('Sandi baru masih sama dengan yang lama.'); return; }
+
+    setSandiBusy(true); setSandiError('');
+    const { error: errLama } = await supabase.auth.signInWithPassword({ email, password: sandiLama });
+    if (errLama) {
+      setSandiBusy(false);
+      setSandiError('Sandi lama salah.');
+      return;
+    }
+    const { error: errBaru } = await supabase.auth.updateUser({ password: sandiBaru });
+    if (errBaru) {
+      setSandiBusy(false);
+      // Pesan Supabase (mis. sandi terlalu lemah) lebih berguna daripada
+      // kalimat umum buatan sendiri.
+      setSandiError(errBaru.message);
+      return;
+    }
+    // Penanda "sudah pernah ganti sendiri" untuk kolom di Kelola Akses.
+    // Gagalnya sengaja diabaikan: sandinya sudah berhasil berubah, dan
+    // menampilkan error di sini cuma bikin orang mengira gantinya batal.
+    await supabase.rpc('catat_ganti_sandi');
+    setSandiBusy(false);
+    setSandiBuka(false);
+    setTautanPesan('Sandi berhasil diganti. Pakai yang baru saat login berikutnya.');
+  };
+
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
@@ -792,6 +862,7 @@ export default function App() {
           {slim ? (
             <>
               <div className="user-avatar" title={`${displayName} · ${profile?.role || ''}`}>{initials(displayName)}</div>
+              <button className="icon-btn footer-icon" title="Ubah sandi" onClick={bukaSandi}><KunciIcon /></button>
               <button className="icon-btn footer-icon" title="Keluar" onClick={logout}><LogoutIcon /></button>
             </>
           ) : (
@@ -804,11 +875,88 @@ export default function App() {
                     kalau hanya tim utama yang tampil, tambahannya jadi tak terlihat. */}
                 <div className="u-role">{profile ? `${profile.role}${timAkun(profile).length ? ' · ' + timAkun(profile).join(' + ') : ''}` : '…'}</div>
               </div>
+              <button className="icon-btn" title="Ubah sandi" onClick={bukaSandi}><KunciIcon /></button>
               <button className="icon-btn" title="Keluar" onClick={logout}><LogoutIcon /></button>
             </div>
           )}
         </div>
       </aside>
+
+      {/* ---- Ubah sandi sendiri ---- */}
+      {sandiBuka && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !sandiBusy && setSandiBuka(false)}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--accent)' }} />Keamanan akun</div>
+                <div className="modal-title">Ubah sandi</div>
+                <div className="modal-sub">{profile?.email || session?.user.email}</div>
+              </div>
+              <button className="btn ghost modal-close" disabled={sandiBusy} onClick={() => setSandiBuka(false)}>&#10005;</button>
+            </div>
+
+            <div style={{ padding: '16px 24px' }}>
+              <div className="field">
+                <label>Sandi lama</label>
+                <input
+                  type={sandiLihat ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={sandiLama}
+                  onChange={(e) => { setSandiLama(e.target.value); setSandiError(''); }}
+                />
+              </div>
+              <div className="field">
+                <label>Sandi baru</label>
+                <input
+                  type={sandiLihat ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={sandiBaru}
+                  onChange={(e) => { setSandiBaru(e.target.value); setSandiError(''); }}
+                />
+              </div>
+              <div className="field">
+                <label>Ulangi sandi baru</label>
+                <input
+                  type={sandiLihat ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={sandiUlang}
+                  onChange={(e) => { setSandiUlang(e.target.value); setSandiError(''); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !sandiBusy) gantiSandi(); }}
+                />
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, cursor: 'pointer' }}>
+                <input type="checkbox" checked={sandiLihat} onChange={(e) => setSandiLihat(e.target.checked)} />
+                Tampilkan sandi
+              </label>
+
+              {sandiError && <p className="error-msg" style={{ marginTop: 10 }}>{sandiError}</p>}
+
+              <p className="hint" style={{ marginTop: 12 }}>
+                Minimal {MIN_SANDI} karakter. Sandi lama diminta supaya akunmu tidak bisa diambil
+                alih orang yang kebetulan menemukan layarmu masih terbuka.
+              </p>
+              <p className="hint" style={{ marginTop: 8 }}>
+                Delta <b>tidak bisa melihat</b> sandimu — yang tersimpan cuma sidik acaknya.
+                Kalau lupa, minta Delta menyetel ulang lewat <b>Reset PW</b>.
+              </p>
+            </div>
+
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={sandiBusy} onClick={() => setSandiBuka(false)}>Batal</button>
+                <button
+                  className="btn primary"
+                  disabled={sandiBusy || !sandiLama || !sandiBaru || !sandiUlang}
+                  onClick={gantiSandi}
+                >
+                  {sandiBusy ? 'Menyimpan…' : 'Simpan sandi baru'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {tautanPesan && (
         <div
