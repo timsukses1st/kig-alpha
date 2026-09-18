@@ -3,10 +3,10 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
-  boleh, domainSingkat, initials, jamTeksMenit, MAKS_FOTO_LEMBUR, MAKS_LINK_LEMBUR,
+  akuLeadUntuk, boleh, domainSingkat, initials, jamTeksMenit, MAKS_FOTO_LEMBUR, MAKS_LINK_LEMBUR,
   MAKS_SESI_LEMBUR, menitBlok, menitLembur, rapikanLink, sesiLembur, TUGAS,
-  type OvertimeLink, type OvertimeProof, type OvertimeRequest, type OvertimeSession,
-  type Profile, type Project,
+  type OrangRingkas, type OvertimeLink, type OvertimeProof, type OvertimeRequest,
+  type OvertimeSession, type Profile, type Project, type Role, type Team,
 } from '@/lib/types';
 
 interface Props {
@@ -68,6 +68,12 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   const [person, setPerson] = useState<string>('all');
   /** Daftar akun login, dipakai mengisi pilihan filter Pemohon. */
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+  /**
+   * Profil ringkas tiap orang, dikunci per id. Dipakai akuLeadUntuk() untuk
+   * menentukan siapa lead seorang pemohon — tanpa ini layar tidak bisa tahu
+   * tombol Setujui boleh muncul di baris mana.
+   */
+  const [orang, setOrang] = useState<Record<string, OrangRingkas>>({});
   const [open, setOpen] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [detail, setDetail] = useState<OvertimeRequest | null>(null);
@@ -193,6 +199,26 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     return [];
   };
 
+  /**
+   * Wewenang memutuskan lembur = DUA syarat, harus dua-duanya:
+   *
+   *   1. matriks Izin Peran  -> boleh('lembur_putuskan'), artinya "boleh ikut
+   *      memutuskan sama sekali"
+   *   2. Bagan Tim           -> akuLeadUntuk(), artinya "punya SIAPA"
+   *
+   * Cerminan policy ot_update di database:
+   *   boleh('lembur_putuskan') AND can_see_project(project_id) AND is_lead_for(requester_id)
+   *
+   * Sebelum 18 Sep 2026 layar hanya bertanya syarat pertama, jadi 19 orang
+   * melihat tombol Setujui di lembur siapa pun. Database sudah menutupnya,
+   * dan penolakan RLS lewat USING tidak memunculkan error — hanya 0 baris.
+   * Jadi tombol yang salah muncul terasa seperti aplikasi macet.
+   */
+  const bisaPutuskanMilik = (requesterId: string | null) =>
+    boleh(profile, TUGAS.lemburPutuskan)
+    && akuLeadUntuk(profile, requesterId ? (orang[requesterId] || null) : null);
+
+  /** true kalau akun ini lead bagi SIAPA PUN — dipakai menyalakan mode "Semua tim". */
   const canApprove = boleh(profile, TUGAS.lemburPutuskan);
   /** Hanya superadmin yang boleh menghapus pengajuan milik orang lain. */
   // Cerminan policy ot_delete:
@@ -253,14 +279,31 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     // mengubah kode. Kalau RLS menutup tabel ini untuk sebagian peran,
     // errornya sengaja diabaikan: daftarnya masih bisa disusun dari data
     // lembur yang ada (lihat peopleOptions).
+    // role/team/vertical/lead_id WAJIB ikut diambil: itulah bahan akuLeadUntuk()
+    // untuk menentukan siapa lead seorang pemohon. Tanpa lead_id, layar jatuh
+    // ke tangga otomatis sementara database sudah memakai penunjukan Bagan Tim —
+    // tombol Setujui muncul lalu ditolak diam-diam.
     const { data: prof } = await supabase
       .from('profiles')
-      .select('id, full_name, email')
+      .select('id, full_name, email, role, team, vertical, lead_id')
       .eq('is_active', true);
-    setUsers(
-      ((prof as { id: string; full_name: string | null; email: string }[]) || [])
-        .map((u) => ({ id: u.id, name: u.full_name || u.email })),
-    );
+    const daftar = (prof as {
+      id: string; full_name: string | null; email: string;
+      role: Role; team: Team | null; vertical: string | null; lead_id: string | null;
+    }[]) || [];
+    setUsers(daftar.map((u) => ({ id: u.id, name: u.full_name || u.email })));
+    const peta: Record<string, OrangRingkas> = {};
+    daftar.forEach((u) => {
+      peta[u.id] = {
+        id: u.id,
+        nama: u.full_name || u.email,
+        role: u.role,
+        team: u.team,
+        vertical: u.vertical,
+        lead_id: u.lead_id,
+      };
+    });
+    setOrang(peta);
 
     if (!silent) setLoading(false);
   }, [projectFilter]);
@@ -447,16 +490,25 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
   const decide = async (o: OvertimeRequest, approve: boolean, reason: string | null = null) => {
     if (!profile) return;
     setActBusy(true);
-    const { error: err } = await supabase.from('overtime_requests').update({
+    const { data, error: err } = await supabase.from('overtime_requests').update({
       status: approve ? 'disetujui' : 'ditolak',
       approver_id: profile.id,
       approver_name: profile.full_name || profile.email,
       decided_at: new Date().toISOString(),
       reject_reason: reason,
-    }).eq('id', o.id);
+    }).eq('id', o.id).select('id');
     setActBusy(false);
     if (err) {
       flashToast(`Gagal — ${err.message}`);
+      return;
+    }
+    // Penolakan RLS lewat USING tidak memunculkan error, hanya 0 baris. Tanpa
+    // pemeriksaan ini tombolnya terasa "diklik tapi tidak terjadi apa-apa".
+    if (!data || data.length === 0) {
+      flashToast(`Ditolak — hanya lead ${o.requester_name || 'pemohon'} di Bagan Tim yang bisa memutuskan lembur ini.`);
+      setDetail(null);
+      setRejectFor(null);
+      load(true);
       return;
     }
     flashToast(approve ? 'Lembur disetujui.' : 'Lembur ditolak.');
@@ -756,7 +808,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                     <td><span className="status-dot" style={{ background: STATUS_META[o.status]?.color }} />{STATUS_META[o.status]?.label}</td>
                     <td>
                       <div className="recap-actions" onClick={(e) => e.stopPropagation()}>
-                        {o.status === 'diajukan' && canApprove && (
+                        {o.status === 'diajukan' && bisaPutuskanMilik(o.requester_id) && (
                           <>
                             <button className="btn act" style={{ borderColor: 'var(--green)', color: 'var(--green)' }} onClick={() => decide(o, true)}>Setujui</button>
                             <button className="btn act" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
@@ -880,7 +932,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
         )}
 
         <p className="cal-legend">
-          Semua user boleh mengajukan · <b>Manager</b> menyetujui/menolak · rekap jam dihitung dari pengajuan yang disetujui. Jam diisi manual.
+          Semua user boleh mengajukan · <b>lead masing-masing</b> yang menyetujui/menolak, mengikuti
+          Bagan Tim di Kelola Akses — jadi tombol Setujui hanya muncul di pengajuan anggotamu sendiri ·
+          rekap jam dihitung dari pengajuan yang disetujui. Jam diisi manual.
           Satu pengajuan boleh berisi sampai {MAKS_SESI_LEMBUR} blok jam terpisah (mis. 09.00–10.00, 14.00–17.00, 19.00–22.00) —
           durasinya dijumlah dari tiap blok, bukan dari jam pertama sampai jam terakhir.
         </p>
@@ -1006,7 +1060,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
               </div>
             </div>
             <div className="modal-foot">
-              {detail.status === 'diajukan' && canApprove && (
+              {detail.status === 'diajukan' && bisaPutuskanMilik(detail.requester_id) && (
                 <>
                   <button className="btn" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}
                     onClick={() => { setRejectReason(''); setRejectFor(detail); }}>Tolak</button>
