@@ -18,7 +18,7 @@ export type Team =
   // Level PT Kahfi Indo Group
   | 'ceo' | 'komisaris' | 'coo' | 'cfo' | 'cpo' | 'ia' | 'staff' | 'ga' | 'delta'
   // Level unit bisnis (KC & GME)
-  | 'pimpinan' | 'ho' | 'lo' | 'sm' | 'hrd' | 'pm' | 'finance' | 'developer'
+  | 'pimpinan' | 'ho' | 'lo' | 'sm' | 'hrd' | 'pm' | 'finance' | 'developer' | 'driver'
   // Tim yang menggarap konten
   | 'creative' | 'distribution' | 'ads' | 'vmt';
 
@@ -41,6 +41,7 @@ export const TEAM_LABEL: Record<Team, string> = {
   pm: 'Project Manager',
   finance: 'Finance',
   developer: 'Developer',
+  driver: 'Driver',
   creative: 'Creative',
   distribution: 'Distribution',
   ads: 'Ads',
@@ -57,7 +58,10 @@ export const TEAM_VALUES: Team[] = Object.keys(TEAM_LABEL) as Team[];
 /** Pengelompokan untuk dropdown supaya 21 pilihan tidak jadi daftar panjang. */
 export const TEAM_GROUPS: { label: string; teams: Team[] }[] = [
   { label: 'Konten', teams: ['creative', 'distribution', 'ads', 'vmt'] },
-  { label: 'Unit Bisnis', teams: ['pimpinan', 'ho', 'lo', 'sm', 'hrd', 'pm', 'finance', 'developer'] },
+  // Driver ditaruh di Unit Bisnis, bukan holding: dengan begitu akun KC, GME,
+  // maupun KIG sama-sama bisa dipilihkan tim ini (lihat teamsForVertical).
+  // Kalau ditaruh di golongan holding, akun KC justru tidak bisa memilihnya.
+  { label: 'Unit Bisnis', teams: ['pimpinan', 'ho', 'lo', 'sm', 'hrd', 'pm', 'finance', 'developer', 'driver'] },
   { label: 'PT Kahfi Indo Group', teams: ['ceo', 'komisaris', 'coo', 'cfo', 'cpo', 'ia', 'staff', 'ga', 'delta'] },
 ];
 
@@ -805,6 +809,9 @@ export const TEAM_EDITABLE: Record<Team, ContentStatus[]> = {
   pm: [],
   finance: [],
   developer: [],
+  // Driver menggarap antar-jemput, bukan konten. Cerminannya cabang `else`
+  // di tahap_edit_tim() / tahap_target_tim() yang mengembalikan '{}'.
+  driver: [],
   ceo: [],
   komisaris: [],
   coo: [],
@@ -830,6 +837,7 @@ export const TEAM_TARGETABLE: Record<Team, ContentStatus[]> = {
   pm: [],
   finance: [],
   developer: [],
+  driver: [],
   ceo: [],
   komisaris: [],
   coo: [],

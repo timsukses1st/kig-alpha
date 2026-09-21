@@ -42,6 +42,73 @@ function TeamOptions({ vertical, current }: { vertical?: string | null; current?
  * Pilihannya sengaja dibatasi TIM_KONTEN: tim seperti HRD atau Finance tidak
  * memegang tahap konten sama sekali, jadi menawarkannya cuma menyesatkan.
  */
+/**
+ * Panjang sandi sementara yang dibuat tombol Acak.
+ *
+ * Supabase project ini menyalakan perlindungan sandi bocor: setiap sandi
+ * dicek ke daftar sandi yang pernah bocor, dan yang cocok DITOLAK dengan
+ * pesan "Password is known to be weak and easy to guess". Aturan itu ada di
+ * Supabase, bukan di Alpha — makanya label lama "min. 6" menyesatkan:
+ * `123456` panjangnya 6 tapi tetap ditolak.
+ */
+const PANJANG_SANDI_ACAK = 14;
+
+/**
+ * Sandi sementara acak yang pasti lolos pemeriksaan Supabase.
+ *
+ * Huruf yang gampang tertukar sengaja dibuang (0/O, 1/l/I) — sandi ini sering
+ * dibacakan lewat telepon atau disalin manual, dan satu salah baca berarti
+ * orangnya gagal login lalu balik bertanya.
+ *
+ * Memakai crypto.getRandomValues, bukan Math.random: yang kedua bisa ditebak
+ * kalau ada yang tahu urutannya, dan untuk sandi itu tidak sepadan risikonya.
+ */
+function sandiAcak(): string {
+  const huruf = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+  const angka = '23456789';
+  const tanda = '!@#$%*-_';
+  const semua = huruf + angka + tanda;
+
+  const ambil = (dari: string, n: number): string[] => {
+    const buf = new Uint32Array(n);
+    // Lingkungan tanpa crypto (mis. render di server) jatuh ke Math.random.
+    // Tidak ideal, tapi lebih baik daripada tombolnya mati total.
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(buf);
+    else for (let i = 0; i < n; i++) buf[i] = Math.floor(Math.random() * 0xffffffff);
+    const out: string[] = [];
+    for (let i = 0; i < n; i++) out.push(dari.charAt(buf[i] % dari.length));
+    return out;
+  };
+
+  // Pastikan ketiga jenis karakter hadir, sisanya bebas.
+  const wajib = ambil(huruf, 1).concat(ambil(angka, 1), ambil(tanda, 1));
+  const sisa = ambil(semua, PANJANG_SANDI_ACAK - wajib.length);
+  const gabung = wajib.concat(sisa);
+
+  // Kocok supaya karakter wajibnya tidak selalu di depan.
+  const urut = ambil(semua, gabung.length);
+  return gabung
+    .map((c, i) => ({ c, k: urut[i] }))
+    .sort((a, b) => (a.k < b.k ? -1 : a.k > b.k ? 1 : 0))
+    .map((x) => x.c)
+    .join('');
+}
+
+/**
+ * Pesan Supabase soal sandi diterjemahkan supaya orang tahu harus berbuat apa.
+ * Pesan aslinya berbahasa Inggris dan tidak menyebut jalan keluarnya.
+ */
+function pesanSandi(asli: string): string {
+  const s = (asli || '').toLowerCase();
+  if (s.includes('known to be weak') || s.includes('easy to guess') || s.includes('pwned')) {
+    return 'Sandi ini ada di daftar sandi yang pernah bocor, jadi ditolak Supabase. Tekan tombol Acak untuk membuat yang aman.';
+  }
+  if (s.includes('at least') || s.includes('should be')) {
+    return `Sandi terlalu pendek atau terlalu sederhana. Tekan Acak untuk membuat ${PANJANG_SANDI_ACAK} karakter yang pasti lolos.`;
+  }
+  return asli;
+}
+
 /** "2026-09-18T..." -> "18 Sep 2026". Dipakai penanda terakhir ganti sandi. */
 function tglSingkat(iso: string): string {
   const d = new Date(iso);
@@ -548,12 +615,19 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
       body: JSON.stringify(payload),
     });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) { flash(d.error || 'Gagal.'); return null; }
+    // Pesan soal sandi datang dari Supabase dalam bahasa Inggris dan tidak
+    // menyebut jalan keluarnya. pesanSandi() menerjemahkannya; pesan lain
+    // diteruskan apa adanya.
+    if (!r.ok) { flash(pesanSandi(d.error || '') || 'Gagal.'); return null; }
     return d;
   };
 
   const createUser = async () => {
-    if (!nu.email.trim() || nu.password.length < 6) { flash('Email wajib & password min. 6 karakter.'); return; }
+    if (!nu.email.trim()) { flash('Email wajib diisi.'); return; }
+    // Batas 6 ini cuma saringan awal supaya tidak bolak-balik ke server.
+    // Penentu sebenarnya ada di Supabase, yang juga menolak sandi bocor —
+    // lihat pesanSandi().
+    if (nu.password.length < 6) { flash('Password minimal 6 karakter. Tekan Acak kalau tidak mau memikirkannya.'); return; }
     setUBusy(true);
     const d = await callUserApi({
       action: 'create',
@@ -1265,7 +1339,9 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
               </button>
             </div>
             <p className="section-hint">
-              Akun dibuat dengan password sementara — minta orangnya login lalu ganti lewat <b>Reset PW</b>.
+              Akun dibuat dengan sandi sementara. Minta orangnya login lalu ganti sendiri lewat
+              tombol <b>gembok</b> di kiri bawah — yang masih bertanda ⚠ di bawah namanya berarti
+              belum pernah menggantinya. <b>Reset PW</b> dipakai kalau orangnya lupa.
             </p>
             <p className="hint" style={{ marginTop: -4 }}>
               <b>Tim tambahan</b> (tombol <b>+ tim…</b> di bawah kolom Team) untuk orang yang benar-benar
@@ -2299,15 +2375,27 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
             <div style={{ padding: '18px 24px' }}>
               <div className="field" style={{ marginBottom: 10 }}>
                 <label>Password baru</label>
-                <input
-                  type={pwLihat ? 'text' : 'password'}
-                  value={pwValue}
-                  disabled={pwBusy}
-                  autoComplete="new-password"
-                  placeholder="minimal 6 karakter"
-                  onChange={(e) => setPwValue(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && pwValue.trim().length >= 6 && doResetPw()}
-                />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type={pwLihat ? 'text' : 'password'}
+                    style={{ flex: 1, fontFamily: pwLihat ? 'ui-monospace, monospace' : undefined }}
+                    value={pwValue}
+                    disabled={pwBusy}
+                    autoComplete="new-password"
+                    placeholder="tekan Acak →"
+                    onChange={(e) => setPwValue(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && pwValue.trim().length >= 6 && doResetPw()}
+                  />
+                  <button
+                    type="button"
+                    className="btn act"
+                    disabled={pwBusy}
+                    title={`Buat sandi acak ${PANJANG_SANDI_ACAK} karakter yang pasti lolos`}
+                    onClick={() => { setPwValue(sandiAcak()); setPwLihat(true); }}
+                  >
+                    ⟳ Acak
+                  </button>
+                </div>
                 <div className="hint" style={{ color: kurangPw > 0 ? 'var(--amber)' : 'var(--green)' }}>
                   {pwValue.length === 0
                     ? 'Belum diisi.'
@@ -2637,7 +2725,7 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
                   User baru
                 </div>
                 <div className="modal-title">Tambah User</div>
-                <div className="modal-sub">Akun dibuat dengan password sementara. Minta orangnya ganti lewat Reset PW.</div>
+                <div className="modal-sub">Akun dibuat dengan sandi sementara. Orangnya bisa menggantinya sendiri lewat tombol gembok di kiri bawah.</div>
               </div>
               <button className="btn ghost modal-close" onClick={() => setUserModal(false)}>✕</button>
             </div>
@@ -2651,8 +2739,29 @@ export default function AccessView({ profile, selfId, onAccountsChanged, activeP
                 <input placeholder="mis. Bagus" value={nu.full_name} onChange={(e) => setNu({ ...nu, full_name: e.target.value })} />
               </div>
               <div className="field">
-                <label>Password sementara (min. 6)</label>
-                <input type="text" placeholder="••••••" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} />
+                <label>Password sementara</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type="text"
+                    style={{ flex: 1, fontFamily: 'ui-monospace, monospace' }}
+                    placeholder="tekan Acak →"
+                    value={nu.password}
+                    onChange={(e) => setNu({ ...nu, password: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="btn act"
+                    title={`Buat sandi acak ${PANJANG_SANDI_ACAK} karakter yang pasti lolos`}
+                    onClick={() => setNu({ ...nu, password: sandiAcak() })}
+                  >
+                    ⟳ Acak
+                  </button>
+                </div>
+                <p className="hint" style={{ marginTop: 6 }}>
+                  Sandi umum seperti <code>123456</code> ditolak Supabase karena ada di daftar
+                  sandi yang pernah bocor — itu aturan Supabase, bukan Alpha. Tekan <b>Acak</b>,
+                  lalu salin dan kirimkan ke orangnya.
+                </p>
               </div>
               <div className="field-row">
                 <div className="field">
