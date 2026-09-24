@@ -382,7 +382,9 @@ function PicCell({ row, members, disabled, onSave }: {
 }) {
   const [open, setOpen] = useState(false);
   const [hover, setHover] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = useState<
+    { top: number | null; bottom: number | null; left: number; maksT: number } | null
+  >(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
 
   const anggotaOf = (id: string | null) => members.find((m) => m.id === id) || null;
@@ -397,12 +399,26 @@ function PicCell({ row, members, disabled, onSave }: {
     .filter((x) => x.name);
 
   /** Menempelkan panel ke posisi tombol saat ini. */
+  /**
+   * Panelnya dipatok lewat `top` saat membuka ke bawah, dan lewat `bottom`
+   * saat membalik ke atas.
+   *
+   * Cara lama menjepit `top` ke `window.innerHeight - 250` — 250 itu tebakan
+   * tinggi panel. Kalau isinya lebih pendek, panelnya menutupi tombolnya
+   * sendiri; kalau lebih panjang, bagian bawahnya tetap keluar layar.
+   * Dengan `bottom`, tinggi isinya tidak perlu ditebak sama sekali.
+   * Pola yang sama dipakai PilihCari.
+   */
   const tempelkan = useCallback(() => {
     const r = boxRef.current ? boxRef.current.getBoundingClientRect() : null;
     if (!r) return;
+    const bawah = window.innerHeight - r.bottom;
+    const naik = bawah < 260 && r.top > bawah;
     setPos({
-      top: Math.min(r.bottom + 6, Math.max(8, window.innerHeight - 250)),
+      top: naik ? null : r.bottom + 6,
+      bottom: naik ? Math.max(8, window.innerHeight - r.top + 6) : null,
       left: Math.min(r.left, Math.max(8, window.innerWidth - 268)),
+      maksT: Math.max(160, (naik ? r.top : bawah) - 14),
     });
   }, []);
 
@@ -500,7 +516,9 @@ function PicCell({ row, members, disabled, onSave }: {
           />
           <div
             style={{
-              position: 'fixed', top: pos.top, left: pos.left, width: 260, zIndex: 65,
+              position: 'fixed', left: pos.left, width: 260, zIndex: 65,
+              ...(pos.top !== null ? { top: pos.top } : { bottom: pos.bottom as number }),
+              maxHeight: pos.maksT, overflowY: 'auto',
               background: 'var(--raised)', border: '1px solid var(--border)',
               borderRadius: 10, padding: '10px 12px',
               boxShadow: '0 14px 36px rgba(0,0,0,.55)',
@@ -1428,12 +1446,16 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
   }, [ctxMenu]);
 
   const openCtx = (row: ContentRow, x: number, y: number) => {
-    // Jaga supaya menu tidak terpotong tepi layar
+    // Lebarnya tetap, jadi aman dijepit di sini. TINGGINYA TIDAK dijepit di
+    // sini: jumlah item menu berubah menurut wewenang dan isi barisnya
+    // (Hapus hanya untuk yang berwenang, Pindah project hanya untuk pemegang
+    // konten_pindah_bebas), jadi angka tetap apa pun pasti meleset —
+    // dan setiap item baru membuatnya makin meleset.
+    // Penjepitan tegaknya dikerjakan setelah menu benar-benar terukur,
+    // lewat ref di elemen menunya.
     const w = 232;
-    const h = 244;
     const left = Math.min(x, Math.max(8, window.innerWidth - w - 8));
-    const top = Math.min(y, Math.max(8, window.innerHeight - h - 8));
-    setCtxMenu({ row, x: left, y: top });
+    setCtxMenu({ row, x: left, y });
   };
 
   const startLongPress = (row: ContentRow, e: React.TouchEvent) => {
@@ -3475,6 +3497,25 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
             onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
           />
           <div
+            /**
+             * Menu diukur SETELAH terpasang, lalu digeser kalau melewati tepi
+             * bawah layar. Dengan begitu berapa pun item yang muncul — dan
+             * jumlahnya memang berubah menurut wewenang — item terakhir
+             * (biasanya Hapus) tidak pernah terpotong.
+             */
+            ref={(el) => {
+              if (!el) return;
+              const r = el.getBoundingClientRect();
+              const lewat = r.bottom - (window.innerHeight - 8);
+              if (lewat > 0) el.style.top = Math.max(8, r.top - lewat) + 'px';
+              // Menu lebih tinggi dari layarnya sendiri — biar bisa digulir
+              // daripada ada item yang tidak mungkin dijangkau.
+              if (r.height > window.innerHeight - 16) {
+                el.style.top = '8px';
+                el.style.maxHeight = (window.innerHeight - 16) + 'px';
+                el.style.overflowY = 'auto';
+              }
+            }}
             style={{
               position: 'fixed', left: ctxMenu.x, top: ctxMenu.y, width: 232, zIndex: 80,
               background: 'var(--raised)', border: '1px solid var(--border)',

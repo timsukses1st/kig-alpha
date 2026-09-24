@@ -43,7 +43,20 @@ export default function PilihCari({
   const [buka, setBuka] = useState(false);
   const [cari, setCari] = useState('');
   const [sorot, setSorot] = useState(0);
-  const [pos, setPos] = useState<{ top: number; left: number; lebar: number } | null>(null);
+  /**
+   * Letak panel. Saat membuka ke BAWAH dipatok lewat `top`; saat membalik ke
+   * ATAS dipatok lewat `bottom`.
+   *
+   * Kenapa bukan `top` dua-duanya: kalau membalik ke atas dihitung
+   * `top = r.top - TINGGI_PANEL`, panelnya ditempatkan seolah-olah SELALU
+   * setinggi maksimum. Padahal TINGGI_PANEL cuma batas atas — panel berisi
+   * 3 kategori tingginya sekitar 110px, jadi dia mengambang ratusan piksel
+   * di atas kotaknya, jauh dari tempat seharusnya. Dengan `bottom`, tepi
+   * bawah panel menempel tepat di atas kotak berapa pun tinggi isinya.
+   */
+  const [pos, setPos] = useState<
+    { top: number | null; bottom: number | null; left: number; lebar: number; maksT: number } | null
+  >(null);
   const kotakRef = useRef<HTMLDivElement | null>(null);
   /**
    * Panelnya di atas atau di bawah tombol — ditetapkan SEKALI saat dibuka.
@@ -75,17 +88,31 @@ export default function PilihCari({
   const tempelkan = useCallback(() => {
     const r = kotakRef.current ? kotakRef.current.getBoundingClientRect() : null;
     if (!r) return;
+    // Tinggi dibatasi ke ruang yang benar-benar tersedia. Tanpa ini, di
+    // jendela pendek panelnya keluar layar dan pilihan terbawah tidak bisa
+    // diklik sama sekali.
+    const ruangBawah = window.innerHeight - r.bottom - 12;
+    const ruangAtas = r.top - 12;
+    const naik = arahAtas.current;
     setPos({
-      top: arahAtas.current ? Math.max(8, r.top - TINGGI_PANEL - 4) : r.bottom + 4,
+      top: naik ? null : r.bottom + 4,
+      bottom: naik ? Math.max(8, window.innerHeight - r.top + 4) : null,
       left: Math.min(r.left, Math.max(8, window.innerWidth - LEBAR_PANEL - 8)),
       lebar: Math.max(r.width, 220),
+      maksT: Math.max(140, Math.min(TINGGI_PANEL, naik ? ruangAtas : ruangBawah)),
     });
   }, []);
 
   const bukaPanel = () => {
     if (disabled) return;
     const r = kotakRef.current ? kotakRef.current.getBoundingClientRect() : null;
-    if (r) arahAtas.current = window.innerHeight - r.bottom <= TINGGI_PANEL + 16;
+    // Membalik ke atas hanya kalau ruang atas memang LEBIH LEGA. Kalau
+    // dua-duanya sempit, tetap ke bawah lalu dipendekkan — membalik ke ruang
+    // yang sama sempitnya tidak menolong apa pun.
+    if (r) {
+      const bawah = window.innerHeight - r.bottom;
+      arahAtas.current = bawah <= TINGGI_PANEL + 16 && r.top > bawah;
+    }
     tempelkan();
     setCari('');
     setSorot(0);
@@ -192,8 +219,9 @@ export default function PilihCari({
         <div
           data-pilihcari-panel
           style={{
-            position: 'fixed', top: pos.top, left: pos.left,
-            width: Math.max(pos.lebar, LEBAR_PANEL), maxHeight: TINGGI_PANEL,
+            position: 'fixed', left: pos.left,
+            ...(pos.top !== null ? { top: pos.top } : { bottom: pos.bottom as number }),
+            width: Math.max(pos.lebar, LEBAR_PANEL), maxHeight: pos.maksT,
             display: 'flex', flexDirection: 'column', zIndex: 200,
             background: 'var(--panel)', border: '1px solid var(--border-strong)',
             borderRadius: 10, boxShadow: '0 14px 36px rgba(0,0,0,.5)', overflow: 'hidden',
