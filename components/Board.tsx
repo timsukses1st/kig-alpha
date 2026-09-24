@@ -608,6 +608,10 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
   const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
   // ---- menu klik-kanan / tekan-tahan pada baris ----
   const [ctxMenu, setCtxMenu] = useState<{ row: ContentRow; x: number; y: number } | null>(null);
+  /** Brief yang sedang dikonfirmasi untuk dipindah ke project lain. */
+  const [pindahIds, setPindahIds] = useState<string[] | null>(null);
+  const [pindahTujuan, setPindahTujuan] = useState('');
+  const [pindahBusy, setPindahBusy] = useState(false);
   const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [copiedRow, setCopiedRow] = useState<string | null>(null);
   const [toast, setToast] = useState('');
@@ -1117,6 +1121,121 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
    * Jumlah yang dilewati dilaporkan di toast supaya tidak ada yang mengira
    * semuanya berhasil.
    */
+  /* ---------------- pindah project ---------------- */
+
+  /**
+   * Brief yang sedang dipilih untuk dipindah, beserta hitungan apa saja yang
+   * akan ikut dibersihkan. Dipakai modal konfirmasi supaya orangnya tahu
+   * akibatnya SEBELUM menekan tombol, bukan sesudah.
+   *
+   * Kenapa ada yang dibersihkan: database TIDAK mengikat kategori maupun akun
+   * ke project — itu cuma konvensi di layar. Jadi kalau project_id diganti
+   * begitu saja, briefnya tetap menunjuk kategori milik project lama dan
+   * kolom Kategori jadi kosong tanpa penjelasan.
+   */
+  const rencanaPindah = useMemo(() => {
+    if (!pindahIds) return null;
+    const isi = rows.filter((r) => pindahIds.indexOf(r.id) !== -1);
+    const tujuan = projects.find((p) => p.id === pindahTujuan) || null;
+    const asalIds: string[] = [];
+    isi.forEach((r) => { if (r.project_id && asalIds.indexOf(r.project_id) === -1) asalIds.push(r.project_id); });
+    const asalVertical: string[] = [];
+    asalIds.forEach((id) => {
+      const p = projects.find((x) => x.id === id);
+      if (p && p.vertical && asalVertical.indexOf(p.vertical as string) === -1) asalVertical.push(p.vertical as string);
+    });
+
+    let katHilang = 0;
+    let akunHilang = 0;
+    if (tujuan) {
+      const akunSah = akunUntukProject(accounts, projects, tujuan.id).map((a) => a.id);
+      isi.forEach((r) => {
+        if (r.category_id) {
+          const k = categories.find((c) => c.id === r.category_id);
+          if (!k || k.project_id !== tujuan.id) katHilang++;
+        }
+        if (r.account_id && akunSah.indexOf(r.account_id) === -1) akunHilang++;
+      });
+    }
+    return { isi, tujuan, asalVertical, katHilang, akunHilang };
+  }, [pindahIds, pindahTujuan, rows, projects, accounts, categories]);
+
+  /**
+   * Project yang boleh jadi tujuan.
+   *
+   * Dibatasi ke unit bisnis yang sama dengan brief asalnya. Akun media dan
+   * kategori dua-duanya terikat unit; memindahkan brief KC ke project GME
+   * akan menghasilkan baris yang akunnya tidak pernah bisa diisi, sekaligus
+   * menembus dinding unit yang dijaga RLS di tempat lain.
+   */
+  const projectTujuan = useMemo(() => {
+    const v = rencanaPindah?.asalVertical || [];
+    return projects.filter((p) => {
+      if (rencanaPindah && rencanaPindah.isi.length === 1 && p.id === rencanaPindah.isi[0].project_id) return false;
+      if (v.length === 1) return (p.vertical as string) === v[0];
+      return true;
+    });
+  }, [projects, rencanaPindah]);
+
+  const applyPindahProject = async () => {
+    if (!rencanaPindah || !rencanaPindah.tujuan) return;
+    const tujuan = rencanaPindah.tujuan;
+    const akunSah = akunUntukProject(accounts, projects, tujuan.id).map((a) => a.id);
+
+    // Tiap baris bisa butuh pembersihan yang berbeda, jadi dikirim per baris,
+    // bukan satu update .in() — kalau diseragamkan, brief yang akunnya masih
+    // sah ikut kehilangan akunnya.
+    const patch = rencanaPindah.isi.map((r) => {
+      const k = r.category_id ? categories.find((c) => c.id === r.category_id) : null;
+      return {
+        id: r.id,
+        project_id: tujuan.id,
+        category_id: k && k.project_id === tujuan.id ? r.category_id : null,
+        account_id: r.account_id && akunSah.indexOf(r.account_id) !== -1 ? r.account_id : null,
+      };
+    });
+
+    setPindahBusy(true);
+    const sebelum = rows;
+    setRows((cur) => cur.map((r) => {
+      const p = patch.find((x) => x.id === r.id);
+      return p ? { ...r, project_id: p.project_id, category_id: p.category_id, account_id: p.account_id } : r;
+    }));
+
+    let gagal = 0;
+    for (const p of patch) {
+      const { data, error: err } = await supabase.from('contents')
+        .update({ project_id: p.project_id, category_id: p.category_id, account_id: p.account_id })
+        .eq('id', p.id).select('id');
+      // RLS yang menolak lewat USING tidak memunculkan error, hanya 0 baris.
+      if (err || !data || data.length === 0) gagal++;
+    }
+    setPindahBusy(false);
+
+    if (gagal) {
+      setRows(sebelum);
+      flashToast(
+        gagal === patch.length
+          ? 'Tidak ada yang dipindah — wewenangmu tidak mencukupi, atau project tujuannya di luar jangkauanmu.'
+          : `${gagal} dari ${patch.length} brief gagal dipindah — semuanya dikembalikan.`,
+      );
+      load(true);
+      setPindahIds(null);
+      return;
+    }
+
+    const catatan: string[] = [];
+    if (rencanaPindah.katHilang) catatan.push(`${rencanaPindah.katHilang} kategori dikosongkan`);
+    if (rencanaPindah.akunHilang) catatan.push(`${rencanaPindah.akunHilang} akun dikosongkan`);
+    flashToast(
+      `${patch.length} brief pindah ke ${tujuan.name}`
+      + (catatan.length ? ` — ${catatan.join(', ')}.` : '.'),
+    );
+    setPindahIds(null);
+    setSelected([]);
+    load(true);
+  };
+
   const applyBulkStatus = async (target: ContentStatus) => {
     const chosen = rows.filter((r) => selected.includes(r.id));
     const boleh: ContentRow[] = [];
@@ -3398,6 +3517,21 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
               icon={ic('M9 9h12v12H9zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1')}
               onPick={() => { setCtxMenu(null); openDup([row]); }}
             />
+            {/* Pindah project = perubahan struktural, bukan penggarapan konten.
+                Digerbangi izin yang sama dengan policy contents_update di
+                database (konten_pindah_bebas), supaya tidak ada tombol yang
+                muncul lalu ditolak diam-diam. */}
+            {canAcc && (
+              <CtxItem
+                label={
+                  idsTautan.length > 1
+                    ? `Pindahkan ${idsTautan.length} brief ke project lain`
+                    : 'Pindahkan ke project lain'
+                }
+                icon={ic('M3 7h6l2 2h10v9a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 3l4 4-4 4')}
+                onPick={() => { setCtxMenu(null); setPindahTujuan(''); setPindahIds(idsTautan); }}
+              />
+            )}
             <CtxItem
               label="Buka Link Post"
               disabled={!isUrl(row.post_url)}
@@ -3613,6 +3747,88 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
       )}
 
       {/* Konfirmasi hapus konten — dipicu dari ikon sampah di kartu Board */}
+      {/* ---- Pindahkan brief ke project lain ---- */}
+      {pindahIds && rencanaPindah && (
+        <div className="overlay" onClick={(e) => e.target === e.currentTarget && !pindahBusy && setPindahIds(null)}>
+          <div className="modal" style={{ maxWidth: 460 }}>
+            <div className="modal-head">
+              <div>
+                <div className="modal-eyebrow"><span className="sq" style={{ background: 'var(--accent)' }} />Pindah project</div>
+                <div className="modal-title">
+                  {rencanaPindah.isi.length > 1
+                    ? `Pindahkan ${rencanaPindah.isi.length} brief`
+                    : 'Pindahkan 1 brief'}
+                </div>
+                <div className="modal-sub">
+                  {rencanaPindah.isi.length === 1
+                    ? plainTitle(rencanaPindah.isi[0].title) || '(tanpa judul)'
+                    : 'Judulnya, caption, link, dan PIC tidak berubah.'}
+                </div>
+              </div>
+              <button className="btn ghost modal-close" disabled={pindahBusy} onClick={() => setPindahIds(null)}>&#10005;</button>
+            </div>
+
+            <div style={{ padding: '16px 24px' }}>
+              <div className="field">
+                <label>Project tujuan</label>
+                <select
+                  value={pindahTujuan}
+                  disabled={pindahBusy}
+                  onChange={(e) => setPindahTujuan(e.target.value)}
+                >
+                  <option value="">— pilih project —</option>
+                  {projectTujuan.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {rencanaPindah.asalVertical.length > 1 && (
+                <p className="hint" style={{ color: 'var(--amber)', marginTop: 8 }}>
+                  Brief yang dipilih berasal dari lebih dari satu unit bisnis. Pastikan project
+                  tujuannya memang benar.
+                </p>
+              )}
+
+              {rencanaPindah.tujuan && (rencanaPindah.katHilang > 0 || rencanaPindah.akunHilang > 0) && (
+                <p className="hint" style={{ color: 'var(--amber)', marginTop: 10 }}>
+                  Yang ikut dikosongkan karena tidak berlaku di project tujuan:
+                  {rencanaPindah.katHilang > 0 && <> <b>{rencanaPindah.katHilang} kategori</b></>}
+                  {rencanaPindah.katHilang > 0 && rencanaPindah.akunHilang > 0 && ' dan'}
+                  {rencanaPindah.akunHilang > 0 && <> <b>{rencanaPindah.akunHilang} akun</b></>}.
+                  {' '}Tinggal diisi ulang setelah pindah.
+                </p>
+              )}
+
+              {rencanaPindah.tujuan && rencanaPindah.katHilang === 0 && rencanaPindah.akunHilang === 0 && (
+                <p className="hint" style={{ color: 'var(--green)', marginTop: 10 }}>
+                  Kategori dan akunnya tetap berlaku di project tujuan — tidak ada yang hilang.
+                </p>
+              )}
+
+              <p className="hint" style={{ marginTop: 10 }}>
+                Kategori terikat per project, dan akun media hanya berlaku di projectnya sendiri
+                (kecuali ditandai <b>akun umum</b>). Yang tidak berlaku dikosongkan supaya tidak
+                ada baris yang menunjuk data project lain. Perpindahan ini tercatat di Log Aktivitas.
+              </p>
+            </div>
+
+            <div className="modal-foot">
+              <div className="right">
+                <button className="btn" disabled={pindahBusy} onClick={() => setPindahIds(null)}>Batal</button>
+                <button
+                  className="btn primary"
+                  disabled={pindahBusy || !rencanaPindah.tujuan}
+                  onClick={applyPindahProject}
+                >
+                  {pindahBusy ? 'Memindahkan…' : 'Pindahkan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {delRow && (
         <div className="overlay" onClick={(e) => e.target === e.currentTarget && !delBusy && setDelRow(null)}>
           <div className="modal" style={{ maxWidth: 420 }}>
