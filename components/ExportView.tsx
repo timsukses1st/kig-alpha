@@ -742,28 +742,33 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
       return {
         name: m.sheet,
         columns: [
+          // Tiga kolom penjawab "kapan, siapa, berapa jam" ditaruh paling
+          // kiri, lalu LANGSUNG kolom centang per project.
+          //
+          // Sempat ditaruh di paling kanan, dan itu keliru: kolom Uraian
+          // selebar 52 membuatnya baru kelihatan setelah menggulir jauh,
+          // sampai dikira kolomnya tidak ada.
           { header: 'Tanggal Kerja', key: 'tanggal', width: 15 },
-          // Ringkasan yang enak dibaca. Untuk MENYARING, pakai kolom
-          // centang per project di sebelah kanan.
-          { header: 'Project', key: 'project', width: 40 },
           { header: 'Pengaju', key: 'pengaju', width: 22 },
+          { header: 'Durasi (jam)', key: 'durasi', width: 12 },
+          ...kolomProject.map((p) => ({
+            header: p.nama,
+            key: `pj_${p.id}`,
+            width: Math.min(24, Math.max(11, p.nama.length + 2)),
+          })),
           { header: 'Mulai', key: 'mulai', width: 10 },
           { header: 'Selesai', key: 'selesai', width: 10 },
           { header: 'Blok Jam', key: 'blok', width: 34 },
-          { header: 'Durasi (jam)', key: 'durasi', width: 12 },
           { header: 'Uraian', key: 'uraian', width: 52 },
           { header: 'Link Hasil', key: 'link', width: 40 },
           { header: 'Status', key: 'status', width: 13 },
           { header: 'Penyetuju', key: 'approver', width: 22 },
           { header: 'Diputus', key: 'diputus', width: 17 },
           { header: 'Alasan Ditolak', key: 'alasan', width: 30 },
-          // Kolom centang per project, ditaruh paling kanan supaya kolom
-          // pokoknya tetap terbaca tanpa menggulir jauh.
-          ...kolomProject.map((p) => ({
-            header: p.nama,
-            key: `pj_${p.id}`,
-            width: Math.min(28, Math.max(12, p.nama.length + 2)),
-          })),
+          // Ringkasan nama project dipisah koma. Enak dibaca dan berguna
+          // kalau dicetak, TAPI tidak bisa disaring — makanya ditaruh
+          // paling belakang supaya tidak tertukar dengan kolom centang.
+          { header: 'Semua Project (ringkasan)', key: 'project', width: 44 },
         ],
         rows: rows.map((r) => ({
           ...kolomProject.reduce(
