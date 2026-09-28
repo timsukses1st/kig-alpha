@@ -8,6 +8,7 @@ import {
   PARAM_TAUTAN_BOARD, pasangMatriks, timAkun, TUGAS, VERTICALS,
   type Account, type IzinBaris, type IzinTim, type Profile, type Project, type Vertical,
 } from '@/lib/types';
+import { VERSI, VERSI_ISI, VERSI_TANGGAL } from '@/lib/versi';
 import Login from '@/components/Login';
 import { AlphaBadge } from '@/components/Logo';
 import Board from '@/components/Board';
@@ -892,6 +893,28 @@ export default function App() {
               <button className="icon-btn" title="Keluar" onClick={logout}><LogoutIcon /></button>
             </div>
           )}
+
+          {/* Penanda versi build — alasan lengkapnya ada di lib/versi.ts.
+              Singkatnya: kalau build Vercel merah, Vercel TIDAK menurunkan
+              situsnya, dia tetap menyajikan deployment hijau terakhir. Jadi
+              situs terbuka normal dan satu-satunya gejala adalah "fitur
+              barunya kok belum ada". Angka di sini ikut terbawa ke dalam
+              bundel, jadi yang tampil adalah angka build yang SEDANG
+              disajikan — bukan angka commit terakhir di GitHub. */}
+          <div
+            title={`Alpha ${VERSI} — ${VERSI_TANGGAL}\n\n` + VERSI_ISI.map((s) => '• ' + s).join('\n')}
+            style={{
+              marginTop: 2,
+              fontSize: 10, lineHeight: 1.4, color: 'var(--text-3)',
+              textAlign: slim ? 'center' : 'left', cursor: 'help',
+              // Boleh diseleksi: kalau ada yang lapor lewat chat, nomornya
+              // bisa langsung disalin, tidak perlu diketik ulang.
+              userSelect: 'text',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}
+          >
+            {slim ? VERSI : `Alpha ${VERSI} · ${VERSI_TANGGAL}`}
+          </div>
         </div>
       </aside>
 
