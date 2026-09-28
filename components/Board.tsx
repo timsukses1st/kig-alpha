@@ -647,6 +647,30 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
    * Dipakai setiap kali menyimpan perubahan: kalau tidak, seluruh tabel
    * diganti tulisan "Memuat…" sepersekian detik dan terlihat berkedip.
    */
+  /**
+   * Penarikan data yang GAGAL tidak boleh mengosongkan layar.
+   *
+   * Sampai 28 Sep 2026 baris di bawah berbunyi `setRows(c.data || [])`.
+   * Waktu permintaan ditolak, `data` bernilai null — dan `|| []` menggantinya
+   * dengan daftar kosong. Jadi satu kegagalan sekejap mengosongkan seluruh
+   * papan, lintas project.
+   *
+   * Pemicunya ketahuan dari log Supabase: token akses punya masa berlaku, dan
+   * permintaan yang sudah terlanjur terbang saat token diganti pulang membawa
+   * 401. Dalam 24 jam tercatat 7 kali, mengenai `contents`, `projects`, dan
+   * `accounts` — persis keluhan Fiko "tiba-tiba hilang semua all project,
+   * ditunggu sebentar muncul lagi". Muncul lagi karena penarikan berikutnya
+   * sudah memakai token baru.
+   *
+   * Sekarang: yang gagal DIABAIKAN (data lama dipertahankan), lalu dicoba
+   * ulang otomatis. Layar tidak pernah kosong karena kegagalan.
+   */
+  const gagalMuat = useRef(0);
+  const [muatBermasalah, setMuatBermasalah] = useState(false);
+  const ulangRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadRef = useRef<((silent?: boolean) => void) | null>(null);
+  useEffect(() => () => { if (ulangRef.current) clearTimeout(ulangRef.current); }, []);
+
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     const [c, m, rq, cc] = await Promise.all([
@@ -661,12 +685,34 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
       supabase.from('content_requests').select('*').eq('status', 'pending').order('requested_date', { ascending: true }),
       supabase.from('content_categories').select('*').order('name'),
     ]);
-    setRows((c.data as ContentRow[]) || []);
-    setMembers((m.data as TeamMember[]) || []);
-    setRequests((rq.data as ContentRequest[]) || []);
-    setCategories((cc.data as ContentCategory[]) || []);
+    // `data` berisi [] kalau memang tidak ada isinya, dan null KALAU GAGAL —
+    // jadi pemeriksaan ini membedakan "kosong beneran" dari "gagal ambil".
+    if (c.data) setRows(c.data as ContentRow[]);
+    if (m.data) setMembers(m.data as TeamMember[]);
+    if (rq.data) setRequests(rq.data as ContentRequest[]);
+    if (cc.data) setCategories(cc.data as ContentCategory[]);
+
+    const gagal = !!(c.error || m.error || rq.error || cc.error);
+    if (gagal) {
+      // Dua kali percobaan ulang, jeda 1,5 detik. Pembaruan token biasanya
+      // rampung di bawah satu detik, jadi percobaan pertama hampir selalu
+      // sudah berhasil. Dibatasi supaya kalau memang jaringannya putus,
+      // Alpha tidak memanggil server terus-menerus.
+      setMuatBermasalah(true);
+      if (gagalMuat.current < 2) {
+        gagalMuat.current += 1;
+        if (ulangRef.current) clearTimeout(ulangRef.current);
+        ulangRef.current = setTimeout(() => { if (loadRef.current) loadRef.current(true); }, 1500);
+      }
+    } else {
+      gagalMuat.current = 0;
+      setMuatBermasalah(false);
+    }
+
     if (!silent) setLoading(false);
   }, []);
+
+  loadRef.current = load;
 
   useEffect(() => { load(); }, [load]);
 
@@ -2952,6 +2998,24 @@ export default function Board({ profile, accounts, projects, projectFilter, buka
               </div>
             </div>
           </div>
+
+          {muatBermasalah && (
+            <div
+              onClick={() => { gagalMuat.current = 0; load(true); }}
+              title="Data terakhir yang berhasil dimuat tetap ditampilkan — tidak ada yang hilang. Klik untuk mencoba lagi sekarang."
+              style={{
+                position: 'fixed', left: 16, bottom: adaPerubahan ? 64 : 16, zIndex: 91, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '9px 14px', borderRadius: 22, fontSize: 12.5,
+                background: 'var(--panel)', color: 'var(--text-2)',
+                border: '1px solid var(--amber)',
+                boxShadow: '0 10px 30px rgba(0,0,0,.45)',
+              }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--amber)' }} />
+              Gagal menyegarkan — yang tampil data terakhir. Mencoba lagi…
+            </div>
+          )}
 
           {adaPerubahan && (
             <div

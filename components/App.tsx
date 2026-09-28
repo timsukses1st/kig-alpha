@@ -477,20 +477,33 @@ export default function App() {
     setIzinVersi((v) => v + 1);
   }, []);
 
+  /**
+   * Penarikan data yang GAGAL tidak menimpa data lama.
+   *
+   * `data` berisi [] kalau memang kosong, dan null KALAU GAGAL. Pola lama
+   * `data || []` menyamakan keduanya, sehingga penolakan sekejap dari server
+   * mengosongkan daftar project di sidebar, daftar akun, bahkan profil.
+   *
+   * Log Supabase 28 Sep 2026 mencatat 401 pada `projects` dan `accounts`
+   * tepat di detik pembaruan token — itulah kenapa satu tim melapor
+   * "tiba-tiba hilang semua all project". Rinciannya di Board.tsx.
+   */
   const loadProfile = useCallback(async (userId: string) => {
     await loadMatriks();
-    const { data } = await supabase.from('profiles').select('*').eq('id', userId).single();
-    setProfile((data as Profile) || null);
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single();
+    // Profil gagal diambil TIDAK boleh jadi null: kalau null, seluruh
+    // wewenang runtuh dan tombol-tombol menghilang tanpa sebab yang jelas.
+    if (!error && data) setProfile(data as Profile);
   }, [loadMatriks]);
 
   const loadAccounts = useCallback(async () => {
     const { data } = await supabase.from('accounts').select('*').eq('is_active', true).order('handle');
-    setAccounts((data as Account[]) || []);
+    if (data) setAccounts(data as Account[]);
   }, []);
 
   const loadProjects = useCallback(async () => {
     const { data } = await supabase.from('projects').select('*').eq('is_active', true).order('name');
-    setProjects((data as Project[]) || []);
+    if (data) setProjects(data as Project[]);
   }, []);
 
   /** Vertical yang benar-benar dipakai saat menyimpan. Yang tidak bebas
