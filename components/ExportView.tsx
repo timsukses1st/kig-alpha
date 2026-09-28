@@ -699,14 +699,53 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
         })),
       };
 
-    case 'lembur':
+    case 'lembur': {
+      /**
+       * Satu KOLOM per project, isinya centang.
+       *
+       * Kolom "Project" yang berisi nama-nama dipisah koma tetap ada karena
+       * enak dibaca, TAPI tidak bisa disaring: penyaring Excel menganggap
+       * tiap gabungan sebagai satu nilai berbeda, jadi daftarnya penuh
+       * kombinasi seperti "Beautiful Pain, Bisikan Desa Gringsing, ..." dan
+       * mencari satu project jadi mustahil.
+       *
+       * Dengan satu kolom per project, penyaringnya cuma punya dua nilai
+       * (centang atau kosong) dan barisnya tetap SATU per pengajuan — jadi
+       * jam lembur tidak pernah terhitung dobel, beda dengan kalau tiap
+       * project dipecah jadi baris sendiri.
+       *
+       * Kolomnya hanya dibuat untuk project yang BENAR-BENAR muncul di data
+       * yang diekspor, bukan seluruh 38 project aktif. Kalau ekspornya sudah
+       * disaring ke satu project, kolomnya pun cuma satu.
+       */
+      const idProject: string[] = [];
+      for (const r of rows) {
+        const larik = Array.isArray(r.project_ids) ? (r.project_ids as string[]) : [];
+        const ids = larik.length ? larik : (r.project_id ? [r.project_id as string] : []);
+        for (let i = 0; i < ids.length; i++) {
+          if (ids[i] && idProject.indexOf(ids[i]) === -1) idProject.push(ids[i]);
+        }
+      }
+      // Diurutkan menurut nama supaya letak kolomnya tidak berubah-ubah
+      // tiap kali ekspor, dan gampang dicari dari kiri ke kanan.
+      const kolomProject = idProject
+        .map((id) => ({ id, nama: L.projName(id) }))
+        .filter((p) => !!p.nama)
+        .sort((a, b) => a.nama.localeCompare(b.nama));
+
+      const punyaProject = (r: Record<string, unknown>, id: string): boolean => {
+        const larik = Array.isArray(r.project_ids) ? (r.project_ids as string[]) : [];
+        const ids = larik.length ? larik : (r.project_id ? [r.project_id as string] : []);
+        return ids.indexOf(id) !== -1;
+      };
+
       return {
         name: m.sheet,
         columns: [
           { header: 'Tanggal Kerja', key: 'tanggal', width: 15 },
-          // Lebih lebar dari modul lain: satu lembur bisa mencantumkan
-          // belasan project, dan di data sekarang yang terbanyak 12.
-          { header: 'Project', key: 'project', width: 46 },
+          // Ringkasan yang enak dibaca. Untuk MENYARING, pakai kolom
+          // centang per project di sebelah kanan.
+          { header: 'Project', key: 'project', width: 40 },
           { header: 'Pengaju', key: 'pengaju', width: 22 },
           { header: 'Mulai', key: 'mulai', width: 10 },
           { header: 'Selesai', key: 'selesai', width: 10 },
@@ -718,8 +757,19 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
           { header: 'Penyetuju', key: 'approver', width: 22 },
           { header: 'Diputus', key: 'diputus', width: 17 },
           { header: 'Alasan Ditolak', key: 'alasan', width: 30 },
+          // Kolom centang per project, ditaruh paling kanan supaya kolom
+          // pokoknya tetap terbaca tanpa menggulir jauh.
+          ...kolomProject.map((p) => ({
+            header: p.nama,
+            key: `pj_${p.id}`,
+            width: Math.min(28, Math.max(12, p.nama.length + 2)),
+          })),
         ],
         rows: rows.map((r) => ({
+          ...kolomProject.reduce(
+            (acc, p) => { acc[`pj_${p.id}`] = punyaProject(r, p.id) ? '✓' : ''; return acc; },
+            {} as Record<string, string>,
+          ),
           tanggal: v(r, 'work_date'),
           // SELURUH project, bukan cuma yang pertama. Kolom `project_id`
           // hanya menyimpan pilihan pertama; yang benar ada di `project_ids`.
@@ -746,6 +796,7 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
           alasan: v(r, 'reject_reason'),
         })),
       };
+    }
 
     case 'budget':
       return {
