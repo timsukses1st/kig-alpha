@@ -184,7 +184,25 @@ export default function ExportView({ profile, projects, accounts, projectFilter 
       ? supabase.from(m.table).select('*', { count: 'exact', head: true })
       : supabase.from(m.table).select('*');
 
-    if (m.hasProject && projectId !== 'all') q = q.eq('project_id', projectId);
+    /**
+     * Lembur boleh mencantumkan BANYAK project sekaligus, disimpan di larik
+     * `project_ids`. Kolom `project_id` cuma menyimpan yang PERTAMA dipilih,
+     * warisan dari sebelum fitur banyak-project ada.
+     *
+     * Menyaring dengan `.eq('project_id', ...)` berarti lembur hanya ketemu
+     * lewat project pertamanya. Dari 556 pasangan lembur-project yang ada,
+     * 342 di antaranya TIDAK PERNAH muncul saat ekspor disaring per project.
+     * Jadi rekap jam per project selama ini kurang hitung, diam-diam.
+     *
+     * `.contains()` mencocokkan seluruh isi larik, jadi lembur ketemu lewat
+     * project keberapa pun. Modul lain tetap `.eq()` karena memang cuma
+     * punya satu project.
+     */
+    if (m.hasProject && projectId !== 'all') {
+      q = m.table === 'overtime_requests'
+        ? q.contains('project_ids', [projectId])
+        : q.eq('project_id', projectId);
+    }
 
     if (m.dateCol && bounds.from) {
       // created_at bertipe timestamp — batas atas ditambah satu hari penuh,
@@ -459,6 +477,29 @@ const ya = (x: unknown) => (x ? 'Ya' : 'Tidak');
  * Ditulis satu tautan per baris, bukan dipisah koma: koma membuat tautan
  * panjang saling menempel dan sulit disalin satu-satu.
  */
+/**
+ * Semua nama project sebuah lembur, dipisah koma.
+ *
+ * Baris lama yang dibuat sebelum fitur banyak-project ada hanya punya
+ * `project_id`, jadi itu dipakai sebagai cadangan. Lembur tanpa project
+ * sama sekali ditulis "— umum —", bukan dibiarkan kosong, supaya di Excel
+ * terbaca sebagai keputusan, bukan data yang bolong.
+ */
+function namaProjectLembur(
+  r: Record<string, unknown>,
+  projName: (id: string | null) => string,
+): string {
+  const larik = Array.isArray(r.project_ids) ? (r.project_ids as string[]) : [];
+  const ids = larik.length ? larik : (r.project_id ? [r.project_id as string] : []);
+  if (!ids.length) return '— umum —';
+  const nama: string[] = [];
+  for (let i = 0; i < ids.length; i++) {
+    const n = projName(ids[i]);
+    if (n && nama.indexOf(n) === -1) nama.push(n);
+  }
+  return nama.join(', ');
+}
+
 function tautanLembur(nilai: unknown): string {
   if (!Array.isArray(nilai) || !nilai.length) return '';
   return nilai
@@ -663,7 +704,9 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
         name: m.sheet,
         columns: [
           { header: 'Tanggal Kerja', key: 'tanggal', width: 15 },
-          { header: 'Project', key: 'project', width: 20 },
+          // Lebih lebar dari modul lain: satu lembur bisa mencantumkan
+          // belasan project, dan di data sekarang yang terbanyak 12.
+          { header: 'Project', key: 'project', width: 46 },
           { header: 'Pengaju', key: 'pengaju', width: 22 },
           { header: 'Mulai', key: 'mulai', width: 10 },
           { header: 'Selesai', key: 'selesai', width: 10 },
@@ -678,7 +721,11 @@ function sheetFor(m: ModuleDef, rows: Record<string, unknown>[], L: Lookups): Xl
         ],
         rows: rows.map((r) => ({
           tanggal: v(r, 'work_date'),
-          project: L.projName(r.project_id as string | null),
+          // SELURUH project, bukan cuma yang pertama. Kolom `project_id`
+          // hanya menyimpan pilihan pertama; yang benar ada di `project_ids`.
+          // 160 dari 259 lembur mencantumkan lebih dari satu project —
+          // terbanyak 12 — dan selama ini yang terekspor cuma satu.
+          project: namaProjectLembur(r, L.projName),
           pengaju: v(r, 'requester_name'),
           // Mulai/Selesai adalah SELUBUNG terluar. Untuk pengajuan berblok,
           // kolom "Blok Jam" di sebelahnya yang menyimpan jam sebenarnya.
