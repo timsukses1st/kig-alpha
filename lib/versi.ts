@@ -25,7 +25,7 @@
  */
 
 /** Nomor build. WAJIB naik setiap kirim berkas untuk deploy. */
-export const VERSI = 'v1';
+export const VERSI = 'v2';
 
 /** Tanggal build ini disiapkan. Ditampilkan di samping nomor. */
 export const VERSI_TANGGAL = '28 September 2026';
@@ -37,7 +37,7 @@ export const VERSI_TANGGAL = '28 September 2026';
  */
 export const VERSI_ISI = [
   'Penanda versi build dipasang (file ini + kaki sidebar)',
-  'Ekspor Lembur: project jadi kolom centang sendiri-sendiri',
+  'Board Pitching: tahap "Running" ditambahkan',
   'Ekspor: filter project pakai project_ids, tidak lagi kehilangan baris',
   'Board/Akses/Project: gagal muat tidak lagi mengosongkan layar',
 ];

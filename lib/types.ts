@@ -536,7 +536,7 @@ export function alamatTautanBoard(kode: string): string {
  * ------------------------------------------------------------------ */
 
 export type PitchStatus =
-  | 'listing' | 'deck_strategy' | 'offering' | 'waiting_confirm' | 'hold' | 'cancel';
+  | 'listing' | 'deck_strategy' | 'offering' | 'waiting_confirm' | 'running' | 'hold' | 'cancel';
 
 /**
  * Tahap pitching, urut sesuai jalannya penawaran.
@@ -551,6 +551,7 @@ export const PITCH_STATUS: { key: PitchStatus; label: string; color: string }[] 
   { key: 'deck_strategy',   label: 'Deck Strategy',   color: 'var(--accent)' },
   { key: 'offering',        label: 'Offering',        color: 'var(--amber)' },
   { key: 'waiting_confirm', label: 'Waiting Confirm', color: 'var(--st-review)' },
+  { key: 'running',         label: 'Running',         color: '#22c55e' },
   { key: 'hold',            label: 'Hold',            color: '#a78bfa' },
   { key: 'cancel',          label: 'Cancel',          color: 'var(--red)' },
 ];
@@ -559,8 +560,12 @@ export const pitchStatusDef = (k: string) =>
   PITCH_STATUS.find((s) => s.key === k) || { key: k as PitchStatus, label: k, color: 'var(--text-3)' };
 
 /** Tahap yang dianggap masih berjalan — dipakai menghitung nilai pipeline.
- *  Hold masih dihitung: ditahan bukan berarti batal. */
-export const PITCH_AKTIF: PitchStatus[] = ['listing', 'deck_strategy', 'offering', 'waiting_confirm', 'hold'];
+ *  Hold masih dihitung: ditahan bukan berarti batal.
+ *  Running juga dihitung: campaign-nya sudah jalan, jadi nilainya justru
+ *  yang paling pasti. Kalau nanti maunya pipeline hanya berisi yang BELUM
+ *  deal, keluarkan 'running' dari daftar ini — tapi siapkan dulu kartu
+ *  terpisah untuk nilainya, supaya angkanya tidak hilang begitu saja. */
+export const PITCH_AKTIF: PitchStatus[] = ['listing', 'deck_strategy', 'offering', 'waiting_confirm', 'running', 'hold'];
 
 export interface Pitch {
   id: string;
