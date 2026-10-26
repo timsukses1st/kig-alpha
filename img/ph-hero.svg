@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 700" width="1600" height="700">
+<defs>
+<linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#07243f"/><stop offset="55%" stop-color="#13537f"/>
+<stop offset="100%" stop-color="#062033"/></linearGradient>
+<radialGradient id="sg" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#ffb45c" stop-opacity=".9"/>
+<stop offset="40%" stop-color="#ffb45c" stop-opacity=".3"/>
+<stop offset="100%" stop-color="#ffb45c" stop-opacity="0"/></radialGradient>
+<linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#0e4e74" stop-opacity=".95"/>
+<stop offset="100%" stop-color="#05192a"/></linearGradient>
+</defs>
+<rect width="1600" height="700" fill="url(#lg)"/>
+<circle cx="1088" cy="301" r="322" fill="url(#sg)"/>
+<circle cx="1088" cy="301" r="52" fill="#ffb45c" opacity=".9"/>
+<path d="M0 365 C 224 321, 384 372, 592 353
+ C 736 337, 800 306, 912 337 L 912 700 L 0 700 Z"
+ fill="#051d31" opacity=".5"/>
+<path d="M1600 376 C 1488 333, 1376 380, 1248 361
+ L 1248 700 L 1600 700 Z" fill="#051d31" opacity=".66"/>
+<rect y="392" width="1600" height="308" fill="url(#ag)"/>
+<path d="M0 392 C 320 413, 560 378, 880 406
+ C 1200 427, 1440 385, 1600 413 L 1600 700 L 0 700 Z"
+ fill="#0e4e74" opacity=".5"/>
+<g stroke="#ffffff" stroke-linecap="round" fill="none" opacity=".2">
+<path d="M128 504 h176" stroke-width="5.6"/>
+<path d="M416 574 h256" stroke-width="5.6"/>
+<path d="M832 518 h208" stroke-width="5.6"/>
+<path d="M1120 602 h288" stroke-width="5.6"/>
+<path d="M224 644 h352" stroke-width="5.6"/>
+<path d="M720 672 h240" stroke-width="5.6"/>
+</g>
+<path d="M496 462 l160 0 l-19 35 l-122 0 Z" fill="#0a2033" opacity=".85"/><path d="M552 462 l0 -38 l48 38 Z" fill="#0a2033" opacity=".85"/>
+</svg>

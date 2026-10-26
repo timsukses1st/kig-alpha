@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="800" height="500">
+<defs>
+<linearGradient id="lg" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#0f2847"/><stop offset="55%" stop-color="#1d4478"/>
+<stop offset="100%" stop-color="#062033"/></linearGradient>
+<radialGradient id="sg" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#cbbaff" stop-opacity=".9"/>
+<stop offset="40%" stop-color="#cbbaff" stop-opacity=".3"/>
+<stop offset="100%" stop-color="#cbbaff" stop-opacity="0"/></radialGradient>
+<linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#2a4473" stop-opacity=".95"/>
+<stop offset="100%" stop-color="#05192a"/></linearGradient>
+</defs>
+<rect width="800" height="500" fill="url(#lg)"/>
+<circle cx="544" cy="215" r="230" fill="url(#sg)"/>
+<circle cx="544" cy="215" r="38" fill="#cbbaff" opacity=".9"/>
+<path d="M0 260 C 112 230, 192 266, 296 252
+ C 368 241, 400 218, 456 241 L 456 500 L 0 500 Z"
+ fill="#0a1f3a" opacity=".5"/>
+<path d="M800 269 C 744 238, 688 272, 624 258
+ L 624 500 L 800 500 Z" fill="#0a1f3a" opacity=".66"/>
+<rect y="280" width="800" height="220" fill="url(#ag)"/>
+<path d="M0 280 C 160 295, 280 270, 440 290
+ C 600 305, 720 275, 800 295 L 800 500 L 0 500 Z"
+ fill="#2a4473" opacity=".5"/>
+<g stroke="#ffffff" stroke-linecap="round" fill="none" opacity=".2">
+<path d="M64 360 h88" stroke-width="4.0"/>
+<path d="M208 410 h128" stroke-width="4.0"/>
+<path d="M416 370 h104" stroke-width="4.0"/>
+<path d="M560 430 h144" stroke-width="4.0"/>
+<path d="M112 460 h176" stroke-width="4.0"/>
+<path d="M360 480 h120" stroke-width="4.0"/>
+</g>
+
+</svg>

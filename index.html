@@ -1,0 +1,2182 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Tamperan Cruise — Pelayaran dari Pelabuhan Tamperan, Pacitan</title>
+<meta name="description" content="Pemesanan pelayaran wisata dari Pelabuhan Tamperan, Pacitan. Cruise Daily, Cruise PROMO, 1 Day Journey, 2 Day Journey.">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta name="theme-color" content="#0f2744">
+<style>
+:root{
+  /* Palet kontras-tinggi — halaman ini dibuka di dermaga, layar kena matahari.
+     Semua warna teks minimal 4,5:1 terhadap latarnya. */
+  --navy:#0f2744; --sea:#15688a; --sky:#d6ebf3; --ink:#0d1621; --muted:#475569;
+  --line:#9fb0c4; --bg:#f1f5f9; --card:#fff;
+  --ok:#15603a; --okbg:#d9f0e2; --warn:#7a4f06; --warnbg:#fbeccc;
+  --danger:#8f1d16; --dangerbg:#fbdcd9;
+  --garis-h:#7d90a9; --garis-v:#8b9db4;
+}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+     background:var(--bg);color:var(--ink)}
+.wrap{max-width:960px;margin:0 auto;padding:0 16px}
+.mono{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+
+/* ---------- bar ---------- */
+.bar{background:var(--navy);color:#fff;position:sticky;top:0;z-index:20}
+.bar .in{max-width:960px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:14px}
+.brand{font-weight:800;letter-spacing:.5px;font-size:15px;line-height:1.2}
+.brand small{display:block;font-weight:400;font-size:11px;color:#cfe4ef;letter-spacing:.2px}
+.bar a{color:#cfe4ef;font-size:13.5px;text-decoration:none;border:1px solid #39618a;
+  padding:6px 12px;border-radius:8px;white-space:nowrap}
+.bar a:hover{background:#1b3a5c;color:#fff}
+
+/* ---------- hero ---------- */
+.hero{background:linear-gradient(180deg,#0f2744 0%,#164063 100%);color:#fff;padding:46px 0 40px}
+.hero h1{font-size:33px;line-height:1.2;letter-spacing:-.8px;margin:0 0 10px}
+.hero p{font-size:16.5px;color:#d3e6f2;margin:0 0 20px;max-width:620px}
+.hero .fakta{display:flex;flex-wrap:wrap;gap:9px}
+.fak{background:#1b3a5c;border:1px solid #39618a;border-radius:99px;padding:6px 14px;font-size:13px;color:#e4f1f8}
+
+/* ---------- umum ---------- */
+h2{font-size:22px;letter-spacing:-.4px;margin:34px 0 4px}
+.sub{color:var(--muted);font-size:14.5px;margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;
+  margin-bottom:14px;box-shadow:0 1px 2px rgba(15,39,68,.06)}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+
+/* ---------- produk ---------- */
+.prod{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;
+  box-shadow:0 1px 2px rgba(15,39,68,.06);display:flex;flex-direction:column}
+.prod h3{margin:0 0 4px;font-size:17px}
+.prod .ket{color:var(--muted);font-size:14px;margin:0 0 14px;flex:1}
+.prod .harga{font-size:21px;font-weight:800;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.prod .per{font-size:12.5px;color:var(--muted);font-weight:400}
+.prod .dua{font-size:13.5px;color:var(--muted);margin-top:3px}
+
+/* ---------- pil ---------- */
+.pill{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.3px;
+  padding:2px 8px;border-radius:99px;white-space:nowrap;border:1px solid;vertical-align:middle}
+.p-ok{background:var(--okbg);color:var(--ok);border-color:#a7d8bd}
+.p-warn{background:var(--warnbg);color:var(--warn);border-color:#e0bf7a}
+.p-sea{background:var(--sky);color:var(--sea);border-color:#a4cbdc}
+.p-dang{background:var(--dangerbg);color:var(--danger);border-color:#e3a8a2}
+.p-mute{background:#e2e8f0;color:var(--muted);border-color:#b6c2d1}
+
+/* ---------- form ---------- */
+.fld{margin-bottom:13px}
+label{display:block;font-size:13px;font-weight:700;color:#1e293b;margin-bottom:5px}
+input,select,textarea{width:100%;font:inherit;font-size:15px;padding:9px 11px;
+  border:1.5px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--sea);outline-offset:1px;border-color:var(--sea)}
+input:disabled,select:disabled{background:#eef2f7;color:var(--muted)}
+.hint{font-size:12.5px;color:var(--muted);margin-top:4px}
+.btn{font:inherit;font-weight:700;font-size:15px;padding:11px 20px;border-radius:9px;cursor:pointer;
+  background:var(--sea);color:#fff;border:1.5px solid var(--sea)}
+.btn:hover{filter:brightness(.93)}
+.btn:disabled{opacity:.55;cursor:not-allowed}
+.btn.ghost{background:#fff;color:var(--sea)}
+.btn.wa{background:#0f7a44;border-color:#0f7a44}
+.btn.blok{display:block;width:100%;text-align:center;text-decoration:none}
+.seg{display:flex;gap:0;border:1.5px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{flex:1;font:inherit;font-size:14px;font-weight:700;padding:10px 8px;border:0;cursor:pointer;
+  background:#fff;color:var(--muted)}
+.seg button.on{background:var(--sea);color:#fff}
+.seg button+button{border-left:1.5px solid var(--line)}
+
+/* ---------- catatan ---------- */
+.note{background:var(--sky);border-left:4px solid var(--sea);border-radius:0 8px 8px 0;
+  padding:12px 14px;font-size:14px;margin:14px 0;color:#12405a}
+.note b{display:block;margin-bottom:3px;color:#0d2e42}
+.note.w{background:var(--warnbg);border-left-color:#c08a1e;color:#5d3c05}
+.note.w b{color:#452c03}
+.note.d{background:var(--dangerbg);border-left-color:var(--danger);color:#6d1711}
+.note.d b{color:#52110d}
+
+/* ---------- tabel penumpang ---------- */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#1e293b;
+  font-weight:700;background:#dde6f0;padding:8px;border-bottom:2px solid #475569;white-space:nowrap}
+td{padding:7px 8px;border-bottom:1.5px solid var(--garis-h);vertical-align:middle}
+th+th,td+td{border-left:1.5px solid var(--garis-v)}
+tr:last-child td{border-bottom:0}
+td input,td select{padding:6px 8px;font-size:14px}
+.scrollx{overflow-x:auto}
+
+/* ---------- ringkasan ---------- */
+.rk{display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:15px;
+  border-bottom:1px solid #dbe3ec}
+.rk:last-child{border-bottom:0;font-weight:800;font-size:18px;padding-top:11px}
+.rk span:last-child{font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* ---------- lain ---------- */
+
+html{scroll-padding-top:60px}
+
+/* ====================================================================
+   LAYAR SEMPIT (HP)
+   --------------------------------------------------------------------
+   Sebelum ini halaman tidak punya satu pun @media query — semua ukuran
+   dibuat untuk desktop. Di iPhone 16 (393px) akibatnya: merek pecah jadi
+   tiga baris, header menempel setinggi ~160px, dan isi di bawahnya
+   tertutup header karena header-nya position:sticky.
+
+   Yang diperbaiki di sini: tinggi header, ukuran huruf judul, dan jarak
+   kartu. Bukan menyembunyikan sesuatu — semua isinya tetap ada.
+   ==================================================================== */
+@media (max-width: 640px){
+  /* --- header: BENAR-BENAR satu baris ---
+     Header ini position:sticky, jadi tingginya dibayar terus-menerus: tiap
+     piksel header menutupi isi di bawahnya sepanjang halaman digulir. Di 393px
+     merek aslinya pecah 2 baris + keterangan 1 baris = ~85px. Keterangan
+     lokasinya disembunyikan karena hero di bawahnya sudah menyebut hal yang
+     sama, dan merek dipaksa satu baris. Hasilnya ~44px. */
+  .bar .in{padding:7px 12px;gap:8px;flex-wrap:nowrap}
+  /* Nama merek TIDAK dipotong: label tombol yang dipendekkan (lihat .sempit).
+     Merek terpotong jadi "THE TAMPERAN CRU..." lebih buruk daripada tombol
+     berbunyi "Pesan" saja. */
+  .brand{font-size:11.5px;letter-spacing:.2px;line-height:1.2;white-space:nowrap;flex:0 0 auto}
+  /* Kekhususan sengaja dinaikkan dengan .bar: aturan global .sempit{display:none}
+     letaknya SESUDAH blok @media ini di dalam berkas, jadi kalau selektornya
+     sama-sama satu kelas, yang global menang dan tombolnya jadi kosong
+     melompong. Ketahuan waktu dilihat, bukan waktu ditulis. */
+  .bar .lebar{display:none}
+  .bar .sempit{display:inline}
+  .brand small{display:none}
+  .bar a,#tombol-tutor{font-size:12px;padding:6px 9px;flex:0 0 auto}
+  #tombol-tutor{margin-left:auto}
+
+  /* --- hero: judul jangan sampai memakan satu layar penuh --- */
+  .hero{padding:26px 0 24px}
+  .hero h1{font-size:25px;letter-spacing:-.4px}
+  .hero p{font-size:15px;margin-bottom:16px}
+  .fak{font-size:12px;padding:5px 11px}
+
+  /* --- isi --- */
+  .wrap{padding:0 12px}
+  h2{font-size:19px;margin:24px 0 4px}
+  .sub{font-size:13.5px}
+  .card{padding:14px;border-radius:11px}
+  .grid{gap:11px}
+  .fld{margin-bottom:11px}
+
+  /* Tombol utama dibuat selebar layar: di HP, tombol kecil di tengah
+     kartu gampang meleset ditekan jempol. */
+  .btn{width:100%;padding:13px 16px;font-size:15.5px}
+  /* kecuali tombol yang memang berpasangan di satu baris */
+  .sel2 .btn,.bar .btn{width:auto}
+
+  /* Jangkar #pesan jangan berhenti di balik header yang menempel. */
+  :target{scroll-margin-top:56px}
+}
+
+/* Layar sangat sempit (<=360px): tombol dikecilkan lagi supaya nama
+   mereknya tidak ikut terpotong elipsis. */
+@media (max-width: 360px){
+  .brand{font-size:11px}
+  .bar a,#tombol-tutor{font-size:11px;padding:5px 7px}
+  .bar .in{gap:6px;padding:7px 10px}
+}
+
+.pesan{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:50;max-width:92vw;
+  background:var(--navy);color:#fff;padding:12px 18px;border-radius:10px;font-size:14.5px;
+  box-shadow:0 6px 22px rgba(15,39,68,.3);display:none}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid #fff6;border-top-color:#fff;
+  border-radius:50%;animation:p .7s linear infinite;vertical-align:-2px}
+@keyframes p{to{transform:rotate(360deg)}}
+footer{margin-top:40px;padding:22px 0 40px;border-top:1px solid var(--line);
+  color:var(--muted);font-size:13px;text-align:center}
+.sembunyi{display:none}
+.sempit{display:none}
+
+/* ================= TUTORIAL HALAMAN PEMESANAN =================
+   Pola yang sama dengan dashboard: satu kotak transparan di atas bagian yang
+   dijelaskan, sisanya digelapkan. Tidak menyentuh tata letak asli. */
+.tutor-sorot{position:absolute;z-index:9998;border-radius:10px;pointer-events:none;
+  box-shadow:0 0 0 9999px rgba(8,20,36,.66), 0 0 0 3px var(--sea) inset;
+  transition:top .22s, left .22s, width .22s, height .22s}
+.tutor-kartu{position:absolute;z-index:9999;width:320px;max-width:calc(100vw - 28px);
+  background:#fff;border:1.5px solid var(--sea);border-radius:12px;padding:15px 16px 13px;
+  box-shadow:0 12px 34px rgba(8,20,36,.34)}
+.tutor-kartu .tt{font-weight:800;font-size:16px;color:var(--navy);margin-bottom:5px}
+.tutor-kartu .ts{font-size:14px;line-height:1.5;color:#334155}
+.tutor-kartu .tnum{font-size:11px;font-weight:700;color:var(--sea);letter-spacing:.4px;
+  text-transform:uppercase;margin-bottom:7px}
+.tutor-kaki{display:flex;gap:8px;align-items:center;margin-top:13px}
+.tutor-kaki .lewati{margin-right:auto;background:none;border:0;font:inherit;font-size:12.5px;
+  color:var(--muted);cursor:pointer;text-decoration:underline;padding:0}
+.tutor-btn{font:inherit;font-size:13.5px;font-weight:700;padding:8px 16px;border-radius:8px;
+  cursor:pointer;background:var(--sea);color:#fff;border:1.5px solid var(--sea)}
+.tutor-btn.ghost{background:#fff;color:var(--sea)}
+/* Tombol 'menunggu': terlihat belum bisa dipakai, tapi tetap bisa diklik supaya
+   bisa memberi penjelasan kenapa belum bisa lanjut. */
+.tutor-btn.nunggu{background:#e2e8f0;color:#64748b;border-color:#cbd5e1;cursor:help}
+.tutor-btn:disabled{opacity:.45;cursor:not-allowed}
+.tutor-titik{display:flex;gap:4px;margin-top:11px}
+.tutor-titik i{width:6px;height:6px;border-radius:50%;background:#cbd5e1;display:block}
+.tutor-titik i.on{background:var(--sea);width:16px;border-radius:3px}
+/* Tombol tutorial di bar atas, dibedakan dari tombol Pesan sekarang */
+#tombol-tutor{color:#cfe4ef;font-size:13.5px;text-decoration:none;border:1px solid #39618a;
+  padding:6px 12px;border-radius:8px;white-space:nowrap;cursor:pointer;background:none;
+  font-family:inherit}
+#tombol-tutor:hover{background:#1b3a5c;color:#fff}
+.kode-besar{font-size:30px;font-weight:800;letter-spacing:1px}
+
+/* ---------- Timeline status pesanan ----------
+   Acuan: halaman status Suroboyo Mlayu Bengi. Tujuannya satu — pemesan tahu
+   dia ada di langkah mana dan apa yang ditunggu, tanpa bertanya ke agen. */
+.tl{list-style:none;margin:0;padding:0}
+.tl li{display:flex;gap:14px;padding:0 0 20px;position:relative}
+.tl li:last-child{padding-bottom:0}
+/* Garis penyambung ditarik dari titik ke titik berikutnya, bukan sepanjang li,
+   supaya tidak menggantung di bawah langkah terakhir. */
+.tl li:not(:last-child)::before{content:'';position:absolute;left:10px;top:22px;bottom:2px;
+  width:2px;background:var(--line)}
+.tl li.done:not(:last-child)::before{background:var(--ok)}
+.tl .dot{width:22px;height:22px;border-radius:50%;flex:none;border:2px solid var(--line);
+  background:#fff;position:relative;z-index:1}
+.tl li.done .dot{background:var(--ok);border-color:var(--ok)}
+.tl li.done .dot::after{content:'✓';position:absolute;inset:0;display:flex;align-items:center;
+  justify-content:center;color:#fff;font-size:12px;font-weight:800;line-height:1}
+.tl li.now .dot{border-color:var(--sea);border-width:3px;
+  box-shadow:0 0 0 4px rgba(21,104,138,.18)}
+.tl li.batal .dot{background:var(--danger);border-color:var(--danger)}
+.tl li.batal .dot::after{content:'×';position:absolute;inset:0;display:flex;align-items:center;
+  justify-content:center;color:#fff;font-size:15px;font-weight:800;line-height:1}
+.tl .tt{font-weight:700;font-size:15px;line-height:1.3}
+.tl li:not(.done):not(.now):not(.batal) .tt{color:var(--muted);font-weight:600}
+.tl .st{font-size:13px;color:var(--muted);margin-top:2px}
+
+/* Daftar peserta di halaman status */
+.pst{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #dbe3ec}
+.pst:last-child{border-bottom:0}
+.pst .no{width:26px;height:26px;border-radius:50%;background:#e2e8f0;color:var(--muted);
+  font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+.pst.naik .no{background:var(--okbg);color:var(--ok)}
+
+/* ====================================================================
+   TAMPILAN BARU — BAGIAN JUALAN
+   --------------------------------------------------------------------
+   KENAPA HANYA SEBAGIAN YANG GELAP
+   Halaman ini dulu sengaja dibuat terang seluruhnya, dan alasannya masih
+   berlaku: dibuka di dermaga, layar kena matahari langsung. Tema gelap
+   penuh akan melawan alasan itu justru di tempat yang paling butuh
+   terbaca — kolom nama, NIK, dan tabel penumpang.
+
+   Jadi halaman dibelah menurut pekerjaannya:
+     - bagian JUALAN (hero + kartu paket) gelap dan berfoto; tugasnya
+       menarik perhatian, dibaca sekilas, hurufnya besar-besar
+     - bagian ISIAN (formulir, tabel penumpang, ringkasan, halaman status)
+       tetap terang dengan kontras tinggi; tugasnya dibaca teliti dan
+       diketik, sering sambil berdiri di bawah matahari
+   Pembatasnya kelas .band — semua yang gelap ada di dalamnya.
+
+   SOAL FOTO
+   Tidak ada satu pun foto yang wajib ada. Tiap tempat foto diisi dua
+   lapisan: url foto asli di atas, gambar cadangan .svg buatan sendiri di
+   bawah. Kalau fotonya belum diunggah, lapisan atasnya gagal dimuat dan
+   browser langsung memakai lapisan bawahnya — tidak pernah tampil kotak
+   kosong atau ikon gambar rusak. Lihat img/CARA-GANTI-FOTO.md.
+   ==================================================================== */
+:root{
+  --band:#081d33;          /* latar paling gelap */
+  --band2:#0e3152;         /* latar gelap kedua  */
+  --cyan:#49c0e8;          /* aksen terang di atas gelap */
+  --band-teks:#dceaf4;     /* teks biasa di atas gelap (kontras 11:1) */
+  --band-redup:#9db8cd;    /* teks sekunder di atas gelap (kontras 5,6:1) */
+}
+
+/* ---------- pita atas: tembus pandang di atas hero ---------- */
+.bar{background:rgba(8,29,51,.82);-webkit-backdrop-filter:saturate(1.6) blur(10px);
+  backdrop-filter:saturate(1.6) blur(10px);border-bottom:1px solid rgba(255,255,255,.09)}
+.bar .in{gap:12px}
+.brand{display:flex;align-items:center;gap:10px}
+/* Lambang kapal dari favicon dipakai ulang; kalau berkasnya tidak ada,
+   yang hilang cuma gambarnya, tulisannya tetap utuh. */
+.brand .logo{width:30px;height:30px;flex:none;border-radius:8px;
+  background:url('/favicon.svg') center/22px no-repeat,
+             linear-gradient(135deg,#17618d,#0d3a5c);
+  border:1px solid rgba(255,255,255,.18)}
+.bar a,#tombol-tutor{border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.06)}
+.bar a:hover,#tombol-tutor:hover{background:rgba(73,192,232,.18);border-color:var(--cyan)}
+/* Tombol ajakan utama dibedakan: isi penuh, bukan garis saja. */
+#tombol-pesan{background:var(--sea);border-color:var(--sea);color:#fff;font-weight:700}
+#tombol-pesan:hover{background:#1b7fa8;border-color:#1b7fa8;color:#fff}
+
+/* ---------- hero berfoto ---------- */
+.hero{position:relative;padding:0;background:var(--band);overflow:hidden;
+  /* pita atas menempel dan tembus pandang, jadi hero diberi ruang di dalam */
+  margin-top:-57px;padding-top:57px}
+/* TITIK FOKUS FOTO — kenapa 72% mendatar, bukan tengah
+   Pada foto hero Tamperan, kapalnya ada di sisi KANAN dan langit/laut yang
+   polos di sisi kiri. Karena judul jatuh di kiri, fotonya digeser supaya
+   yang tertinggal di belakang judul adalah bagian polosnya. Waktu masih
+   'center', judulnya menabrak penumpang dan tulisan di lambung kapal —
+   dua tulisan bertumpuk, dan ketahuan waktu dilihat, bukan waktu ditulis. */
+.hero .latar{position:absolute;inset:0;
+  background-image:url('/img/hero.jpg'),url('/img/ph-hero.svg');
+  background-size:cover;background-position:72% 52%;background-repeat:no-repeat}
+/* Tiga lapisan peneduh:
+     1. dari kiri   — menjamin judul terbaca di atas bagian foto seterang apa pun
+     2. dari atas   — supaya pita atas yang tembus pandang tidak melayang
+     3. dari bawah  — menyatukan hero dengan pita gelap berikutnya tanpa garis
+   Lapisan kiri sengaja dibuat lebih gelap dan lebih lebar daripada versi
+   pertama: di layar sempit, judul dua baris melebar sampai ~60% lebar layar,
+   jadi peneduh yang cuma sampai 42% tidak menutupi seluruh teks. */
+.hero .tudung{position:absolute;inset:0;
+  background:
+    linear-gradient(100deg,rgba(5,19,33,.94) 0%,rgba(5,19,33,.86) 30%,
+      rgba(5,19,33,.62) 58%,rgba(5,19,33,.18) 82%,rgba(5,19,33,.35) 100%),
+    linear-gradient(180deg,rgba(5,19,33,.55) 0%,rgba(5,19,33,0) 22%),
+    linear-gradient(0deg,var(--band) 1%,rgba(8,29,51,0) 38%)}
+.hero .wrap{position:relative;z-index:1;padding-top:58px;padding-bottom:58px}
+.hero .tagline{display:inline-flex;align-items:center;gap:8px;font-size:12px;font-weight:700;
+  letter-spacing:1.4px;text-transform:uppercase;color:var(--cyan);margin:0 0 14px;
+  background:rgba(73,192,232,.12);border:1px solid rgba(73,192,232,.35);
+  padding:5px 13px;border-radius:99px}
+.hero h1{font-size:clamp(30px,5.4vw,52px);line-height:1.08;letter-spacing:-1.6px;
+  margin:0 0 14px;max-width:16ch;text-shadow:0 2px 22px rgba(0,0,0,.45)}
+.hero h1 .sorot{color:var(--cyan)}
+.hero p{font-size:clamp(15px,1.7vw,18px);color:var(--band-teks);max-width:54ch;
+  margin:0 0 24px;text-shadow:0 1px 12px rgba(0,0,0,.4)}
+/* Chip keunggulan: ikon + dua baris teks, bukan sekadar pil polos. */
+.hero .fakta{gap:10px}
+.fak{display:inline-flex;align-items:center;gap:10px;text-align:left;line-height:1.25;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.17);
+  border-radius:13px;padding:9px 14px;color:#fff;font-size:13px;
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.fak b{display:block;font-size:13px}
+.fak span{display:block;font-size:11.5px;color:var(--band-redup);font-weight:400}
+.fak svg{width:19px;height:19px;flex:none;color:var(--cyan)}
+
+/* ---------- pita gelap pembungkus bagian paket ---------- */
+.band{background:
+    radial-gradient(1100px 420px at 78% -12%,rgba(73,192,232,.16),transparent 62%),
+    radial-gradient(760px 420px at 4% 108%,rgba(21,104,138,.22),transparent 60%),
+    var(--band);
+  color:var(--band-teks);padding:8px 0 44px;margin-bottom:34px}
+.band h2{color:#fff;margin-top:30px}
+.band .sub{color:var(--band-redup)}
+/* Judul bagian dengan garis aksen pendek di kiri, bukan ikon */
+.band h2::before{content:'';display:inline-block;width:4px;height:20px;border-radius:2px;
+  background:var(--cyan);margin-right:11px;vertical-align:-3px}
+
+/* ---------- kartu paket berfoto ---------- */
+.band .g2{grid-template-columns:repeat(auto-fit,minmax(224px,1fr))}
+.prod{background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.13);
+  border-radius:16px;padding:0;overflow:hidden;color:var(--band-teks);
+  box-shadow:0 10px 30px rgba(0,0,0,.28);
+  transition:transform .18s ease, border-color .18s ease, box-shadow .18s ease}
+.prod:hover{transform:translateY(-4px);border-color:rgba(73,192,232,.5);
+  box-shadow:0 16px 40px rgba(0,0,0,.4)}
+.prod .foto{position:relative;aspect-ratio:16/10;background-size:cover;
+  background-position:center;background-repeat:no-repeat;
+  border-bottom:1px solid rgba(255,255,255,.1)}
+.prod .foto::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(0deg,rgba(8,29,51,.78) 0%,rgba(8,29,51,.08) 55%)}
+.prod .lencana{position:absolute;top:10px;right:10px;z-index:2;font-size:10px;font-weight:800;
+  letter-spacing:.8px;padding:4px 10px;border-radius:99px;background:var(--cyan);
+  color:#06293c;border:0;box-shadow:0 2px 10px rgba(0,0,0,.3)}
+.prod .isi{padding:14px 15px 15px;display:flex;flex-direction:column;flex:1}
+.prod h3{margin:0 0 5px;font-size:16.5px;color:#fff;letter-spacing:-.2px}
+.prod .ket{color:var(--band-redup);font-size:13.5px;margin:0 0 14px;flex:1}
+.prod .kaki{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+.prod .harga{font-size:20px;font-weight:800;letter-spacing:-.6px;color:#fff}
+.prod .per{font-size:12px;color:var(--band-redup);font-weight:400;display:block;margin-top:1px}
+/* Tombol panah: penanda bahwa kartunya bisa ditekan untuk memilih paket. */
+.prod .go{width:34px;height:34px;border-radius:50%;flex:none;border:1px solid rgba(73,192,232,.45);
+  background:rgba(73,192,232,.14);color:var(--cyan);display:flex;align-items:center;
+  justify-content:center;font-size:17px;line-height:1;cursor:pointer;font-family:inherit;
+  transition:background .16s ease,color .16s ease}
+.prod .go:hover{background:var(--cyan);color:#06293c}
+/* Kartu paket yang sedang terpilih di formulir ditandai, supaya jelas
+   hubungan antara kartu di atas dan pilihan di bawah. */
+.prod.pilih{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan),0 16px 40px rgba(0,0,0,.4)}
+.prod.pilih .go{background:var(--cyan);color:#06293c}
+
+/* Pil di dalam pita gelap perlu versi sendiri — warna aslinya dibuat untuk
+   latar putih dan nyaris tidak terbaca di atas navy. */
+.band .pill{border:0}
+.band .p-ok{background:rgba(73,230,160,.17);color:#7df0bb}
+.band .p-sea{background:rgba(73,192,232,.18);color:#9fe0f7}
+
+/* ---------- bagian isian tetap terang ---------- */
+/* Latar halaman diberi semburat biru tipis supaya tidak terasa patah dari
+   pita gelap di atasnya, tapi kartunya tetap putih bersih. */
+body{background:
+  radial-gradient(900px 360px at 50% 0,rgba(21,104,138,.09),transparent 70%),
+  var(--bg);background-attachment:fixed}
+#form-area h2,#hasil h2{scroll-margin-top:70px}
+/* Kartu isian sedikit diangkat supaya terbaca sebagai lembar kerja */
+#form-area .card{box-shadow:0 2px 10px rgba(15,39,68,.07)}
+
+/* ---------- layar sempit ---------- */
+@media (max-width:640px){
+  .hero{margin-top:-45px;padding-top:45px}
+  .hero .wrap{padding-top:34px;padding-bottom:40px}
+  .hero h1{letter-spacing:-.9px;max-width:none}
+  /* Di layar sempit fotonya dipotong jauh lebih sempit — yang terlihat cuma
+     sekitar separuh lebarnya. Pada foto Tamperan, kapal menempati sisi KANAN
+     (kira-kira 40%-90% lebar foto) dan sisi kiri berisi laut, karang, dan
+     matahari. Karena judul menutupi hampir seluruh lebar layar di sini,
+     yang ditampilkan justru sisi KIRI supaya di belakang teks ada laut dan
+     langit, bukan badan kapal beserta tulisan di lambungnya.
+     Percobaan pertama memakai 84% — itu arah yang keliru, justru kapalnya
+     yang ditarik ke tengah. Ketahuan waktu dilihat. */
+  .hero .latar{background-position:16% 50%}
+  /* Dan peneduhnya dipertegas: di 393px, judul dua baris menutupi hampir
+     seluruh lebar, jadi gradien mendatar saja tidak cukup. */
+  .hero .tudung{background:
+    linear-gradient(180deg,rgba(5,19,33,.72) 0%,rgba(5,19,33,.52) 46%,
+      rgba(5,19,33,.66) 72%,var(--band) 99%)}
+  .brand .logo{width:26px;height:26px;background-size:19px}
+  .band{padding-bottom:30px;margin-bottom:24px}
+  .band h2{margin-top:22px}
+  .band h2::before{height:17px;width:3px;margin-right:9px}
+  /* Dua kartu per baris di HP: satu kartu per baris membuat daftar paket
+     jadi sangat panjang dan harga paket terakhir tidak pernah terlihat
+     tanpa menggulir jauh. */
+  .band .g2{grid-template-columns:repeat(2,1fr);gap:10px}
+  .prod .isi{padding:11px 12px 12px}
+  .prod h3{font-size:14px}
+  .prod .ket{font-size:12px;margin-bottom:10px}
+  .prod .harga{font-size:16px;letter-spacing:-.4px}
+  .prod .go{width:29px;height:29px;font-size:15px}
+  .fak{padding:8px 11px;font-size:12px;gap:8px}
+  .fak b{font-size:12px}
+  .fak span{font-size:11px}
+  .fak svg{width:17px;height:17px}
+}
+@media (max-width:360px){
+  /* Di bawah 360px dua kolom membuat harga terpotong — kembali satu kolom. */
+  .band .g2{grid-template-columns:1fr}
+  .prod .foto{aspect-ratio:16/7}
+}
+
+/* Hormati pengguna yang mematikan animasi di setelan perangkatnya. */
+@media (prefers-reduced-motion:reduce){
+  .prod,.prod .go{transition:none}
+  .prod:hover{transform:none}
+}
+
+/* ====================================================================
+   TATA LETAK BERSIRIP — mengikuti rancangan yang Mas Dik kirim
+   --------------------------------------------------------------------
+   DUA HAL DI RANCANGAN ITU SENGAJA TIDAK DISALIN MENTAH
+
+   1. Isi sidebar. Di rancangan isinya Beranda / Pesanan / Laporan /
+      Pelanggan / Pengaturan — itu menu DASHBOARD INTERNAL. Pelanggan tidak
+      punya halaman "Laporan" maupun "Pelanggan"; kalau disalin apa adanya
+      hasilnya empat tautan mati di halaman publik. Jadi bentuknya diikuti,
+      isinya diganti yang memang ada: Beranda, Paket, Pesan, Cek status.
+      Semuanya jangkar ke bagian yang benar-benar ada di halaman ini.
+
+   2. Baris pemesanan satu baris. Di rancangan cuma tanggal + jumlah orang
+      + Kirim. Formulir sungguhan butuh kode agen, paket, voucher, add-on,
+      nama per penumpang, NIK, alamat KTP, dan nomor cadangan — tidak
+      mungkin muat satu baris, dan memaksakannya berarti menyembunyikan
+      kolom yang wajib. Jadi baris itu dibuat sebagai PINTU CEPAT: isinya
+      disalin ke formulir lengkap lalu halaman meluncur ke sana.
+
+   KOLOM ISIAN TETAP PUTIH
+   Latarnya sekarang gelap semua mengikuti rancangan, tapi kotak tempat
+   mengetik (input, select, textarea) tetap putih. Alasannya sama dengan
+   sebelumnya dan tidak berubah: halaman ini diisi sambil berdiri di
+   dermaga, dan teks gelap di atas putih jauh lebih terbaca di bawah
+   matahari daripada teks terang di atas gelap. Jadi yang gelap bingkainya,
+   bukan tempat menulisnya.
+   ==================================================================== */
+.cangkang{display:flex;align-items:flex-start;min-height:100vh}
+.kolom{flex:1;min-width:0;position:relative}
+
+/* ---------- sirip kiri ---------- */
+.rusuk{display:none}
+.rusuk .merek{display:flex;flex-direction:column;align-items:center;text-align:center;
+  padding:22px 18px 20px;border-bottom:1px solid rgba(255,255,255,.09)}
+.rusuk .merek .logo{width:54px;height:54px;border-radius:14px;margin-bottom:10px;
+  background:url('/favicon.svg') center/40px no-repeat,
+             linear-gradient(135deg,#17618d,#0d3a5c);
+  border:1px solid rgba(255,255,255,.18)}
+.rusuk .merek b{font-size:13.5px;letter-spacing:.6px;line-height:1.25;color:#fff}
+.rusuk .merek span{font-size:11px;color:var(--band-redup);margin-top:3px}
+.rusuk nav{padding:14px 12px;display:flex;flex-direction:column;gap:4px}
+.rusuk nav a{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:11px;
+  color:var(--band-teks);text-decoration:none;font-size:14px;font-weight:600;
+  border:1px solid transparent}
+.rusuk nav a svg{width:19px;height:19px;flex:none;opacity:.85}
+.rusuk nav a:hover{background:rgba(255,255,255,.07)}
+.rusuk nav a.on{background:var(--sea);color:#fff;border-color:rgba(255,255,255,.14)}
+.rusuk nav a.on svg{opacity:1}
+/* Tulisan tangan + ombak di kaki sirip, seperti di rancangan. Murni hiasan,
+   jadi aria-hidden dan tidak membawa keterangan apa pun. */
+.rusuk .kaki{margin-top:auto;padding:0 0 0;position:relative}
+.rusuk .seloka{font-family:Georgia,'Times New Roman',serif;font-style:italic;
+  font-size:19px;line-height:1.35;color:#cfe4ef;padding:26px 22px 14px;opacity:.92}
+.rusuk .ombak{display:block;width:100%;height:auto}
+
+/* ---------- hero jadi kartu bersudut bulat ---------- */
+.hero{margin:0 0 20px;border-radius:20px;overflow:hidden;padding:0;
+  border:1px solid rgba(255,255,255,.1)}
+.hero .wrap{max-width:none;padding:34px 30px 32px}
+/* Merek di dalam hero: hanya muncul kalau sirip kiri TIDAK ada (layar sempit
+   memakai pita atas), supaya namanya tidak tertulis dua kali. */
+.hero .merek-hero{display:none;align-items:center;gap:12px;margin:0 0 22px}
+.hero .merek-hero .logo{width:44px;height:44px;flex:none;border-radius:12px;
+  background:url('/favicon.svg') center/32px no-repeat,
+             linear-gradient(135deg,#17618d,#0d3a5c);
+  border:1px solid rgba(255,255,255,.18)}
+.hero .merek-hero b{display:block;font-size:15px;letter-spacing:.7px;color:#fff;line-height:1.2}
+.hero .merek-hero span{display:block;font-size:11.5px;color:var(--band-redup)}
+
+/* ---------- lencana ikon di judul bagian ---------- */
+.judul-bag{display:flex;align-items:center;gap:13px;margin:26px 0 4px}
+.judul-bag .lenc{width:38px;height:38px;flex:none;border-radius:11px;display:flex;
+  align-items:center;justify-content:center;background:rgba(73,192,232,.16);
+  border:1px solid rgba(73,192,232,.34);color:var(--cyan)}
+.judul-bag .lenc svg{width:20px;height:20px}
+.judul-bag h2{margin:0}
+.judul-bag h2::before{display:none}   /* diganti lencana ikon */
+.judul-bag + .sub{margin-left:51px}
+
+/* ---------- lencana ikon di kartu paket ---------- */
+.prod .judul{display:flex;align-items:center;gap:11px;margin:0 0 7px}
+.prod .judul .lenc{width:34px;height:34px;flex:none;border-radius:50%;display:flex;
+  align-items:center;justify-content:center;background:rgba(73,192,232,.16);
+  border:1px solid rgba(73,192,232,.3);color:var(--cyan)}
+.prod .judul .lenc svg{width:18px;height:18px}
+.prod .judul h3{margin:0}
+
+/* ---------- pintu cepat (tanggal + jumlah + kirim) ---------- */
+.pintu{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);
+  border-radius:16px;padding:12px;display:grid;gap:10px;
+  grid-template-columns:1fr 1fr auto;align-items:center;margin:0 0 18px}
+.pintu .ruas{display:flex;align-items:center;gap:10px;background:#fff;
+  border:1.5px solid rgba(255,255,255,.2);border-radius:11px;padding:4px 12px}
+.pintu .ruas svg{width:19px;height:19px;flex:none;color:var(--sea)}
+.pintu .ruas input,.pintu .ruas select{border:0;padding:8px 0;background:none;
+  font-size:14.5px;color:var(--ink)}
+.pintu .ruas input:focus,.pintu .ruas select:focus{outline:none}
+.pintu .ruas:focus-within{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(73,192,232,.22)}
+.pintu .btn{width:100%;white-space:nowrap;display:flex;align-items:center;
+  justify-content:center;gap:8px;border-radius:11px;padding:12px 24px}
+.pintu .btn svg{width:17px;height:17px}
+
+/* ---------- seluruh halaman gelap, kolom isian tetap putih ---------- */
+body{background:var(--band);background-attachment:scroll}
+.band{background:none;padding:0;margin:0}
+h2{color:#fff}
+.sub{color:var(--band-redup)}
+footer{border-top-color:rgba(255,255,255,.1);color:var(--band-redup)}
+/* Kartu formulir: bingkai gelap, tapi isinya tetap kontras tinggi. */
+#form-area .card,#hasil .card{background:rgba(255,255,255,.055);
+  border-color:rgba(255,255,255,.13);color:var(--band-teks);
+  box-shadow:0 8px 26px rgba(0,0,0,.22)}
+#form-area label,#hasil label{color:#e8f2f8}
+#form-area .hint,#hasil .hint{color:var(--band-redup)}
+/* INI yang sengaja tidak ikut gelap. Lihat alasannya di kepala blok ini. */
+#form-area input,#form-area select,#form-area textarea,
+#hasil input,#hasil select,#hasil textarea{background:#fff;color:var(--ink);
+  border-color:rgba(255,255,255,.25)}
+#form-area input:disabled,#form-area select:disabled{background:#dde5ee;color:#5b6b7d}
+/* Catatan (.note) di atas latar gelap: versi terangnya nyaris tidak terbaca. */
+#form-area .note,#hasil .note{background:rgba(73,192,232,.12);
+  border-left-color:var(--cyan);color:#cfe9f6}
+#form-area .note b,#hasil .note b{color:#eaf7ff}
+#form-area .note.w,#hasil .note.w{background:rgba(240,180,60,.14);
+  border-left-color:#f0b43c;color:#f6e3bd}
+#form-area .note.w b,#hasil .note.w b{color:#fff3dc}
+#form-area .note.d,#hasil .note.d{background:rgba(224,90,76,.16);
+  border-left-color:#e05a4c;color:#f8d5d0}
+#form-area .note.d b,#hasil .note.d b{color:#ffe7e3}
+/* Tombol ruas (Perorangan / Biro) */
+#form-area .seg{border-color:rgba(255,255,255,.2)}
+#form-area .seg button{background:rgba(255,255,255,.05);color:var(--band-redup)}
+#form-area .seg button.on{background:var(--sea);color:#fff}
+#form-area .seg button+button{border-left-color:rgba(255,255,255,.2)}
+/* Tabel penumpang */
+#form-area th{background:rgba(255,255,255,.08);color:#dceaf4;
+  border-bottom-color:rgba(255,255,255,.28)}
+#form-area td{border-bottom-color:rgba(255,255,255,.12)}
+#form-area th+th,#form-area td+td{border-left-color:rgba(255,255,255,.12)}
+/* Ringkasan biaya */
+#form-area .rk,#hasil .rk{border-bottom-color:rgba(255,255,255,.14)}
+/* Garis waktu status pesanan */
+#hasil .tl .dot{background:#0e2b45}
+#hasil .tl li:not(.done):not(.now):not(.batal) .tt{color:var(--band-redup)}
+#hasil .pst{border-bottom-color:rgba(255,255,255,.12)}
+#hasil .pst .no{background:rgba(255,255,255,.1);color:var(--band-redup)}
+
+/* ---------- layar lebar: sirip kiri muncul ---------- */
+@media (min-width:980px){
+  .rusuk{display:flex;flex-direction:column;width:236px;flex:none;
+    position:sticky;top:0;align-self:stretch;min-height:100vh;
+    background:linear-gradient(180deg,#0a2742 0%,#071d33 100%);
+    border-right:1px solid rgba(255,255,255,.09)}
+  .kolom{padding:16px 20px 0}
+  .wrap{max-width:none;padding:0}
+  /* Pita atas jadi tombol melayang di pojok kanan atas hero: merek sudah
+     dipegang sirip kiri, jadi yang tersisa cuma dua tombolnya. */
+  .bar{position:absolute;top:30px;right:34px;left:auto;width:auto;z-index:21;
+    background:none;border:0;-webkit-backdrop-filter:none;backdrop-filter:none}
+  .bar .in{padding:0;max-width:none}
+  .bar .brand{display:none}
+  .bar a,#tombol-tutor{background:rgba(8,29,51,.6);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+  .hero{margin-top:0}
+  .hero .wrap{padding:40px 38px 36px;max-width:1120px}
+  .band .g2{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+  #form-area,#hasil,.judul-bag,.sub,footer{max-width:1120px}
+}
+@media (max-width:979px){
+  /* Tanpa sirip kiri, merek dipegang pita atas DAN hero. Yang di hero
+     dimunculkan supaya bagian atas halaman tidak terasa kosong. */
+  .hero .merek-hero{display:flex}
+  .kolom{padding:0}
+  .hero{border-radius:0;border-left:0;border-right:0;border-top:0;margin-bottom:16px}
+  .hero .wrap{padding:26px 16px 28px;max-width:960px;margin:0 auto}
+}
+@media (max-width:640px){
+  .hero .wrap{padding:22px 14px 24px}
+  .hero .merek-hero{margin-bottom:16px}
+  .hero .merek-hero .logo{width:38px;height:38px;background-size:27px}
+  .judul-bag{margin:20px 0 4px;gap:10px}
+  .judul-bag .lenc{width:32px;height:32px;border-radius:9px}
+  .judul-bag .lenc svg{width:17px;height:17px}
+  .judul-bag + .sub{margin-left:0}
+  /* Pintu cepat jadi bertumpuk: tiga kolom di 393px membuat kolom tanggal
+     terpotong sampai tanggalnya sendiri tidak terbaca. */
+  .pintu{grid-template-columns:1fr;padding:10px;border-radius:14px}
+  .prod .judul{gap:9px}
+  .prod .judul .lenc{width:28px;height:28px}
+  .prod .judul .lenc svg{width:15px;height:15px}
+}
+</style>
+</head>
+<body>
+
+<div class="cangkang">
+
+<!-- ============ SIRIP KIRI ============
+     Bentuknya mengikuti rancangan, ISINYA tidak. Di rancangan menunya
+     Beranda / Pesanan / Laporan / Pelanggan / Pengaturan — itu menu dashboard
+     internal, bukan menu pelanggan. Di sini keempatnya diganti jangkar ke
+     bagian yang memang ADA di halaman ini, supaya tidak ada tautan mati.
+     Hanya tampil di layar >=980px; di bawah itu pita atas yang dipakai. -->
+<aside class="rusuk">
+  <div class="merek">
+    <span class="logo" aria-hidden="true"></span>
+    <b>THE TAMPERAN CRUISE</b>
+    <span>Pelayaran · Pacitan</span>
+  </div>
+  <nav aria-label="Bagian halaman">
+    <a href="#atas" class="on" data-sirip="atas">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/><path d="M9.5 20v-6h5v6"/></svg>
+      Beranda</a>
+    <a href="#paket" data-sirip="paket">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M3 9.5h18M8 4.5v15"/></svg>
+      Paket</a>
+    <a href="#pesan" data-sirip="pesan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 9.5V7a1.5 1.5 0 0 1 1.5-1.5h15A1.5 1.5 0 0 1 21 7v2.5a2.5 2.5 0 0 0 0 5V17a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17v-2.5a2.5 2.5 0 0 0 0-5Z"/>
+        <path d="M14 8v8"/></svg>
+      Pesan tempat</a>
+    <a href="#cek" data-sirip="cek">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+      Cek status</a>
+  </nav>
+  <div class="kaki" aria-hidden="true">
+    <div class="seloka">Jelajah Laut,<br>Nikmati Cerita</div>
+    <svg class="ombak" viewBox="0 0 236 120" preserveAspectRatio="none">
+      <path d="M0 52c34-14 64 10 100 2s62-20 136-6v72H0Z" fill="#124267" opacity=".55"/>
+      <path d="M0 74c40-16 70 8 108 0s60-18 128-4v50H0Z" fill="#17558a" opacity=".5"/>
+      <path d="M0 96c38-14 72 6 112-2s58-14 124-2v28H0Z" fill="#1d6aa8" opacity=".45"/>
+    </svg>
+  </div>
+</aside>
+
+<div class="kolom" id="atas">
+
+<div class="bar"><div class="in">
+  <div class="brand"><span class="logo" aria-hidden="true"></span>
+    <span>THE TAMPERAN CRUISE<small>Pelabuhan Tamperan · Pacitan</small></span></div>
+  <button type="button" id="tombol-tutor" style="margin-left:auto"><span class="lebar">Cara pesan</span><span class="sempit">Cara</span></button>
+  <a href="#pesan" id="tombol-pesan" style="margin-left:9px"><span class="lebar">Pesan sekarang</span><span class="sempit">Pesan</span></a>
+</div></div>
+
+<!-- ============ HERO ============
+     Dua lapisan di belakang teks: .latar memegang fotonya (dengan gambar
+     cadangan .svg di bawahnya kalau fotonya belum diunggah), .tudung
+     meneduhkan supaya tulisan tetap terbaca di atas foto seterang apa pun.
+     Keduanya aria-hidden: tidak membawa keterangan apa-apa untuk pembaca
+     layar, murni hiasan. -->
+<div class="hero">
+  <div class="latar" aria-hidden="true"></div>
+  <div class="tudung" aria-hidden="true"></div>
+  <div class="wrap">
+    <!-- Merek di dalam hero hanya muncul kalau sirip kiri tidak ada
+         (layar <980px), supaya namanya tidak tertulis dua kali. -->
+    <div class="merek-hero">
+      <span class="logo" aria-hidden="true"></span>
+      <span><b>THE TAMPERAN CRUISE</b><span>Pelayaran · Pacitan</span></span>
+    </div>
+    <p class="tagline">Jelajah laut, nikmati cerita</p>
+    <h1>Berlayar dari <span class="sorot">Pelabuhan Tamperan</span></h1>
+    <p>Pelayaran wisata menyusuri pesisir selatan Pacitan. Pesan lewat halaman ini,
+       konfirmasi dan pembayaran dilakukan bersama tim kami lewat WhatsApp.</p>
+    <div class="fakta">
+      <span class="fak">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>
+        <b>Pelabuhan Tamperan<span>Pacitan, Jawa Timur</span></b></span>
+      <span class="fak">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6L12 3Z"/>
+          <path d="m9.2 12.2 2 2 3.6-4"/></svg>
+        <b>Life jacket semua<span>Tanpa terkecuali</span></b></span>
+      <span class="fak">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/>
+          <path d="M9.5 8h5M9.5 12h5M9.5 16h3"/></svg>
+        <b>Manifest resmi<span>Tiap keberangkatan</span></b></span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ PITA GELAP: PILIHAN PELAYARAN ============
+     Hanya bagian jualan yang gelap. Formulir di bawahnya sengaja tetap
+     terang — lihat alasannya di komentar CSS "TAMPILAN BARU". -->
+<section class="band">
+  <div class="wrap">
+    <div class="judul-bag" id="paket">
+      <span class="lenc" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+          stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3v13"/><circle cx="12" cy="18.5" r="2.5"/>
+          <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><path d="M8.5 5.5h7"/></svg></span>
+      <h2>Paket perjalanan</h2>
+    </div>
+    <p class="sub">Harga diambil langsung dari sistem kami, jadi selalu yang terbaru.
+      Tekan satu kartu untuk memilihnya di formulir.</p>
+    <div id="produk" class="grid g2">
+      <div class="card" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14);color:var(--band-teks)">
+        <span class="spin"></span> Memuat…</div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+
+  <!-- ============ FORM ============ -->
+  <div class="judul-bag" id="pesan">
+    <span class="lenc" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 9.5V7a1.5 1.5 0 0 1 1.5-1.5h15A1.5 1.5 0 0 1 21 7v2.5a2.5 2.5 0 0 0 0 5V17a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17v-2.5a2.5 2.5 0 0 0 0-5Z"/>
+        <path d="M14 8v8"/></svg></span>
+    <h2>Pesan tempat</h2>
+  </div>
+  <p class="sub">Isi data di bawah. Pesanan tersimpan dengan status <b>belum bayar</b>,
+     lalu dilanjutkan ke WhatsApp untuk konfirmasi.</p>
+
+  <!-- ============ PINTU CEPAT ============
+       Bentuknya meniru baris pemesanan di rancangan, tapi fungsinya BUKAN
+       menyimpan pesanan — hanya mengisi dua kolom pertama lalu meluncur ke
+       formulir lengkap. Pesanan tetap lahir dari formulir yang penuh, karena
+       kode agen, nama penumpang, NIK, dan alamat KTP semuanya wajib dan tidak
+       mungkin muat di satu baris. -->
+  <div class="pintu">
+    <label class="ruas" for="q-tgl">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/>
+        <path d="M3.5 10h17M8 3.5v3M16 3.5v3"/></svg>
+      <input type="date" id="q-tgl" aria-label="Tanggal berangkat">
+    </label>
+    <label class="ruas" for="q-pax">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.6 3.1-5.6 7-5.6s7 2 7 5.6"/></svg>
+      <input id="q-pax" inputmode="numeric" maxlength="3" placeholder="Jumlah orang"
+             aria-label="Jumlah orang">
+    </label>
+    <button type="button" class="btn" id="q-kirim">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 3 10.5 13.5M21 3l-6.8 18-3.7-7.5L3 10.1 21 3Z"/></svg>
+      Lanjut isi data</button>
+  </div>
+
+  <div id="form-area">
+
+    <!-- ============ GERBANG KODE AGEN ============
+         Semua pelanggan datang lewat agen; tidak ada jalur organik. Kode
+         diperiksa di sini, dan diwajibkan lagi oleh database saat menyimpan. -->
+    <div class="card" id="gate">
+      <div class="fld">
+        <label for="bkode">Kode agen</label>
+        <input id="bkode" class="mono" placeholder="mis. BUDI2026" autocomplete="off" spellcheck="false">
+        <div class="hint" id="bkode-ket">Tekan Enter atau klik Periksa.</div>
+      </div>
+      <button type="button" class="btn" id="bcek">Periksa kode</button>
+      <div class="note"><b>Belum punya kode?</b>
+        Pemesanan di The Tamperan Cruise dilayani lewat agen resmi kami.
+        Hubungi agen tempat Anda mendapat informasi ini untuk memperoleh kodenya.</div>
+    </div>
+
+    <!-- isi utama: tersembunyi sampai kode agen terbukti sah -->
+    <div id="utama" class="sembunyi">
+
+      <div class="card">
+        <div class="fld">
+          <label>Jenis pemesanan</label>
+          <div class="seg">
+            <button type="button" id="tb-per" class="on">Perorangan / Keluarga</button>
+            <button type="button" id="tb-biro">Biro / Travel</button>
+          </div>
+          <div class="hint" id="tipe-ket">Untuk rombongan pribadi, keluarga, atau sendiri.</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="grid g2">
+          <div class="fld">
+            <label for="f-produk">Pelayaran</label>
+            <select id="f-produk"></select>
+          </div>
+          <div class="fld">
+            <label for="f-tgl">Tanggal keberangkatan</label>
+            <input id="f-tgl" type="date">
+            <div class="hint">Pilih tanggal rencana berlayar.</div>
+          </div>
+        </div>
+
+        <div class="grid g2">
+          <div class="fld">
+            <label for="f-pax">Jumlah penumpang</label>
+            <input id="f-pax" type="number" min="1" max="200" value="2" inputmode="numeric">
+          </div>
+          <div class="fld" id="fld-anak">
+            <label for="f-anak">Di antaranya anak di bawah 12 tahun</label>
+            <input id="f-anak" type="number" min="0" value="0" inputmode="numeric">
+            <div class="hint">Dipakai untuk menyiapkan life jacket ukuran anak.</div>
+          </div>
+        </div>
+
+        <!-- Kode voucher: terpisah dari kode agen. Agen membagikannya lewat chat. -->
+        <div class="fld" id="fld-voucher">
+          <label for="f-vou">Kode voucher <span style="font-weight:400;color:var(--muted)">(kalau ada)</span></label>
+          <div class="sel2" style="display:flex;gap:8px;align-items:flex-start">
+            <input id="f-vou" class="mono" placeholder="Opsional" autocomplete="off" spellcheck="false"
+                   style="flex:1">
+            <button type="button" class="btn ghost" id="vcek" style="padding:9px 16px">Periksa</button>
+          </div>
+          <div class="hint" id="vou-ket">Kosongkan kalau tidak punya.</div>
+        </div>
+      </div>
+
+      <!-- Add-on, diambil dari tabel tambahan -->
+      <div class="card sembunyi" id="kartu-tambahan">
+        <h3 style="margin:0 0 4px;font-size:16.5px">Tambahan</h3>
+        <p class="sub" style="margin-bottom:12px">Opsional. Bisa ditambahkan sekarang atau
+          dibicarakan lagi dengan agen.</p>
+        <div id="daftar-tambahan"></div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 12px;font-size:16.5px">Data pemesan</h3>
+        <div class="grid g2">
+          <div class="fld"><label for="f-nama">Nama lengkap</label>
+            <input id="f-nama" autocomplete="name"></div>
+          <div class="fld"><label for="f-hp">Nomor WhatsApp</label>
+            <input id="f-hp" inputmode="tel" placeholder="08xxxxxxxxxx" autocomplete="tel">
+            <div class="hint">Konfirmasi pesanan dikirim ke nomor ini.</div></div>
+        </div>
+        <div class="grid g2">
+          <div class="fld"><label for="f-hp2">Nomor lain yang bisa dihubungi <span style="font-weight:400;color:var(--muted)">(boleh kosong)</span></label>
+            <input id="f-hp2" inputmode="tel" placeholder="08xxxxxxxxxx" autocomplete="tel">
+            <div class="hint">Dipakai kalau nomor utama tidak aktif. Boleh nomor keluarga
+              atau teman seperjalanan.</div></div>
+          <div class="fld"><label for="f-email">Email <span style="font-weight:400;color:var(--muted)">(boleh kosong)</span></label>
+            <input id="f-email" type="email" autocomplete="email"></div>
+        </div>
+        <div class="grid g2">
+          <div class="fld"><label for="f-alamat">Alamat sesuai KTP</label>
+            <textarea id="f-alamat" rows="2" autocomplete="street-address"
+              placeholder="Jalan, RT/RW, kelurahan, kecamatan, kabupaten/kota, provinsi"></textarea>
+            <div class="hint">Ditulis sesuai KTP untuk manifest resmi keberangkatan.</div></div>
+          <div class="fld"><label for="f-prov">Provinsi asal <span style="font-weight:400;color:var(--muted)">(boleh kosong)</span></label>
+            <input id="f-prov" autocomplete="address-level1">
+            <div class="hint">Untuk pendataan asal wisatawan. Boleh beda dengan alamat KTP.</div></div>
+        </div>
+      </div>
+
+      <!-- data biro -->
+      <div class="card sembunyi" id="kartu-biro">
+        <h3 style="margin:0 0 12px;font-size:16.5px">Data biro</h3>
+        <div class="fld"><label for="f-bnama">Nama biro / travel</label><input id="f-bnama"></div>
+        <div class="grid g2">
+          <div class="fld"><label for="f-bpic">Nama PIC</label><input id="f-bpic"></div>
+          <div class="fld"><label for="f-bwa">WhatsApp PIC</label>
+            <input id="f-bwa" inputmode="tel" placeholder="08xxxxxxxxxx"></div>
+        </div>
+      </div>
+
+      <!-- daftar penumpang -->
+      <div class="card">
+        <h3 style="margin:0 0 4px;font-size:16.5px">Daftar penumpang</h3>
+        <p class="sub" style="margin-bottom:12px" id="pnp-ket"></p>
+        <div class="scrollx"><table id="t-pnp"></table></div>
+      </div>
+
+      <!-- ringkasan -->
+      <div class="card">
+        <h3 style="margin:0 0 10px;font-size:16.5px">Perkiraan biaya</h3>
+        <div id="ringkas"></div>
+        <div class="note"><b>Angka di atas baru perkiraan</b>
+          Total yang mengikat dihitung ulang oleh sistem kami saat pesanan disimpan,
+          memakai harga resmi hari ini — bukan angka dari halaman ini.</div>
+      </div>
+
+      <div class="card">
+        <div class="note w"><b>Belum ada pembayaran lewat halaman ini</b>
+          Halaman ini tidak menerima uang dalam bentuk apa pun — tidak ada kartu,
+          tidak ada transfer otomatis, tidak ada dompet digital. Setelah pesanan
+          tersimpan, Anda diarahkan ke WhatsApp kami untuk konfirmasi dan pembayaran.</div>
+        <button type="button" class="btn blok" id="kirim">Simpan pesanan &amp; lanjut ke WhatsApp</button>
+        <div class="hint" style="text-align:center;margin-top:9px">
+          Dengan menyimpan pesanan, Anda setuju data di atas kami pakai untuk manifest keberangkatan.</div>
+      </div>
+
+    </div><!-- /utama -->
+  </div><!-- /form-area -->
+
+  <!-- ============ HASIL ============ -->
+  <div id="hasil" class="sembunyi"></div>
+
+  <!-- ============ CEK STATUS ============ -->
+  <div id="cek" style="scroll-margin-top:70px"></div>
+  <div id="cek-status" class="sembunyi"></div>
+
+  <footer>
+    PT Janenake Kahfi Andalan · The Tamperan Cruise<br>
+    Pelabuhan Tamperan, Pacitan, Jawa Timur
+  </footer>
+</div>
+
+</div><!-- /kolom -->
+</div><!-- /cangkang -->
+
+<div class="pesan" id="pesan-bar"></div>
+
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+/* ====================================================================
+   SATU BARIS YANG WAJIB DIGANTI SEBELUM DIPUBLIKASIKAN
+   Nomor WhatsApp tujuan konfirmasi pesanan. Format internasional tanpa '+'.
+   Contoh: 081234567890 ditulis 6281234567890
+   ==================================================================== */
+const WA_ADMIN = '6281234567890';          // <-- GANTI NOMOR INI
+const WA_PLACEHOLDER = '6281234567890';    // pembanding; jangan diubah
+
+/* Kunci publishable memang untuk dipakai di browser. Yang menjaga data bukan
+   kerahasiaan kunci ini, melainkan RLS + GRANT di database. */
+const sb = createClient(
+  'https://xumbqiezefdkgertjkjv.supabase.co',
+  'sb_publishable_fiKXnxZS_ZpzGDGQ_TY4jw_T-t-3_zF'
+);
+
+const $  = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const rp = n => 'Rp' + Number(n||0).toLocaleString('id-ID');
+const jam = s => s ? new Date(s).toLocaleString('id-ID',
+  {day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) + ' WIB' : '';
+const jamSaja = s => s ? new Date(s).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}) : '';
+/* Hari + tanggal lengkap: "Sabtu, 18 Oktober 2026" dibaca jauh lebih cepat
+   daripada "2026-10-18" oleh pemesan maupun petugas. */
+const tglPanjang = d => {
+  if (!d) return '—';
+  const t = new Date(String(d) + 'T00:00:00');
+  return isNaN(t) ? String(d)
+    : t.toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+};
+/* 081234567890 -> 6281234567890. Nomor tersimpan dalam format lokal di
+   agen_kontak; wa.me butuh format internasional tanpa tanda plus. */
+const wa62 = hp => {
+  const d = String(hp||'').replace(/\D/g,'');
+  if (!d) return '';
+  if (d.startsWith('62')) return d;
+  return '62' + d.replace(/^0+/, '');
+};
+let TIMER;
+const pesan = (t, ms=6000) => {
+  const el = $('pesan-bar'); el.innerHTML = t; el.style.display='block';
+  clearTimeout(TIMER); TIMER = setTimeout(()=>el.style.display='none', ms);
+};
+
+/* ---- keadaan ---- */
+const S = {
+  produk: [],
+  tipe: 'perorangan',
+  kodeOk: false,        /* gerbang: true hanya setelah kode agen diperiksa & sah */
+  kodeRef: null,
+  agenNama: null,
+  agenWa: null,         /* nomor tujuan WhatsApp — milik agen pemilik kode */
+  bolehBiro: false,
+  diskonPersen: 0,
+  vouOk: false,          /* voucher: true hanya setelah diperiksa & sah */
+  vouKode: null,
+  tambahan: [],          /* daftar add-on dari database */
+  tambahanPilih: []      /* [{slug, jumlah}] — jumlah hanya berarti untuk satuan 'unit' */
+};
+
+/* Kode referral dari tautan agen: ?ref=KODE */
+const qs = new URLSearchParams(location.search);
+if (qs.get('ref')) S.kodeRef = qs.get('ref').trim();
+
+/* ====================== MUAT PRODUK & PENGATURAN ====================== */
+async function muat(){
+  const [{data:prod, error:e1}, {data:atur}, {data:tamb}] = await Promise.all([
+    sb.from('produk').select('slug,nama,deskripsi,bertingkat,harga_lokal,harga_umum,harga_flat,dapat_voucher')
+      .eq('aktif', true).order('urutan'),
+    sb.from('pengaturan').select('diskon_persen').maybeSingle(),
+    sb.from('tambahan').select('slug,nama,ket,harga,satuan,maks').eq('aktif', true).order('urutan')
+  ]);
+
+  if (e1 || !prod){
+    $('produk').innerHTML = `<div class="card"><div class="note d">
+      <b>Daftar pelayaran belum bisa dimuat</b>
+      ${esc(e1?.message || 'Tidak ada data produk.')} Silakan muat ulang halaman,
+      atau hubungi kami lewat WhatsApp.</div></div>`;
+    return;
+  }
+  S.produk   = prod;
+  S.tambahan = tamb || [];
+  /* pengaturan bisa saja tertutup RLS untuk pengunjung — jangan anggap itu galat.
+     Kalau tidak terbaca, diskon tampil 0 dan angka finalnya tetap dihitung server. */
+  S.diskonPersen = Number(atur?.diskon_persen || 0);
+
+  $('produk').innerHTML = prod.map(p => {
+    /* Satu harga saja yang ditampilkan. Harga khusus warga Pacitan tidak
+       diumumkan di sini — agen yang membagikan kode vouchernya lewat chat. */
+    const harga = `<div class="harga">${rp(p.bertingkat ? p.harga_umum : p.harga_flat)}
+         <span class="per">per orang</span></div>`;
+    return `<div class="prod" data-paket="${esc(p.slug)}" role="button" tabindex="0"
+      aria-label="Pilih paket ${esc(p.nama)}">
+      <div class="foto" aria-hidden="true" style="background-image:${fotoPaket(p.slug)}">
+        ${p.dapat_voucher ? '<span class="lencana">PROMO</span>' : ''}
+      </div>
+      <div class="isi">
+        <div class="judul"><span class="lenc" aria-hidden="true">${ikonPaket(p.slug)}</span>
+          <h3>${esc(p.nama)}</h3></div>
+        <p class="ket">${esc(p.deskripsi || '')}</p>
+        <div class="kaki">${harga}
+          <span class="go" aria-hidden="true">&rarr;</span></div>
+      </div></div>`;
+  }).join('');
+
+  /* Kartu paket menggerakkan pilihan di formulir. Dipasang di sini, bukan
+     di dalam templat di atas, supaya tidak ada onclick= di dalam HTML yang
+     dibangun dari data. */
+  $('produk').querySelectorAll('[data-paket]').forEach(k => {
+    const pilih = () => pilihPaket(k.dataset.paket);
+    k.onclick = pilih;
+    /* Kartunya role="button", jadi keyboard harus bisa juga — Enter dan spasi,
+       sama seperti tombol sungguhan. */
+    k.onkeydown = e => {
+      if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); pilih(); }
+    };
+  });
+
+  $('f-produk').innerHTML = prod.map(p =>
+    `<option value="${esc(p.slug)}">${esc(p.nama)}</option>`).join('');
+
+  /* Tanggal: minimal hari ini, maksimal setahun ke depan — sama dengan batas
+     yang dijaga buat_pesanan(), supaya penolakan tidak datang belakangan. */
+  const hariIni = new Date(); hariIni.setMinutes(hariIni.getMinutes() - hariIni.getTimezoneOffset());
+  const setahun = new Date(hariIni); setahun.setFullYear(setahun.getFullYear() + 1);
+  $('f-tgl').min = hariIni.toISOString().slice(0,10);
+  $('f-tgl').max = setahun.toISOString().slice(0,10);
+  /* Pintu cepat diberi batas yang SAMA. Kalau tidak, orang bisa memilih
+     tanggal tahun lalu di pintu cepat, lalu salinannya ditolak diam-diam oleh
+     #f-tgl dan dia tidak pernah tahu kenapa tanggalnya tidak ikut pindah. */
+  $('q-tgl').min = $('f-tgl').min;
+  $('q-tgl').max = $('f-tgl').max;
+
+  gambarTambahan();
+
+  /* Tautan agen (?ref=KODE): isi kolomnya dan periksa otomatis, supaya pelanggan
+     tidak perlu mengetik ulang kode yang sudah ada di tautannya. */
+  if (S.kodeRef){
+    $('bkode').value = S.kodeRef;
+    await cekKodeAgen(true);
+  }
+  gambarUlang();
+}
+
+/* ====================== GAMBAR KARTU PAKET ======================
+   Dua lapisan background-image sekaligus: foto asli di depan, gambar
+   cadangan .svg di belakang. Kalau /img/paket-<slug>.jpg belum diunggah,
+   lapisan depannya gagal dimuat dan browser memakai lapisan belakangnya —
+   jadi tidak pernah ada kartu dengan kotak kosong atau ikon gambar rusak,
+   dan tidak perlu satu pun pemeriksaan di JavaScript.
+
+   Nama berkas foto mengikuti SLUG produk, bukan nama tampilannya, supaya
+   paket yang namanya diganti tidak kehilangan fotonya. Lihat
+   img/CARA-GANTI-FOTO.md. */
+const PH_PAKET = {
+  'cruise-daily':   'ph-daily',
+  'cruise-promo':   'ph-promo',
+  '1-day-journey':  'ph-1day',
+  '2-day-journey':  'ph-2day',
+};
+function fotoPaket(slug){
+  const aman = String(slug || '').replace(/[^a-z0-9-]/gi, '');
+  const ph   = PH_PAKET[aman] || 'ph-umum';
+  return `url('/img/paket-${aman}.jpg'),url('/img/${ph}.svg')`;
+}
+
+/* ---- Lencana ikon per paket ----
+   Satu bentuk untuk tiap watak paket: ombak untuk pelayaran harian, matahari
+   untuk perjalanan sehari, bulan untuk yang menginap, percik untuk promo.
+   Paket baru yang belum terdaftar dapat ikon ombak, bukan kotak kosong —
+   kartu tanpa ikon akan terlihat seperti gagal dimuat. */
+const IKON = {
+  ombak:  '<path d="M3 15c2.2 0 2.2-2 4.4-2s2.2 2 4.4 2 2.2-2 4.4-2 2.2 2 4.4 2"/>'
+        + '<path d="M3 10c2.2 0 2.2-2 4.4-2s2.2 2 4.4 2 2.2-2 4.4-2 2.2 2 4.4 2"/>',
+  surya:  '<circle cx="12" cy="12" r="4"/><path d="M12 3v2.2M12 18.8V21M3 12h2.2'
+        + 'M18.8 12H21M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/>',
+  bulan:  '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/>',
+  percik: '<path d="M12 3.5 13.7 9l5.5 1.7-5.5 1.7L12 18l-1.7-5.6L4.8 10.7 10.3 9 12 3.5Z"/>'
+        + '<path d="M18.5 16.5l.7 2.1 2.1.7-2.1.7-.7 2.1-.7-2.1-2.1-.7 2.1-.7.7-2.1Z"/>',
+};
+const IKON_PAKET = {
+  'cruise-daily':  'ombak',
+  'cruise-promo':  'percik',
+  '1-day-journey': 'surya',
+  '2-day-journey': 'bulan',
+};
+function ikonPaket(slug){
+  const d = IKON[IKON_PAKET[String(slug || '').replace(/[^a-z0-9-]/gi, '')] || 'ombak'];
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+    stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+}
+
+/* ====================== KARTU PAKET -> FORMULIR ======================
+   Kartu di atas dan dropdown di formulir harus selalu menunjuk paket yang
+   sama. Kalau tidak, pelanggan menekan kartu "2 Day Journey" lalu ringkasan
+   biayanya menghitung paket lain — dan itu soal uang, bukan soal tampilan. */
+function pilihPaket(slug){
+  const sel = $('f-produk');
+  if (!sel || !S.produk.some(p => p.slug === slug)) return;
+  sel.value = slug;
+  tandaiPaket();
+  gambarUlang();
+
+  /* Formulirnya masih terkunci sampai kode agen terbukti sah. Pilihan
+     paketnya tetap disimpan, tapi orangnya diberi tahu apa yang kurang —
+     lebih baik daripada menggulirkan dia ke kartu yang isinya tersembunyi. */
+  if (!S.kodeOk){
+    $('gate')?.scrollIntoView({ behavior:'smooth', block:'center' });
+    pesan('<b>Paket dipilih.</b> Masukkan dulu kode agen Anda untuk membuka '
+        + 'formulir pemesanan.', 8000);
+    $('bkode')?.focus({ preventScroll:true });
+    return;
+  }
+  document.getElementById('pesan')?.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+/* Menandai kartu mana yang sedang terpilih. Dipanggil juga dari gambarUlang()
+   supaya kalau paketnya diganti lewat dropdown, kartunya ikut berubah. */
+function tandaiPaket(){
+  const kini = $('f-produk')?.value;
+  document.querySelectorAll('#produk [data-paket]').forEach(k => {
+    const on = k.dataset.paket === kini;
+    k.classList.toggle('pilih', on);
+    k.setAttribute('aria-pressed', on ? 'true' : 'false');
+  });
+}
+
+/* ====================== JENIS PEMESANAN ====================== */
+function setTipe(t){
+  /* Jalur biro hanya untuk agen yang diberi akses. Kalau kodenya bukan biro,
+     tombolnya tetap bisa diklik tapi langsung dipantulkan dengan alasan jelas —
+     lebih baik daripada tombol mati tanpa penjelasan. */
+  if (t === 'biro' && !S.bolehBiro){
+    pesan('<b>Tidak tersedia</b> Kode ini belum diberi akses jalur biro. '
+        + 'Pakai jalur perorangan, atau hubungi kami untuk mengaktifkannya.', 9000);
+    return;
+  }
+  S.tipe = t;
+  $('tb-per').classList.toggle('on', t==='perorangan');
+  $('tb-biro').classList.toggle('on', t==='biro');
+  $('kartu-biro').classList.toggle('sembunyi', t!=='biro');
+  $('tipe-ket').textContent = t==='biro'
+    ? 'Rombongan biro/travel. Daftar nama boleh disetor menyusul.'
+    : 'Untuk rombongan pribadi, keluarga, atau sendiri.';
+  gambarUlang();
+}
+
+/* Isi form dikunci sampai kode agen terbukti sah. */
+function terapkanGerbang(){
+  $('utama').classList.toggle('sembunyi', !S.kodeOk);
+}
+
+async function cekKodeAgen(otomatis = false){
+  const k = $('bkode').value.trim();
+  if (!k){ if (!otomatis) pesan('Isi dulu kode agennya.'); return; }
+  $('bcek').disabled = true;
+  $('bkode-ket').textContent = 'Memeriksa…';
+
+  const { data, error } = await sb.rpc('cek_kode', { p_kode: k });
+  $('bcek').disabled = false;
+  if (error){
+    $('bkode-ket').textContent = 'Gagal memeriksa.';
+    return pesan('<b>Gagal</b> ' + esc(error.message), 9000);
+  }
+  const r = Array.isArray(data) ? data[0] : data;
+
+  if (r?.valid){
+    S.kodeOk    = true;
+    S.kodeRef   = k;
+    S.agenNama  = r.nama;
+    /* Nomor tujuan diambil dari agen_kontak lewat cek_kode. Boleh kosong —
+       kalau agen belum punya nomor, nanti jatuh ke nomor pusat. */
+    S.agenWa    = r.wa ? String(r.wa).replace(/\D/g,'') : null;
+    S.bolehBiro = !!r.boleh_biro;
+    $('bkode-ket').innerHTML =
+      `<span class="pill p-ok">SAH</span> Agen Anda: <b>${esc(r.nama)}</b>.`;
+    $('tb-biro').style.opacity = S.bolehBiro ? '' : '.5';
+    if (S.bolehBiro && !$('f-bnama').value) $('f-bnama').value = r.nama;
+    if (!otomatis) pesan(`Kode sah atas nama ${esc(r.nama)}. Silakan lanjut mengisi pesanan.`);
+    /* Form baru saja muncul; kalau panduan sedang menunggu di langkah kode,
+       daftar langkahnya disusun ulang dan panduan lanjut sendiri ke isi form. */
+    setTimeout(tutorLanjutKalauMenunggu, 260);
+  } else {
+    /* Gerbang ditutup ulang supaya kode sah yang lama tidak nyangkut. */
+    S.kodeOk = false; S.kodeRef = null; S.agenNama = null;
+    S.agenWa = null;  S.bolehBiro = false;
+    const sebab = {
+      tidak_terdaftar: 'Kode ini tidak terdaftar.',
+      tidak_aktif:     'Kode ini sudah tidak aktif.'
+    }[r?.alasan] || 'Kode tidak bisa dipakai.';
+    $('bkode-ket').innerHTML = `<span class="pill p-dang">DITOLAK</span> ${esc(sebab)}`;
+  }
+  terapkanGerbang();
+  if (S.kodeOk) { setTipe('perorangan'); gambarUlang(); }
+}
+
+/* ====================== PENUMPANG & RINGKASAN ====================== */
+const pax = () => {
+  const n = parseInt($('f-pax').value, 10);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 200) : 0;
+};
+const produkTerpilih = () => S.produk.find(p => p.slug === $('f-produk').value);
+
+/* ====================== VOUCHER ====================== */
+/* Voucher hanya membuka harga warga Pacitan. Nilainya tidak pernah dikirim dari
+   sini — server yang mengambilnya dari produk.harga_lokal. */
+function lepasVoucher(kabar){
+  S.vouOk = false; S.vouKode = null;
+  $('f-vou').value = '';
+  $('vou-ket').textContent = 'Kosongkan kalau tidak punya.';
+  if (kabar) pesan(kabar);
+  ringkasan();
+}
+
+async function cekVoucher(){
+  const k = $('f-vou').value.trim();
+  if (!k) return lepasVoucher();
+  $('vcek').disabled = true;
+  $('vou-ket').textContent = 'Memeriksa…';
+  const { data, error } = await sb.rpc('cek_voucher', { p_kode: k });
+  $('vcek').disabled = false;
+  if (error){
+    $('vou-ket').textContent = 'Gagal memeriksa.';
+    return pesan('<b>Gagal</b> ' + esc(error.message), 9000);
+  }
+  const r = Array.isArray(data) ? data[0] : data;
+  if (r?.valid){
+    S.vouOk = true; S.vouKode = k;
+    $('vou-ket').innerHTML = `<span class="pill p-ok">BERLAKU</span> ${
+      esc(r.keterangan || 'Harga khusus diterapkan.')}`;
+  } else {
+    S.vouOk = false; S.vouKode = null;
+    const sebab = {
+      tidak_terdaftar: 'Kode voucher ini tidak terdaftar.',
+      tidak_aktif:     'Kode voucher ini sudah tidak berlaku.'
+    }[r?.alasan] || 'Voucher tidak bisa dipakai.';
+    $('vou-ket').innerHTML = `<span class="pill p-dang">DITOLAK</span> ${esc(sebab)}`;
+  }
+  ringkasan();
+}
+
+/* ====================== ADD-ON ====================== */
+/* Jumlah dijepit ke 1..maks di sini hanya untuk umpan balik cepat; penolakan
+   yang sebenarnya tetap di buat_pesanan(). Nilai kosong atau bukan angka
+   dianggap 1, bukan 0 — 0 akan ditolak server dan membingungkan pemesan. */
+function batasJml(t, nilai){
+  const v = parseInt(String(nilai ?? '').trim(), 10);
+  if (!Number.isFinite(v) || v < 1) return 1;
+  return t?.maks ? Math.min(v, t.maks) : v;
+}
+
+function gambarTambahan(){
+  const kartu = $('kartu-tambahan');
+  if (!S.tambahan.length){ kartu.classList.add('sembunyi'); return; }
+  kartu.classList.remove('sembunyi');
+  const sat = t => t.satuan === 'orang' ? ' / orang' : t.satuan === 'unit' ? ' / unit' : '';
+  $('daftar-tambahan').innerHTML = S.tambahan.map(t => `
+    <div class="fld" style="border:1.5px solid var(--line);border-radius:9px;padding:12px">
+      <label style="display:flex;gap:11px;align-items:flex-start;cursor:pointer;font-weight:400;margin:0">
+        <input type="checkbox" data-tambahan="${esc(t.slug)}" style="width:19px;height:19px;margin-top:2px;flex:none">
+        <span style="flex:1">
+          <b style="font-size:15px">${esc(t.nama)}</b>
+          <span class="pill p-sea">${rp(t.harga)}${sat(t)}</span>
+          ${t.ket ? `<div class="hint" style="margin-top:3px">${esc(t.ket)}</div>` : ''}
+        </span></label>
+      ${t.satuan === 'unit' ? `
+        <div class="sembunyi" id="jml-${esc(t.slug)}" style="margin-top:10px;padding-left:30px">
+          <label for="in-${esc(t.slug)}" style="font-size:12.5px">Butuh berapa ${esc(t.nama.toLowerCase())}?</label>
+          <input id="in-${esc(t.slug)}" type="number" inputmode="numeric" value="1"
+                 min="1" ${t.maks ? `max="${t.maks}"` : ''} data-jumlah="${esc(t.slug)}"
+                 style="width:110px">
+          ${t.maks ? `<div class="hint">Maksimal ${t.maks} per pesanan.</div>` : ''}
+        </div>` : ''}
+    </div>`).join('');
+
+  const setJml = (slug, jumlah) => {
+    const i = S.tambahanPilih.findIndex(x => x.slug === slug);
+    if (i >= 0) S.tambahanPilih[i].jumlah = jumlah;
+  };
+
+  $('daftar-tambahan').querySelectorAll('[data-tambahan]').forEach(c => c.onchange = () => {
+    const slug = c.dataset.tambahan;
+    const t = S.tambahan.find(x => x.slug === slug);
+    const kotak = $(`jml-${slug}`);
+    if (kotak) kotak.classList.toggle('sembunyi', !c.checked);
+    if (c.checked){
+      if (!S.tambahanPilih.some(x => x.slug === slug))
+        S.tambahanPilih.push({ slug, jumlah: t?.satuan === 'unit' ? batasJml(t, $(`in-${slug}`)?.value) : 1 });
+    } else {
+      S.tambahanPilih = S.tambahanPilih.filter(x => x.slug !== slug);
+    }
+    ringkasan();
+  });
+
+  $('daftar-tambahan').querySelectorAll('[data-jumlah]').forEach(inp => inp.oninput = () => {
+    const slug = inp.dataset.jumlah;
+    const t = S.tambahan.find(x => x.slug === slug);
+    setJml(slug, batasJml(t, inp.value));
+    ringkasan();
+  });
+}
+
+function gambarUlang(){
+  const p = produkTerpilih();
+  const n = pax();
+
+  /* Kartu paket di atas ikut ditandai. Ditaruh di sini supaya berlaku dari
+     arah mana pun paketnya diganti — lewat kartu, lewat dropdown, atau lewat
+     pelepasan voucher di bawah ini. */
+  tandaiPaket();
+
+  /* Voucher hanya berguna untuk produk bertingkat. Pada paket harga tunggal
+     database akan menolaknya, jadi kolomnya disembunyikan sekalian — dan kalau
+     sudah terlanjur terisi, dilepas supaya tidak ikut terkirim. */
+  const pakaiVou = !!p?.bertingkat;
+  $('fld-voucher').style.display = pakaiVou ? '' : 'none';
+  if (!pakaiVou && S.vouOk) lepasVoucher('Paket ini berharga sama untuk semua, voucher dilepas.');
+
+  /* --- baris penumpang --- */
+  if (S.tipe === 'biro'){
+    /* Jalur biro: nama per orang tidak diminta di tahap ini — biro biasanya
+       menyetor daftar nama belakangan. Yang diminta cuma jumlah anak, dan
+       usia TIDAK dikarang: dibiarkan kosong, bukan diisi angka asal. */
+    $('pnp-ket').textContent =
+      'Jalur biro: daftar nama bisa disetor menyusul sebelum keberangkatan. '
+      + 'Yang wajib sekarang hanya jumlah penumpang dan jumlah anak di bawah 12 tahun.';
+    $('t-pnp').innerHTML = `<tr><td style="border:0;padding:0">
+      <div class="note"><b>${n} penumpang akan dicatat tanpa nama dulu</b>
+      Manifest akan menandai pesanan ini sebagai “dihitung per kepala”, bukan
+      “diperiksa per nama”, supaya catatan keberangkatan tetap jujur.</div></td></tr>`;
+    $('fld-anak').style.display = '';
+  } else {
+    $('pnp-ket').textContent = 'Nama sesuai identitas. Usia dipakai untuk menyiapkan life jacket anak.';
+    $('fld-anak').style.display = 'none';   /* dihitung otomatis dari usia */
+    let baris = '';
+    for (let i = 0; i < n; i++){
+      baris += `<tr>
+        <td class="num" style="width:38px;text-align:right;color:var(--muted)">${i+1}</td>
+        <td><input class="pnp-nama" placeholder="Nama lengkap" autocomplete="off"></td>
+        <td style="width:92px"><select class="pnp-gen">
+          <option value="">—</option><option value="L">L</option><option value="P">P</option></select></td>
+        <td style="width:92px"><input class="pnp-usia" type="number" min="0" max="120"
+          inputmode="numeric" placeholder="Usia"></td></tr>`;
+    }
+    $('t-pnp').innerHTML = n
+      ? `<thead><tr><th class="num">No</th><th>Nama</th><th>L/P</th><th>Usia</th></tr></thead><tbody>${baris}</tbody>`
+      : `<tr><td style="border:0"><div class="hint">Isi jumlah penumpang dulu.</div></td></tr>`;
+    $('t-pnp').querySelectorAll('.pnp-usia').forEach(el => el.oninput = ringkasan);
+  }
+  ringkasan();
+}
+
+/* Hitung anak dari usia. CATATAN: null < 12 bernilai true di JavaScript, jadi
+   setiap pengecekan usia WAJIB memastikan nilainya ada lebih dulu. Tanpa penjaga
+   itu, penumpang yang usianya belum diisi akan terhitung sebagai anak. */
+function hitungAnak(){
+  if (S.tipe === 'biro'){
+    const a = parseInt($('f-anak').value, 10);
+    return Number.isFinite(a) && a >= 0 ? a : 0;
+  }
+  let a = 0;
+  $('t-pnp').querySelectorAll('.pnp-usia').forEach(el => {
+    const v = el.value.trim();
+    if (v === '') return;                       // <-- penjaga
+    const u = parseInt(v, 10);
+    if (Number.isFinite(u) && u >= 0 && u < 12) a++;
+  });
+  return a;
+}
+
+function ringkasan(){
+  const p = produkTerpilih(), n = pax();
+  if (!p || !n){ $('ringkas').innerHTML = '<div class="hint">Lengkapi pilihan di atas.</div>'; return; }
+  /* Tingkat harga ditentukan voucher yang SUDAH diperiksa, bukan pilihan pemesan. */
+  const pakaiVou = p.bertingkat && S.vouOk;
+  const satuan = p.bertingkat ? (pakaiVou ? p.harga_lokal : p.harga_umum) : p.harga_flat;
+  const sub = satuan * n;
+  const persen = S.kodeOk ? S.diskonPersen : 0;
+  const pot = Math.round(sub * persen / 100);
+  const anak = hitungAnak();
+
+  /* Add-on bersatuan 'orang' dikali pax — sama persis dengan hitungan server. */
+  const tamb = S.tambahanPilih.map(pil => {
+    const t = S.tambahan.find(x => x.slug === pil.slug);
+    if (!t) return null;
+    const jml = t.satuan === 'orang' ? n
+              : t.satuan === 'unit'  ? batasJml(t, pil.jumlah)
+              : 1;
+    return { nama: t.nama, jml, total: t.harga * jml };
+  }).filter(Boolean);
+  const totalTamb = tamb.reduce((a,b) => a + b.total, 0);
+
+  $('ringkas').innerHTML =
+    `<div class="rk"><span>${esc(p.nama)} — ${rp(satuan)} × ${n} orang${
+       pakaiVou ? ' <span class="pill p-ok">HARGA VOUCHER</span>' : ''}</span><span>${rp(sub)}</span></div>`
+    + (persen ? `<div class="rk"><span>Potongan kode agen (${persen}%)</span><span>− ${rp(pot)}</span></div>` : '')
+    + tamb.map(t => `<div class="rk"><span>${esc(t.nama)}${
+         t.jml > 1 ? ` × ${t.jml}` : ''}</span><span>+ ${rp(t.total)}</span></div>`).join('')
+    + (anak ? `<div class="rk"><span>Anak di bawah 12 tahun</span><span>${anak} orang · life jacket anak</span></div>` : '')
+    + `<div class="rk"><span>Perkiraan total</span><span>${rp(sub - pot + totalTamb)}</span></div>`;
+}
+
+/* ====================== KIRIM ====================== */
+async function kirim(){
+  const p = produkTerpilih(), n = pax();
+  const tombol = $('kirim');
+
+  /* --- pemeriksaan sisi klien: hanya untuk umpan balik cepat.
+         Penolakan yang sebenarnya tetap terjadi di database. --- */
+  if (!p)  return pesan('Pilih pelayarannya dulu.');
+  if (!n)  return pesan('Jumlah penumpang belum masuk akal.');
+
+  /* Tanggal diperiksa di sini juga, bukan hanya di server — supaya pemesan tidak
+     mengisi seluruh daftar nama dulu baru ditolak. */
+  const tgl = $('f-tgl').value;
+  if (!tgl) return pesan('Tanggal keberangkatan belum diisi.');
+  if (tgl < $('f-tgl').min) return pesan('Tanggal keberangkatan sudah lewat.');
+  if (tgl > $('f-tgl').max) return pesan('Tanggal keberangkatan terlalu jauh ke depan.');
+
+  /* Voucher terisi tapi belum diperiksa → periksa dulu, jangan dikirim mentah. */
+  if ($('f-vou').value.trim() && !S.vouOk){
+    await cekVoucher();
+    if (!S.vouOk) return pesan('Kode voucher belum sah. Perbaiki atau kosongkan dulu.');
+  }
+
+  const nama = $('f-nama').value.trim();
+  const hp   = $('f-hp').value.replace(/\D/g,'');
+  if (nama.length < 2)                 return pesan('Nama pemesan belum diisi.');
+  if (hp.length < 9 || hp.length > 15) return pesan('Nomor WhatsApp belum benar.');
+
+  /* Alamat KTP diwajibkan karena dipakai manifest resmi keberangkatan.
+     Labelnya di formulir pun tidak bertanda "boleh kosong", jadi harus
+     diperiksa di sini -- kalau tidak, label dan perilakunya bertentangan. */
+  const alamat = $('f-alamat').value.trim();
+  if (alamat.length < 10)
+    return pesan('Alamat sesuai KTP belum diisi lengkap. Tulis minimal jalan, '
+               + 'kelurahan, dan kabupaten/kota.', 9000);
+
+  /* Nomor kedua opsional, tapi kalau diisi harus benar -- dan tidak boleh
+     sama dengan nomor utama, karena gunanya justru sebagai cadangan. */
+  const hp2 = $('f-hp2').value.replace(/\D/g,'');
+  if (hp2 && (hp2.length < 9 || hp2.length > 15))
+    return pesan('Nomor lain belum benar. Kosongkan saja kalau tidak ada.', 8000);
+  if (hp2 && hp2 === hp)
+    return pesan('Nomor lain sama dengan nomor WhatsApp utama. Isi nomor yang berbeda, '
+               + 'atau kosongkan saja.', 9000);
+
+  if (!S.kodeOk || !S.kodeRef) return pesan('Kode agen belum diperiksa.');
+  if (S.tipe === 'biro'){
+    if (!S.bolehBiro) return pesan('Kode ini tidak punya akses jalur biro.');
+    if (!$('f-bnama').value.trim() || !$('f-bpic').value.trim() || !$('f-bwa').value.trim())
+      return pesan('Data biro belum lengkap: nama biro, PIC, dan WhatsApp PIC wajib diisi.');
+  }
+
+  /* Daftar penumpang harus berjumlah persis sama dengan pax — ini juga
+     diperiksa ulang di dalam buat_pesanan(). */
+  let penumpang = [];
+  if (S.tipe === 'biro'){
+    /* penumpang.nama berstatus NOT NULL di database, jadi tidak bisa dikirim null.
+       Dipakai penanda urut "Peserta N" — mengikuti data yang sudah ada — BUKAN nama
+       karangan. Usia tetap null: lebih baik kosong daripada diisi angka asal, karena
+       manifest memakainya untuk menyiapkan life jacket anak. */
+    for (let i = 0; i < n; i++)
+      penumpang.push({ nama: `Peserta ${i+1}`, gender: null, usia: null });
+  } else {
+    const nm  = [...$('t-pnp').querySelectorAll('.pnp-nama')];
+    const gen = [...$('t-pnp').querySelectorAll('.pnp-gen')];
+    const us  = [...$('t-pnp').querySelectorAll('.pnp-usia')];
+    for (let i = 0; i < n; i++){
+      const v = nm[i]?.value.trim();
+      if (!v || v.length < 2) return pesan(`Nama penumpang nomor ${i+1} belum diisi.`);
+      const uRaw = us[i]?.value.trim() ?? '';
+      if (uRaw !== ''){
+        const u = parseInt(uRaw, 10);
+        if (!Number.isFinite(u) || u < 0 || u > 120)
+          return pesan(`Usia penumpang nomor ${i+1} tidak masuk akal. Kosongkan saja kalau belum tahu.`);
+      }
+      penumpang.push({
+        nama:   v,
+        gender: gen[i]?.value || null,
+        usia:   uRaw === '' ? null : uRaw
+      });
+    }
+  }
+
+  const anak = hitungAnak();
+  if (anak > n) return pesan('Jumlah anak tidak boleh melebihi jumlah penumpang.');
+
+  tombol.disabled = true;
+  tombol.innerHTML = '<span class="spin"></span> Menyimpan…';
+
+  const { data, error } = await sb.rpc('buat_pesanan', {
+    p_produk_slug:   p.slug,
+    p_tipe:          S.tipe,
+    p_pax:           n,
+    p_anak:          anak,
+    p_tanggal:       $('f-tgl').value,
+    p_kode_referral: S.kodeRef,
+    p_kode_voucher:  (p.bertingkat && S.vouOk) ? S.vouKode : null,
+    p_tambahan:      S.tambahanPilih.length
+                       ? S.tambahanPilih.map(x => {
+                           const t = S.tambahan.find(y => y.slug === x.slug);
+                           return t?.satuan === 'unit'
+                             ? { slug: x.slug, jumlah: batasJml(t, x.jumlah) }
+                             : { slug: x.slug };
+                         })
+                       : null,
+    p_pemesan: {
+      nama, hp,
+      /* pakai nilai yang SUDAH divalidasi di atas, jangan baca ulang dari DOM:
+         kalau cara merapikannya berbeda, yang divalidasi dan yang dikirim
+         bisa menyimpang tanpa ketahuan */
+      hp2:      hp2    || null,
+      email:    $('f-email').value.trim() || null,
+      provinsi: $('f-prov').value.trim()  || null,
+      alamat:   alamat || null
+    },
+    p_penumpang: penumpang,
+    p_biro: S.tipe === 'biro' ? {
+      nama:   $('f-bnama').value.trim(),
+      pic:    $('f-bpic').value.trim(),
+      pic_wa: $('f-bwa').value.replace(/\D/g,'')
+    } : null
+  });
+
+  tombol.disabled = false;
+  tombol.textContent = 'Simpan pesanan & lanjut ke WhatsApp';
+
+  if (error){
+    /* 54000 = pembatas laju. Pesannya sudah ramah dari sananya, tampilkan apa adanya. */
+    if (error.code === '54000' || /terlalu banyak|batas pemesanan/i.test(error.message||''))
+      return pesan('<b>Ditahan sementara</b> ' + esc(error.message), 12000);
+    /* 22023 = kode agen wajib / tidak terdaftar. Kodenya mungkin baru dinonaktifkan
+       setelah pemeriksaan tadi — tutup gerbangnya lagi supaya pemesan memeriksa ulang. */
+    if (error.code === '22023'){
+      S.kodeOk = false; terapkanGerbang();
+      $('bkode-ket').innerHTML = `<span class="pill p-dang">DITOLAK</span> ${esc(error.message)}`;
+      return pesan('<b>Pesanan ditolak</b> ' + esc(error.message), 12000);
+    }
+    return pesan('<b>Pesanan ditolak</b> ' + esc(error.message), 12000);
+  }
+
+  const r = Array.isArray(data) ? data[0] : data;
+  if (!r?.r_kode) return pesan('Pesanan tidak mengembalikan kode. Hubungi kami lewat WhatsApp.', 12000);
+  tampilkanHasil(r.r_kode, r.r_token, nama);
+}
+
+/* ====================== HASIL ====================== */
+function tampilkanHasil(kode, token, nama){
+  $('form-area').classList.add('sembunyi');
+  document.querySelector('#pesan').scrollIntoView({behavior:'smooth'});
+
+  const tautanStatus = `${location.origin}${location.pathname}?t=${encodeURIComponent(token)}`;
+  /* Pelanggan dicari agen, jadi dia balik ke AGEN-nya, bukan ke nomor pusat.
+     Nomor pusat hanya cadangan kalau agen itu belum punya nomor terdaftar. */
+  const keAgen  = !!S.agenWa;
+  const tujuan  = keAgen ? wa62(S.agenWa) : WA_ADMIN;
+  const sapaan  = keAgen ? `Halo ${S.agenNama}` : 'Halo The Tamperan Cruise';
+  const teksWa  = `${sapaan}, saya ${nama}. `
+    + `Saya baru membuat pesanan dengan kode ${kode}. Mohon dibantu konfirmasi dan pembayarannya.`;
+  const waSiap  = keAgen || (WA_ADMIN && WA_ADMIN !== WA_PLACEHOLDER);
+
+  $('hasil').classList.remove('sembunyi');
+  $('hasil').innerHTML = `
+    <div class="card">
+      <span class="pill p-ok">PESANAN TERSIMPAN</span>
+      <div class="kode-besar mono" style="margin:12px 0 4px">${esc(kode)}</div>
+      <p class="sub">Simpan kode ini. Pesanan berstatus <b>belum bayar</b> dan akan
+         kami konfirmasi lewat WhatsApp.</p>
+
+      ${waSiap
+        ? `<a class="btn wa blok" href="https://wa.me/${tujuan}?text=${encodeURIComponent(teksWa)}"
+              target="_blank" rel="noopener">Lanjut ke WhatsApp ${
+              keAgen ? esc(S.agenNama) : 'kami'}</a>
+           ${keAgen ? '' : `<div class="hint" style="text-align:center;margin-top:7px">
+              Agen Anda belum punya nomor terdaftar, jadi diarahkan ke layanan pusat.</div>`}`
+        : `<div class="note d"><b>Nomor WhatsApp belum tersedia</b>
+             Agen Anda belum punya nomor terdaftar dan nomor pusat masih nomor contoh,
+             jadi tombolnya sengaja tidak diaktifkan supaya Anda tidak diarahkan ke
+             nomor yang salah. Simpan kode pesanan di atas dan hubungi agen Anda langsung.</div>`}
+
+      <div class="note"><b>Cek status pesanan kapan saja</b>
+        Buka tautan ini — tidak perlu login:<br>
+        <a class="mono" style="word-break:break-all;color:var(--sea)"
+           href="${esc(tautanStatus)}">${esc(tautanStatus)}</a></div>
+
+      <button type="button" class="btn ghost" onclick="location.href=location.pathname">
+        Buat pesanan lain</button>
+    </div>`;
+}
+
+/* ====================== CEK STATUS (?t=token) ====================== */
+async function cekStatus(token){
+  /* Halaman status memakai berkas yang sama dengan halaman pemesanan, jadi
+     bagian berjualan disembunyikan. Daftarnya diperbarui saat tata letak
+     bersirip dipasang: dulu di sini tertulis 'h2' saja — sekarang judul
+     dibungkus .judul-bag bersama lencana ikonnya, jadi menyembunyikan h2
+     saja meninggalkan ikon menggantung tanpa judul. .pintu dan .band juga
+     ikut, kalau tidak pintu cepat tetap tampil di halaman yang tidak punya
+     formulir untuk diisi. */
+  document.querySelectorAll('#produk, #form-area, .judul-bag, .pintu, .band, .sub, .hero')
+    .forEach(el => el.classList.add('sembunyi'));
+  const tb = $('tombol-pesan');
+  if (tb){ tb.href = location.pathname; tb.textContent = 'Pesan lagi'; }
+  const kotak = $('cek-status');
+  kotak.classList.remove('sembunyi');
+  kotak.innerHTML = `<h2 style="display:block">Status pesanan</h2>
+    <div class="card"><span class="spin" style="border-color:#ccc;border-top-color:var(--sea)"></span> Memuat…</div>`;
+
+  const [{ data, error }, { data:peserta }] = await Promise.all([
+    sb.rpc('status_pesanan',     { p_token: token }),
+    sb.rpc('penumpang_pesanan',  { p_token: token })
+  ]);
+  if (error){
+    kotak.innerHTML = `<h2 style="display:block">Status pesanan</h2>
+      <div class="card"><div class="note d"><b>Tidak bisa memuat</b>${esc(error.message)}</div></div>`;
+    return;
+  }
+  const o = Array.isArray(data) ? data[0] : data;
+  if (!o){
+    kotak.innerHTML = `<h2 style="display:block">Status pesanan</h2>
+      <div class="card"><div class="note w"><b>Pesanan tidak ditemukan</b>
+      Tautannya mungkin salah salin. Hubungi kami lewat WhatsApp dengan menyebut kode pesanan.</div>
+      <a class="btn ghost blok" href="${location.pathname}">Ke halaman pemesanan</a></div>`;
+    return;
+  }
+
+  const ST = {
+    pending:['BELUM BAYAR','p-mute','Menunggu konfirmasi pembayaran bersama tim kami.'],
+    waiting:['PERLU CEK','p-warn','Pembayaran sedang diperiksa petugas.'],
+    paid:   ['LUNAS','p-ok','Pembayaran diterima. Silakan datang sesuai jadwal.'],
+    boarded:['SUDAH NAIK','p-sea','Penumpang sudah naik kapal.'],
+    expired:['KEDALUWARSA','p-mute','Pesanan kedaluwarsa karena belum dibayar.'],
+    cancel_cuaca:['BATAL · CUACA','p-warn','Keberangkatan dibatalkan karena cuaca.'],
+    cancel_pembeli:['BATAL · PEMBELI','p-dang','Pesanan dibatalkan.']
+  };
+  const s = ST[o.status] || [o.status,'p-mute',''];
+  /* Halaman status dibuka dari tautan, tanpa keadaan gerbang — nomor agennya
+     tidak diketahui di sini, jadi memang ke nomor pusat. */
+  const waSiap = WA_ADMIN && WA_ADMIN !== WA_PLACEHOLDER;
+  const teksWa = `Halo The Tamperan Cruise, saya ingin menanyakan pesanan ${o.kode}.`;
+
+  const tamb = Array.isArray(o.tambahan) ? o.tambahan : [];
+  const psr  = peserta || [];
+
+  kotak.innerHTML = `<h2 style="display:block">Status pesanan</h2>
+    <div class="card">
+      <div class="kode-besar mono">${esc(o.kode)}</div>
+      <div style="margin:8px 0 14px"><span class="pill ${s[1]}">${esc(s[0])}</span></div>
+      <p class="sub" style="margin-bottom:0">${esc(s[2])}</p>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 14px;font-size:16.5px">Perjalanan pesanan</h3>
+      <ul class="tl">${garisWaktu(o)}</ul>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:16.5px">Rincian</h3>
+      <div class="rk"><span>Atas nama</span><span>${esc(o.pemesan_nama)}</span></div>
+      <div class="rk"><span>Pelayaran</span><span>${esc(o.produk)}</span></div>
+      <div class="rk"><span>Tanggal berangkat</span><span>${
+        o.tanggal_berangkat ? tglPanjang(o.tanggal_berangkat) : 'belum ditentukan'}</span></div>
+      <div class="rk"><span>Kapal</span><span>${o.kapal
+        ? esc(o.kapal)
+        : '<span style="color:var(--muted)">ditentukan menjelang keberangkatan</span>'}</span></div>
+      <div class="rk"><span>Penumpang</span><span>${o.pax} orang${o.anak?` · ${o.anak} anak`:''}</span></div>
+      ${tamb.map(t => `<div class="rk"><span>${esc(t.nama)}${
+        t.jumlah > 1 ? ` × ${t.jumlah}` : ''}</span><span>${rp(t.harga * t.jumlah)}</span></div>`).join('')}
+      <div class="rk"><span>Total</span><span>${rp(o.total)}</span></div>
+    </div>
+
+    ${psr.length ? `<div class="card">
+      <h3 style="margin:0 0 4px;font-size:16.5px">Daftar peserta</h3>
+      <p class="sub" style="margin-bottom:10px">${o.sudah_naik} dari ${o.jumlah_penumpang} sudah naik kapal.</p>
+      ${psr.map(p => `<div class="pst${p.naik?' naik':''}">
+        <span class="no">${p.urut}</span>
+        <span style="flex:1">${esc(p.nama)}</span>
+        ${p.naik
+          ? `<span class="pill p-ok">NAIK ${p.naik_jam ? jamSaja(p.naik_jam) : ''}</span>`
+          : '<span class="pill p-mute">BELUM</span>'}</div>`).join('')}
+      ${o.tipe === 'biro' ? `<div class="note" style="margin-bottom:0"><b>Nama peserta bisa disusulkan</b>
+        Untuk pemesanan biro, nama di atas masih penanda urut. Kirimkan daftar nama
+        sebenarnya ke agen Anda sebelum keberangkatan.</div>` : ''}
+    </div>` : ''}
+
+    <div class="card">
+      ${waSiap ? `<a class="btn wa blok"
+          href="https://wa.me/${WA_ADMIN}?text=${encodeURIComponent(teksWa)}"
+          target="_blank" rel="noopener">Tanya lewat WhatsApp</a>` : ''}
+      <a class="btn ghost blok" style="margin-top:9px" href="${location.pathname}">Buat pesanan baru</a>
+      <div class="hint" style="text-align:center;margin-top:10px">
+        Simpan tautan halaman ini — bisa dibuka kapan saja tanpa login.</div>
+    </div>`;
+}
+
+/* Timeline empat langkah, mengikuti acuan Suroboyo Mlayu Bengi.
+   Aturannya: langkah yang SUDAH lewat ditandai centang, langkah yang sedang
+   ditunggu diberi lingkaran biru, sisanya abu-abu. Pesanan batal memotong
+   timeline di tengah — tidak ditampilkan seolah masih berjalan. */
+function garisWaktu(o){
+  const batal = ['cancel_cuaca','cancel_pembeli','expired'].includes(o.status);
+  const li = (kelas, judul, ket) =>
+    `<li class="${kelas}"><div class="dot"></div><div>
+       <div class="tt">${judul}</div>${ket?`<div class="st">${ket}</div>`:''}</div></li>`;
+
+  if (batal){
+    const sebab = { cancel_cuaca: 'Keberangkatan dibatalkan karena cuaca.',
+                    cancel_pembeli: 'Pesanan dibatalkan.',
+                    expired: 'Pesanan kedaluwarsa karena belum dibayar.' }[o.status];
+    return li('done', 'Pesanan dibuat', jam(o.dibuat))
+         + li('batal', 'Pesanan berhenti di sini', `${esc(sebab)} · ${jam(o.diubah)}`);
+  }
+
+  const lunas  = ['paid','boarded'].includes(o.status);
+  const naikSemua = o.jumlah_penumpang > 0 && o.sudah_naik >= o.jumlah_penumpang;
+  const adaNaik   = o.sudah_naik > 0;
+
+  return li('done', 'Pesanan dibuat', jam(o.dibuat))
+    + li(lunas ? 'done' : 'now',
+         'Pembayaran dikonfirmasi',
+         lunas ? jam(o.diubah)
+               : o.status === 'waiting' ? 'Bukti pembayaran sedang diperiksa petugas'
+                                        : 'Menunggu konfirmasi bersama agen Anda lewat WhatsApp')
+    + li(o.tanggal_berangkat && o.kapal ? 'done' : (lunas ? 'now' : ''),
+         'Kapal ditentukan',
+         o.kapal ? `${esc(o.kapal)}${o.tanggal_berangkat?' · '+tglPanjang(o.tanggal_berangkat):''}`
+                 : 'Ditentukan petugas menjelang keberangkatan')
+    + li(naikSemua ? 'done' : (adaNaik ? 'now' : ''),
+         'Sudah naik kapal',
+         naikSemua ? 'Semua penumpang tercatat naik'
+                   : adaNaik ? `${o.sudah_naik} dari ${o.jumlah_penumpang} sudah naik`
+                             : 'Dicatat petugas saat boarding');
+}
+
+/* ====================================================================
+   TUTORIAL "CARA PESAN"
+   --------------------------------------------------------------------
+   Muncul sendiri sekali pada kunjungan pertama, dan bisa diputar ulang
+   lewat tombol "Cara pesan" di kanan atas.
+
+   Langkah menyesuaikan keadaan: sebelum kode agen sah, form belum ada di
+   layar — jadi langkah-langkah form dilewati sendiri. Setelah kodenya sah,
+   tutorial bisa diputar ulang dan langkah formnya baru muncul.
+   ==================================================================== */
+const TUTOR_VERSI = 'v1';
+const TUTOR_KUNCI = 'ttc_cara_pesan_' + TUTOR_VERSI;
+
+const TUTOR = [
+  { cari:'#produk', judul:'Harga pelayaran',
+    teks:'Empat paket beserta harganya. Harga di sini sudah yang terbaru — '
+       + 'diambil langsung dari sistem kami, bukan ditulis tangan.' },
+  /* Langkah bersyarat: tutorial berhenti di sini sampai kodenya terbukti sah,
+     seperti tutorial game yang menyuruh menekan sesuatu dulu sebelum lanjut.
+     Tanpa ini, langkah-langkah form tersaring habis pada kunjungan pertama
+     (formnya memang belum ada di layar) dan isi pemesanan tidak pernah dijelaskan. */
+  { cari:'#gate', judul:'Kode agen dulu', tunggu: () => S.kodeOk,
+    tungguTeks:'Isi kode agen dulu',
+    teks:'Pemesanan di The Tamperan Cruise dilayani lewat agen resmi. Masukkan kode '
+       + 'dari agen Anda di kotak ini, lalu tekan <b>Periksa kode</b>. Kalau benar, '
+       + 'muncul tanda hijau SAH dan form pemesanan terbuka &mdash; panduan ini lanjut sendiri. '
+       + 'Kalau merah, kodenya salah ketik atau sudah tidak berlaku.' },
+  { cari:'#tb-per', judul:'Perorangan atau biro',
+    teks:'Pilih Perorangan untuk keluarga atau rombongan pribadi. Biro / Travel hanya '
+       + 'untuk biro yang sudah bekerja sama, dan harus memakai kode biro.' },
+  { cari:'#f-tgl', judul:'Tanggal berangkat',
+    teks:'Pilih tanggal rencana berlayar. Tidak bisa tanggal yang sudah lewat.' },
+  { cari:'#f-pax', judul:'Jumlah penumpang',
+    teks:'Isi jumlah orang. Baris nama penumpang di bawah akan menyesuaikan sendiri '
+       + 'sebanyak angka yang Anda isi.' },
+  { cari:'#fld-voucher', judul:'Kode voucher (kalau ada)',
+    teks:'Kalau agen Anda memberi kode voucher, masukkan di sini lalu tekan Periksa. '
+       + 'Kode voucher berbeda dengan kode agen, dan tidak semua paket bisa memakainya.' },
+  { cari:'#kartu-tambahan', judul:'Tambahan',
+    teks:'Centang kalau mau. Paddleboard bisa diisi jumlahnya sesuai kebutuhan. '
+       + 'Boleh dilewati dan dibicarakan lagi dengan agen.' },
+  { cari:'#t-pnp', judul:'Daftar nama penumpang',
+    teks:'Isi nama sesuai identitas. Usia dipakai untuk menyiapkan life jacket ukuran anak — '
+       + 'kosongkan saja kalau belum tahu, jangan diisi angka asal.' },
+  { cari:'#ringkas', judul:'Perkiraan biaya',
+    teks:'Rincian biaya yang menyesuaikan sendiri. Angkanya masih perkiraan: total yang '
+       + 'mengikat dihitung ulang sistem kami saat pesanan disimpan.' },
+  { cari:'#kirim', judul:'Simpan pesanan',
+    teks:'Halaman ini tidak menerima uang sama sekali. Setelah disimpan, Anda dapat kode '
+       + 'pesanan dan tombol ke WhatsApp agen Anda untuk konfirmasi dan pembayaran.' },
+  /* cari:null -> kartu di tengah layar tanpa sorotan. Dipakai untuk penutup,
+     karena tombol Cara pesan ada di bar yang menempel (sticky) dan sorotan
+     elemen menempel gampang meleset saat halaman tergulir. */
+  { cari:null, judul:'Selesai',
+    teks:'Itu saja. Kalau mau mengulang penjelasan ini, tekan tombol '
+       + '<b>Cara pesan</b> di kanan atas halaman.' },
+];
+
+let TUT = { i: 0, jalan: false, urut: [] };
+
+function tutorElemen(cari){
+  for (const sel of (Array.isArray(cari) ? cari : [cari])){
+    const el = document.querySelector(sel);
+    if (el && el.offsetParent !== null) return el;
+  }
+  return null;
+}
+
+function tutorBersih(){
+  document.querySelector('.tutor-sorot')?.remove();
+  document.querySelector('.tutor-kartu')?.remove();
+}
+
+function tutorTutup(selesai){
+  TUT.jalan = false;
+  tutorBersih();
+  document.removeEventListener('keydown', tutorTombol);
+  window.removeEventListener('resize', tutorGambar);
+  try { localStorage.setItem(TUTOR_KUNCI, selesai ? 'selesai' : 'lewati'); } catch(e){}
+}
+
+const tutorTombol = e => {
+  if (!TUT.jalan) return;
+  if (e.key === 'Escape'){ e.preventDefault(); tutorTutup(false); }
+  if (e.key === 'Enter' || e.key === 'ArrowRight'){ e.preventDefault(); tutorMaju(1); }
+  if (e.key === 'ArrowLeft'){ e.preventDefault(); tutorMaju(-1); }
+};
+
+function tutorMaju(arah){
+  const L = TUT.urut[TUT.i];
+  /* Maju ditahan kalau syarat langkah ini belum terpenuhi. Mundur selalu boleh.
+     Tombolnya sengaja TIDAK dimatikan: tombol mati tidak memicu klik, jadi
+     pengguna menekan lalu tidak terjadi apa-apa tanpa tahu sebabnya. */
+  if (arah > 0 && typeof L?.tunggu === 'function' && !L.tunggu()){
+    pesan('Isi dan periksa kode agen dulu &mdash; panduannya lanjut sendiri '
+        + 'begitu kodenya sah.', 7000);
+    return;
+  }
+  const tujuan = TUT.i + arah;
+  if (tujuan < 0) return;
+  if (tujuan >= TUT.urut.length) return tutorTutup(true);
+  TUT.i = tujuan;
+  tutorGambar();
+}
+
+/* Dipanggil saat keadaan berubah (mis. kode agen jadi sah). Daftar langkah
+   disusun ulang karena bagian yang tadinya belum ada di layar kini muncul,
+   lalu tutorial lanjut sendiri dari langkah yang sedang ditunggu. */
+function tutorLanjutKalauMenunggu(){
+  if (!TUT.jalan) return;
+  const sekarang = TUT.urut[TUT.i];
+  if (!sekarang || typeof sekarang.tunggu !== 'function' || !sekarang.tunggu()) return;
+
+  TUT.urut = TUTOR.filter(L => L.cari === null || tutorElemen(L.cari));
+  const i = TUT.urut.indexOf(sekarang);
+  TUT.i = i >= 0 ? i : TUT.i;
+  tutorMaju(1);
+}
+
+/* Elemen di dalam bar yang menempel (position sticky/fixed) tidak boleh
+   diposisikan memakai scrollY: posisinya di layar tetap, tapi posisi
+   dokumennya ikut bergeser. Kalau dipaksa, sorotannya mendarat jauh di bawah
+   — itu yang membuat langkah penutup menyoroti harga, bukan tombolnya. */
+function elemenMenempel(el){
+  for (let n = el; n && n !== document.body; n = n.parentElement){
+    const pos = getComputedStyle(n).position;
+    if (pos === 'fixed' || pos === 'sticky') return true;
+  }
+  return false;
+}
+
+/* scrollIntoView dengan behavior:'smooth' berjalan asinkron. Mengukur posisi
+   tepat sesudahnya memberi angka SEBELUM halaman tergulir. Jadi ditunggu
+   sampai posisi gulir berhenti berubah, maksimal ~600ms. */
+function tungguGulirBerhenti(lalu){
+  let akhir = -1, diam = 0;
+  const cek = () => {
+    if (!TUT.jalan) return;
+    const y = window.scrollY;
+    diam = (y === akhir) ? diam + 1 : 0;
+    akhir = y;
+    if (diam >= 3 || diam > 40) return lalu();
+    requestAnimationFrame(cek);
+  };
+  requestAnimationFrame(cek);
+}
+
+function tutorGambar(){
+  if (!TUT.jalan) return;
+  const L = TUT.urut[TUT.i];
+  if (!L) return;
+  tutorBersih();
+
+  /* Langkah penutup tidak menunjuk apa pun: kartunya di tengah layar. */
+  if (L.cari === null) return tutorKartuTengah(L);
+
+  /* Sasaran bisa hilang di tengah jalan (mis. pengguna menutup gerbang kode).
+     Dilewati, bukan dibiarkan menggantung dengan layar gelap. */
+  const el = tutorElemen(L.cari);
+  if (!el){
+    if (TUT.i + 1 < TUT.urut.length){ TUT.i++; return tutorGambar(); }
+    return tutorTutup(true);
+  }
+
+  el.scrollIntoView({ behavior:'smooth', block:'center' });
+  tungguGulirBerhenti(() => tutorLukis(L, el));
+}
+
+function tutorLukis(L, el){
+  if (!TUT.jalan) return;
+  tutorBersih();
+  const menempel = elemenMenempel(el);
+  const r = el.getBoundingClientRect();
+  const sy = menempel ? 0 : window.scrollY;
+  const sx = menempel ? 0 : window.scrollX;
+  const p = 7;
+
+  const sorot = document.createElement('div');
+  sorot.className = 'tutor-sorot';
+  sorot.style.position = menempel ? 'fixed' : 'absolute';
+  Object.assign(sorot.style, {
+    top:(r.top+sy-p)+'px', left:(r.left+sx-p)+'px',
+    width:(r.width+p*2)+'px', height:(r.height+p*2)+'px'
+  });
+  document.body.appendChild(sorot);
+
+  const kartu = document.createElement('div');
+  kartu.className = 'tutor-kartu';
+  kartu.innerHTML = tutorIsiKartu(L);
+  kartu.style.position = menempel ? 'fixed' : 'absolute';
+  document.body.appendChild(kartu);
+
+  const kr = kartu.getBoundingClientRect();
+  let atas = r.bottom + sy + 14;
+  if (r.bottom + 14 + kr.height > window.innerHeight && r.top - 14 - kr.height > 0)
+    atas = r.top + sy - kr.height - 14;
+  let kiri = r.left + sx + r.width/2 - kr.width/2;
+  kiri = Math.max(sx + 12, Math.min(kiri, sx + window.innerWidth - kr.width - 12));
+  kartu.style.top = atas + 'px';
+  kartu.style.left = kiri + 'px';
+
+  tutorPasangTombol(kartu);
+}
+
+/* Kartu di tengah layar, tanpa sorotan, dengan latar gelap penuh. */
+function tutorKartuTengah(L){
+  const lapis = document.createElement('div');
+  lapis.className = 'tutor-sorot';
+  lapis.style.position = 'fixed';
+  Object.assign(lapis.style, { top:'50%', left:'50%', width:'0', height:'0' });
+  document.body.appendChild(lapis);
+
+  const kartu = document.createElement('div');
+  kartu.className = 'tutor-kartu';
+  kartu.style.position = 'fixed';
+  kartu.innerHTML = tutorIsiKartu(L);
+  document.body.appendChild(kartu);
+  const kr = kartu.getBoundingClientRect();
+  kartu.style.top  = Math.max(12, (window.innerHeight - kr.height)/2) + 'px';
+  kartu.style.left = Math.max(12, (window.innerWidth  - kr.width)/2)  + 'px';
+  tutorPasangTombol(kartu);
+}
+
+/* Isi kartu dipakai dua tempat: kartu bersorotan dan kartu di tengah layar.
+   Satu fungsi supaya keduanya tidak pernah berbeda. */
+function tutorIsiKartu(L){
+  /* Langkah bersyarat: tombol Lanjut dimatikan sampai syaratnya terpenuhi,
+     supaya pengguna tidak melompati bagian yang justru jadi kuncinya. */
+  const menunggu = typeof L.tunggu === 'function' && !L.tunggu();
+  const labelMaju = menunggu ? (L.tungguTeks || 'Selesaikan dulu')
+                   : (TUT.i===TUT.urut.length-1 ? 'Selesai' : 'Lanjut');
+  return `
+    <div class="tnum">Langkah ${TUT.i+1} dari ${TUT.urut.length}</div>
+    <div class="tt">${esc(L.judul)}</div>
+    <div class="ts">${L.teks}</div>
+    <div class="tutor-titik">${TUT.urut.map((_,k) =>
+      `<i class="${k===TUT.i?'on':''}"></i>`).join('')}</div>
+    <div class="tutor-kaki">
+      <button class="lewati" data-t-lewati>Lewati</button>
+      <button class="tutor-btn ghost" data-t-mundur ${TUT.i===0?'disabled':''}>Kembali</button>
+      <button class="tutor-btn${menunggu?' nunggu':''}" data-t-maju>${labelMaju}</button>
+    </div>`;
+}
+
+function tutorPasangTombol(kartu){
+  kartu.querySelector('[data-t-maju]').onclick   = () => tutorMaju(1);
+  kartu.querySelector('[data-t-mundur]').onclick = () => tutorMaju(-1);
+  kartu.querySelector('[data-t-lewati]').onclick = () => tutorTutup(false);
+}
+
+function mulaiTutor(paksa){
+  /* Hanya langkah yang sasarannya benar-benar ada di layar yang dipakai, supaya
+     nomor "Langkah 3 dari 7" jujur — bukan 3 dari 12 lalu melompat-lompat. */
+  TUT.urut = TUTOR.filter(L => L.cari === null || tutorElemen(L.cari));
+  if (!TUT.urut.length) return;
+  if (!paksa){
+    try { if (localStorage.getItem(TUTOR_KUNCI)) return; } catch(e){ return; }
+  }
+  TUT.i = 0; TUT.jalan = true;
+  document.addEventListener('keydown', tutorTombol);
+  window.addEventListener('resize', tutorGambar);
+  tutorGambar();
+}
+
+/* ====================== PASANG ====================== */
+$('tb-per').onclick  = () => setTipe('perorangan');
+$('tb-biro').onclick = () => setTipe('biro');
+$('bcek').onclick    = () => cekKodeAgen();
+$('bkode').onkeydown = e => { if (e.key === 'Enter'){ e.preventDefault(); cekKodeAgen(); } };
+$('f-produk').onchange = gambarUlang;
+$('f-pax').oninput     = gambarUlang;
+$('f-tgl').onchange    = ringkasan;
+$('vcek').onclick      = cekVoucher;
+$('f-vou').onkeydown   = e => { if (e.key === 'Enter'){ e.preventDefault(); cekVoucher(); } };
+/* Mengetik ulang kode melepas status 'berlaku' — supaya tidak ada voucher sah
+   yang nyangkut dari kode sebelumnya. */
+$('f-vou').oninput     = () => { if (S.vouOk) { S.vouOk=false; S.vouKode=null;
+  $('vou-ket').textContent='Tekan Periksa untuk memeriksa kode ini.'; ringkasan(); } };
+$('f-anak').oninput    = ringkasan;
+$('kirim').onclick     = kirim;
+$('tombol-tutor').onclick = () => mulaiTutor(true);
+
+/* ====================== PINTU CEPAT ======================
+   Bentuknya meniru baris pemesanan di rancangan, tapi TIDAK menyimpan apa pun.
+   Tugasnya cuma memindahkan tanggal dan jumlah orang ke formulir lengkap lalu
+   mengantar orangnya ke sana. Pesanan tetap lahir dari formulir penuh, karena
+   kode agen, nama penumpang, NIK, dan alamat KTP semuanya wajib.
+
+   Dibuat begini, bukan sebagai formulir kedua, supaya tidak ada DUA tempat
+   yang bisa membuat pesanan. Dua jalur masuk ke satu tabel uang adalah cara
+   paling gampang melahirkan selisih data yang tidak ketahuan sampai akhir. */
+$('q-kirim').onclick = () => {
+  const tg  = ($('q-tgl').value || '').trim();
+  const pax = parseInt(($('q-pax').value || '').replace(/[^0-9]/g, ''), 10);
+
+  if (tg)  $('f-tgl').value = tg;
+  if (Number.isFinite(pax) && pax > 0) $('f-pax').value = Math.min(pax, 200);
+
+  /* Batas tanggal dijaga oleh atribut min/max pada #f-tgl yang disetel muat();
+     kalau yang diketik di pintu cepat di luar batas itu, salinannya ditolak
+     browser sendiri dan #f-tgl tetap kosong. Diberi tahu, bukan didiamkan. */
+  if (tg && !$('f-tgl').value){
+    $('f-tgl').value = '';
+    pesan('<b>Tanggal belum bisa dipakai.</b> Pilih tanggal mulai hari ini '
+        + 'sampai satu tahun ke depan.', 9000);
+  }
+
+  gambarUlang();
+
+  /* Formulirnya masih terkunci kalau kode agen belum diperiksa. Yang sudah
+     diketik tetap tersimpan; orangnya diantar ke gerbangnya, bukan ke kartu
+     yang isinya tersembunyi. */
+  if (!S.kodeOk){
+    $('gate').scrollIntoView({ behavior:'smooth', block:'center' });
+    $('bkode').focus({ preventScroll:true });
+    pesan('<b>Tersimpan.</b> Masukkan dulu kode agen Anda untuk membuka '
+        + 'formulir pemesanan.', 8000);
+    return;
+  }
+  $('utama').scrollIntoView({ behavior:'smooth', block:'start' });
+};
+['q-tgl','q-pax'].forEach(id => $(id).onkeydown = e => {
+  if (e.key === 'Enter'){ e.preventDefault(); $('q-kirim').onclick(); }
+});
+
+/* ====================== SOROTAN SIRIP KIRI ======================
+   Menandai bagian mana yang sedang dilihat. Memakai IntersectionObserver,
+   bukan penghitungan posisi di setiap kejadian scroll — yang kedua memaksa
+   browser menghitung ulang tata letak puluhan kali per detik dan terasa
+   tersendat di HP kelas menengah. */
+(() => {
+  const tautan = [...document.querySelectorAll('.rusuk nav a[data-sirip]')];
+  if (!tautan.length || !('IntersectionObserver' in window)) return;
+  const bagian = tautan.map(a => document.getElementById(a.dataset.sirip))
+                       .filter(Boolean);
+  const tandai = id => tautan.forEach(a =>
+    a.classList.toggle('on', a.dataset.sirip === id));
+  const pengamat = new IntersectionObserver(entri => {
+    const kena = entri.filter(e => e.isIntersecting)
+      .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+    if (kena) tandai(kena.target.id);
+  }, { rootMargin: '-72px 0px -62% 0px', threshold: 0 });
+  bagian.forEach(b => pengamat.observe(b));
+})();
+
+if (qs.get('t')) {
+  /* Halaman status bukan halaman pemesanan — tutorial "cara pesan" tidak relevan. */
+  $('tombol-tutor').classList.add('sembunyi');
+  cekStatus(qs.get('t'));
+} else {
+  setTipe('perorangan');
+  await muat();
+  /* Dijalankan setelah daftar produk tergambar; kalau langsung, sasaran langkah
+     pertama belum ada di layar. Hanya muncul sekali per browser. */
+  setTimeout(() => mulaiTutor(false), 700);
+}
+</script>
+</body>
+</html>
