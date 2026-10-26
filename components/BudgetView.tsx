@@ -10,6 +10,17 @@ interface Props {
   projectFilter: string;
 }
 
+/**
+ * Perluasan lokal untuk kolom `tanggal_pengajuan` (migration
+ * `budget_tanggal_pengajuan`, 26 Okt 2026).
+ *
+ * Ditaruh di sini, bukan langsung di `BudgetRequest` pada lib/types.ts, supaya
+ * perubahan ini tidak memaksa deploy berkas yang dipakai belasan layar lain.
+ * PR berikutnya: pindahkan field ini ke lib/types.ts lalu hapus alias ini —
+ * selama masih di sini, layar lain yang membaca budget tidak melihat kolomnya.
+ */
+type BudgetBaris = BudgetRequest & { tanggal_pengajuan: string };
+
 const CATEGORIES = [
   { key: 'ads', label: 'Ads' },
   { key: 'boosting', label: 'Boosting' },
@@ -32,8 +43,19 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
 const MAX_MB = 10;
 const rupiah = (n: number) => 'Rp' + (n || 0).toLocaleString('id-ID');
 
+/**
+ * Tanggal hari ini menurut jam LOKAL (WIB), bukan UTC.
+ * toISOString() memakai UTC — antara 00.00 dan 07.00 WIB dia masih menunjuk
+ * tanggal kemarin, sehingga tanggal bawaan pengajuan meleset sehari.
+ */
+function hariIniLokal(): string {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 export default function BudgetView({ profile, projects, projectFilter }: Props) {
-  const [rows, setRows] = useState<BudgetRequest[]>([]);
+  const [rows, setRows] = useState<BudgetBaris[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'diajukan' | 'disetujui' | 'dibayar' | 'ditolak'>('all');
   // Periode sengaja mulai dari 'all' supaya pengajuan lama tidak mendadak
@@ -45,20 +67,23 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
   const [editId, setEditId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ title: '', category: 'ads', amount: '', description: '', urgency: 'normal', project_id: '' });
+  const [form, setForm] = useState({
+    title: '', category: 'ads', amount: '', description: '',
+    urgency: 'normal', project_id: '', tanggal: hariIniLokal(),
+  });
   const [file, setFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [detail, setDetail] = useState<BudgetRequest | null>(null);
+  const [detail, setDetail] = useState<BudgetBaris | null>(null);
   const [reqProofUrl, setReqProofUrl] = useState<string | null>(null);
   const [payProofUrl, setPayProofUrl] = useState<string | null>(null);
 
   // --- notifikasi & konfirmasi in-app (window.alert/prompt diblokir di browser) ---
   const [toast, setToast] = useState('');
-  const [rejectFor, setRejectFor] = useState<BudgetRequest | null>(null);
+  const [rejectFor, setRejectFor] = useState<BudgetBaris | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [confirmDel, setConfirmDel] = useState<BudgetRequest | null>(null);
+  const [confirmDel, setConfirmDel] = useState<BudgetBaris | null>(null);
   /** Pengajuan yang sedang dikonfirmasi untuk ditarik kembali ke Diajukan. */
-  const [balikFor, setBalikFor] = useState<BudgetRequest | null>(null);
+  const [balikFor, setBalikFor] = useState<BudgetBaris | null>(null);
   const [actBusy, setActBusy] = useState(false);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashToast = (msg: string) => {
@@ -93,15 +118,26 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
    * jadi centang apa pun di Kelola Akses tidak akan mengubahnya — dan tombol
    * yang muncul tanpa bisa dipakai lebih buruk daripada tombol yang tidak ada.
    */
-  const bisaBalikkan = (b: BudgetRequest) =>
+  const bisaBalikkan = (b: BudgetBaris) =>
     profile?.role === 'superadmin' && b.status === 'disetujui';
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
-    let q = supabase.from('budget_requests').select('*').order('created_at', { ascending: false });
+    // Diurutkan menurut tanggal pengajuan, bukan created_at. Sejak tanggalnya
+    // bisa dimundurkan, created_at tidak lagi mewakili urutan kejadian: catatan
+    // yang baru diketik hari ini untuk kejadian minggu lalu akan nangkring di
+    // paling atas padahal bukan yang terbaru. created_at tetap dipakai sebagai
+    // pemisah kalau tanggalnya sama persis.
+    let q = supabase.from('budget_requests').select('*')
+      .order('tanggal_pengajuan', { ascending: false })
+      .order('created_at', { ascending: false });
     if (projectFilter !== 'all') q = q.eq('project_id', projectFilter);
-    const { data } = await q;
-    setRows((data as BudgetRequest[]) || []);
+    const { data, error: errRows } = await q;
+    // `data || []` sengaja tidak dipakai: PostgREST mengembalikan data: null
+    // saat gagal dan data: [] saat memang kosong. Menyamakan keduanya membuat
+    // kegagalan sesaat terbaca sebagai "belum ada pengajuan", dan layar
+    // terlihat bersih padahal datanya ada.
+    if (!errRows && data) setRows(data as BudgetBaris[]);
     if (!silent) setLoading(false);
   }, [projectFilter]);
 
@@ -131,13 +167,17 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
 
   const openModal = () => {
     setEditId(null);
-    setForm({ title: '', category: 'ads', amount: '', description: '', urgency: 'normal', project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || '') });
+    setForm({
+      title: '', category: 'ads', amount: '', description: '', urgency: 'normal',
+      project_id: projectFilter !== 'all' ? projectFilter : (projects[0]?.id || ''),
+      tanggal: hariIniLokal(),
+    });
     setFile(null);
     setError('');
     setOpen(true);
   };
 
-  const openEdit = (b: BudgetRequest) => {
+  const openEdit = (b: BudgetBaris) => {
     setEditId(b.id);
     setForm({
       title: b.title,
@@ -146,6 +186,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
       description: b.description || '',
       urgency: b.urgency || 'normal',
       project_id: b.project_id || '',
+      tanggal: (b.tanggal_pengajuan || '').slice(0, 10) || hariIniLokal(),
     });
     setFile(null);
     setError('');
@@ -153,14 +194,14 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
     setOpen(true);
   };
 
-  const canEdit = (b: BudgetRequest) =>
+  const canEdit = (b: BudgetBaris) =>
     b.status === 'diajukan' && (b.requester_id === profile?.id || profile?.role === 'superadmin');
 
   // Cerminan persis policy RLS "budget_delete" di database: superadmin saja.
   // Kalau tombolnya ditampilkan lebih longgar dari policy, user akan menekan
   // tombol yang "berhasil" tapi tidak menghapus apa pun.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const bolehHapus = (_b: BudgetRequest) => boleh(profile, TUGAS.budgetHapus);
+  const bolehHapus = (_b: BudgetBaris) => boleh(profile, TUGAS.budgetHapus);
 
   const doDelete = async () => {
     const b = confirmDel;
@@ -235,6 +276,15 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
     if (!form.title.trim()) { setError('Judul wajib diisi.'); return; }
     const amount = parseInt(form.amount.replace(/\D/g, ''), 10) || 0;
     if (amount <= 0) { setError('Jumlah harus lebih dari 0.'); return; }
+    if (!form.tanggal) { setError('Tanggal pengajuan wajib diisi.'); return; }
+    // Cerminan trigger `jaga_tanggal_budget` di database. Ada di dua tempat
+    // DENGAN SENGAJA: database yang menolak (itu yang mengikat), layar yang
+    // memberi tahu lebih dulu supaya orang tidak menekan Ajukan lalu menerima
+    // pesan mentah dari Postgres. Kalau salah satunya diubah, ubah dua-duanya.
+    if (form.tanggal > hariIniLokal()) {
+      setError('Tanggal pengajuan tidak boleh melewati hari ini. Mundur boleh, maju tidak.');
+      return;
+    }
     if (file && file.size > MAX_MB * 1024 * 1024) { setError(`Bukti maksimal ${MAX_MB} MB.`); return; }
     setBusy(true); setError('');
 
@@ -253,11 +303,17 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
         description: form.description.trim() || null,
         amount,
         urgency: form.urgency,
+        tanggal_pengajuan: form.tanggal,
       };
       if (proof) { patch.request_proof_path = proof.path; patch.request_proof_name = proof.name; }
-      const { error: err } = await supabase.from('budget_requests').update(patch).eq('id', editId);
+      const { data, error: err } = await supabase
+        .from('budget_requests').update(patch).eq('id', editId).select('id');
       setBusy(false);
-      if (err) { setError('Gagal menyimpan perubahan.'); return; }
+      if (err) { setError(err.message); return; }
+      if (!data || data.length === 0) {
+        setError('Tidak ada yang tersimpan — pengajuan ini sudah tidak berstatus Diajukan, atau bukan milikmu.');
+        return;
+      }
       setOpen(false);
       flashToast('Perubahan pengajuan tersimpan.');
       load(true);
@@ -271,19 +327,20 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
       description: form.description.trim() || null,
       amount,
       urgency: form.urgency,
+      tanggal_pengajuan: form.tanggal,
       request_proof_path: proof?.path || null,
       request_proof_name: proof?.name || null,
       requester_id: profile.id,
       requester_name: profile.full_name || profile.email,
     });
     setBusy(false);
-    if (err) { setError('Gagal menyimpan pengajuan.'); return; }
+    if (err) { setError(err.message); return; }
     setOpen(false);
     flashToast('Pengajuan budget terkirim.');
     load(true);
   };
 
-  const approve = async (b: BudgetRequest) => {
+  const approve = async (b: BudgetBaris) => {
     if (!profile) return;
     setActBusy(true);
     const { error: err } = await supabase.from('budget_requests').update({
@@ -313,7 +370,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
     load(true);
   };
 
-  const markPaid = async (b: BudgetRequest, f: File | null) => {
+  const markPaid = async (b: BudgetBaris, f: File | null) => {
     if (!profile) return;
     let proof: { path: string; name: string } | null = null;
     if (f) {
@@ -341,7 +398,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
     return data?.signedUrl || null;
   };
 
-  const openDetail = async (b: BudgetRequest) => {
+  const openDetail = async (b: BudgetBaris) => {
     setDetail(b);
     setReqProofUrl(null);
     setPayProofUrl(null);
@@ -359,28 +416,38 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
   const ymd = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-  const dalamPeriode = useCallback((iso: string) => {
-    const d = new Date(iso);
+  /**
+   * Menerima tanggal berbentuk 'YYYY-MM-DD' dan membandingkannya sebagai TEKS.
+   *
+   * Sebelumnya fungsi ini membaca created_at lalu memakai new Date(). Untuk
+   * kolom tanggal murni itu berbahaya: new Date('2026-10-26') ditafsirkan
+   * sebagai tengah malam UTC, lalu dibaca lagi dengan getDate() yang memakai
+   * jam lokal — di zona negatif hasilnya mundur sehari. Perbandingan teks
+   * tidak punya masalah itu, dan untuk format YYYY-MM-DD urutannya tetap benar.
+   */
+  const dalamPeriode = useCallback((tgl: string) => {
+    const k = (tgl || '').slice(0, 10);
+    if (!k) return false;
     if (dari || sampai) {
-      const k = ymd(d);
       if (dari && k < dari) return false;
       if (sampai && k > sampai) return false;
       return true;
     }
     if (periode === 'all') return true;
-    const kini = new Date();
-    if (periode === 'bulan') {
-      return d.getFullYear() === kini.getFullYear() && d.getMonth() === kini.getMonth();
-    }
+    if (periode === 'bulan') return k.slice(0, 7) === hariIniLokal().slice(0, 7);
     const batas = new Date();
     batas.setDate(batas.getDate() - (periode === '30hari' ? 30 : 90));
-    return d >= batas;
+    return k >= ymd(batas);
   }, [periode, dari, sampai]);
 
   // KPI dan tabel dua-duanya dihitung dari `scoped`. Kalau KPI memakai `rows`
   // penuh sementara tabelnya tersaring, angkanya tidak akan cocok dengan isi
   // layar dan orang akan mengira rekapnya salah.
-  const scoped = useMemo(() => rows.filter((r) => dalamPeriode(r.created_at)), [rows, dalamPeriode]);
+  //
+  // Disaring menurut tanggal_pengajuan, BUKAN created_at. Kalau tetap memakai
+  // created_at, pengajuan 31 Oktober yang baru dicatat 1 November akan jatuh
+  // ke rekap November — persis masalah yang bikin kolom ini ditambahkan.
+  const scoped = useMemo(() => rows.filter((r) => dalamPeriode(r.tanggal_pengajuan)), [rows, dalamPeriode]);
   const filtered = useMemo(() => scoped.filter((r) => filter === 'all' || r.status === filter), [scoped, filter]);
   const projName = (id: string | null) => projects.find((p) => p.id === id)?.name || '—';
 
@@ -404,6 +471,21 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
       ' · ' +
       d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
     );
+  };
+
+  /** Tanggal murni tanpa jam. 'T00:00:00' ditempelkan supaya dibaca sebagai
+   *  tengah malam LOKAL, bukan UTC. */
+  const fmtTgl = (d: string) =>
+    new Date((d || '').slice(0, 10) + 'T00:00:00')
+      .toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  /** Dicatat di hari yang berbeda dari tanggal pengajuannya. Dipakai untuk
+   *  menandai baris yang sengaja dimundurkan, supaya selisihnya tidak
+   *  tersembunyi dari yang menyetujui. */
+  const dicatatBeda = (b: BudgetBaris) => {
+    const tglCatat = ymd(new Date(b.created_at));
+    const tglAjukan = (b.tanggal_pengajuan || '').slice(0, 10);
+    return !!tglAjukan && tglCatat !== tglAjukan;
   };
 
   return (
@@ -470,11 +552,23 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
           ) : (
             <table>
               <thead>
-                <tr><th>Pengajuan</th><th>Project</th><th>Kategori</th><th>Jumlah</th><th>Pemohon</th><th>Status</th><th style={{ width: 200 }}></th></tr>
+                <tr><th style={{ width: 120 }}>Tanggal</th><th>Pengajuan</th><th>Project</th><th>Kategori</th><th>Jumlah</th><th>Pemohon</th><th>Status</th><th style={{ width: 200 }}></th></tr>
               </thead>
               <tbody>
                 {filtered.map((b) => (
                   <tr key={b.id} className="tracker-row" onClick={() => openDetail(b)}>
+                    <td style={{ whiteSpace: 'nowrap' }}>
+                      <b>{fmtTgl(b.tanggal_pengajuan)}</b>
+                      {dicatatBeda(b) && (
+                        <div
+                          className="sub"
+                          title={`Pengajuannya bertanggal ${fmtTgl(b.tanggal_pengajuan)}, tapi baru dicatat di Alpha ${fmt(b.created_at)}`}
+                          style={{ fontSize: 10.5 }}
+                        >
+                          dicatat {fmtTgl(b.created_at)}
+                        </div>
+                      )}
+                    </td>
                     <td>
                       <b className="budget-title-link">{b.title}</b>
                       {b.urgency === 'mendesak' && <span className="manual-tag" style={{ color: 'var(--red)', borderColor: 'var(--red)', marginLeft: 6 }}>mendesak</span>}
@@ -486,7 +580,6 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                     <td><b>{rupiah(b.amount)}</b></td>
                     <td>
                       <span className="row-avatar">{initials(b.requester_name)}</span>{b.requester_name}
-                      <div className="sub" style={{ marginLeft: 40 }}>{fmt(b.created_at)}</div>
                     </td>
                     <td>
                       <span className="status-dot" style={{ background: STATUS_META[b.status]?.color }} />
@@ -544,6 +637,12 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
           Alur: <b>Manager ajukan</b> (+ bukti) → <b>PM ACC</b> → <b>Finance tandai dibayar</b> (+ struk). Ikut tembok unit project.
           {profile?.role === 'superadmin' && ' ACC yang keliru bisa ditarik kembali ke Diajukan selama belum dibayar.'}
         </p>
+        <p className="cal-legend">
+          Kolom <b>Tanggal</b> adalah kapan pengajuannya benar-benar terjadi, bukan kapan diketik di Alpha —
+          boleh dimundurkan untuk yang sudah lewat WhatsApp lebih dulu. Baris yang tanggal catatnya berbeda
+          diberi keterangan kecil di bawah tanggalnya. Penyaring periode dan seluruh angka ringkasan di atas
+          mengikuti kolom ini.
+        </p>
         {!canRequest && (
           <p className="cal-legend" style={{ color: 'var(--amber)' }}>
             Pengajuan budget dinaikkan lewat lead atau manager timmu — bukan diajukan sendiri.
@@ -596,7 +695,14 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
               {/* Riwayat */}
               <div className="budget-detail-label" style={{ marginTop: 16 }}>Riwayat</div>
               <div className="budget-trace">
-                <div><b>Diajukan</b> oleh {detail.requester_name} · {fmt(detail.created_at)}</div>
+                <div>
+                  <b>Diajukan</b> oleh {detail.requester_name} · {fmtTgl(detail.tanggal_pengajuan)}
+                </div>
+                {dicatatBeda(detail) && (
+                  <div className="sub">
+                    Dicatat di Alpha {fmt(detail.created_at)} — tanggal pengajuannya dimundurkan.
+                  </div>
+                )}
                 {detail.approver_name && <div><b>{detail.status === 'ditolak' ? 'Ditolak' : 'Disetujui'}</b> oleh {detail.approver_name}{detail.approved_at ? ' · ' + fmt(detail.approved_at) : ''}</div>}
                 {detail.reject_reason && <div style={{ color: 'var(--red)' }}>Alasan: {detail.reject_reason}</div>}
                 {detail.payer_name && <div><b>Dibayar</b> oleh {detail.payer_name}{detail.paid_at ? ' · ' + fmt(detail.paid_at) : ''}</div>}
@@ -653,26 +759,33 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
               </div>
               <div className="field-row">
                 <div className="field">
+                  <label>Tanggal pengajuan</label>
+                  <input
+                    type="date"
+                    value={form.tanggal}
+                    max={hariIniLokal()}
+                    onChange={(e) => setForm({ ...form, tanggal: e.target.value })}
+                  />
+                  <div className="hint">
+                    {form.tanggal && form.tanggal < hariIniLokal()
+                      ? 'Dimundurkan — dicatat sebagai pengajuan tanggal itu'
+                      : 'Isi mundur kalau pengajuannya sudah lewat WhatsApp lebih dulu'}
+                  </div>
+                </div>
+                <div className="field">
                   <label>Project</label>
                   <select value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
                     <option value="">— umum —</option>
                     {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
+              </div>
+              <div className="field-row">
                 <div className="field">
                   <label>Kategori</label>
                   <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
                     {CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
                   </select>
-                </div>
-              </div>
-              <div className="field-row">
-                <div className="field">
-                  <label>Jumlah (Rp)</label>
-                  <input value={form.amount} inputMode="numeric"
-                    onChange={(e) => setForm({ ...form, amount: e.target.value.replace(/\D/g, '') })}
-                    placeholder="500000" />
-                  {form.amount && <div className="hint">{rupiah(parseInt(form.amount, 10) || 0)}</div>}
                 </div>
                 <div className="field">
                   <label>Urgensi</label>
@@ -681,6 +794,13 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                     <option value="mendesak">Mendesak</option>
                   </select>
                 </div>
+              </div>
+              <div className="field">
+                <label>Jumlah (Rp)</label>
+                <input value={form.amount} inputMode="numeric"
+                  onChange={(e) => setForm({ ...form, amount: e.target.value.replace(/\D/g, '') })}
+                  placeholder="500000" />
+                {form.amount && <div className="hint">{rupiah(parseInt(form.amount, 10) || 0)}</div>}
               </div>
               <div className="field">
                 <label>Bukti (QR / halaman payment)</label>
@@ -698,7 +818,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
             <div className="modal-foot">
               <div className="right">
                 <button className="btn" onClick={() => setOpen(false)} disabled={busy}>Batal</button>
-                <button className="btn primary" onClick={submit} disabled={busy || !form.title.trim()}>
+                <button className="btn primary" onClick={submit} disabled={busy || !form.title.trim() || !form.tanggal}>
                   {busy ? 'Menyimpan…' : (editId ? 'Simpan perubahan' : 'Ajukan')}
                 </button>
               </div>
@@ -760,7 +880,7 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                 , dan pengajuan ini kembali masuk antrean ACC. Pengajunya diberi tahu lewat notifikasi.
               </p>
               <p className="hint" style={{ marginTop: 10 }}>
-                Isi pengajuannya sendiri (judul, jumlah, bukti) tidak berubah. Riwayat pembatalan ini
+                Isi pengajuannya sendiri (judul, jumlah, tanggal, bukti) tidak berubah. Riwayat pembatalan ini
                 tetap tercatat di Log Aktivitas.
               </p>
             </div>

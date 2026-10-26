@@ -25,7 +25,7 @@
  */
 
 /** Nomor build. WAJIB naik setiap kirim berkas untuk deploy. */
-export const VERSI = 'v3';
+export const VERSI = 'v4';
 
 /** Tanggal build ini disiapkan. Ditampilkan di samping nomor. */
 export const VERSI_TANGGAL = '26 Oktober 2026';
@@ -36,7 +36,9 @@ export const VERSI_TANGGAL = '26 Oktober 2026';
  * "ini versi yang mana?" jawabannya bisa dibaca langsung dari layar.
  */
 export const VERSI_ISI = [
+  'Budget: kolom Tanggal pengajuan, boleh dimundurkan',
+  'Budget: penyaring periode dan angka ringkasan ikut tanggal pengajuan',
   'Lembur: daftar pengajuan dikelompokkan per bulan, bisa dilipat',
   'Lembur: Rekap Jam disaring per bulan dan disusun jadi kartu',
-  'Lembur: gagal muat tidak lagi mengosongkan daftar',
+  'Lembur & Budget: gagal muat tidak lagi mengosongkan daftar',
 ];
