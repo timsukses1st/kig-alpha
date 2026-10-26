@@ -271,8 +271,14 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     // `contains` supaya lembur yang mencakup beberapa project ikut muncul di
     // tiap project-nya, bukan cuma di project utama.
     if (projectFilter !== 'all') q = q.contains('project_ids', [projectFilter]);
-    const { data } = await q;
-    setRows((data as OvertimeRequest[]) || []);
+    const { data, error: errRows } = await q;
+    // `data || []` sengaja TIDAK dipakai lagi. PostgREST mengembalikan
+    // data: null saat gagal dan data: [] saat memang kosong; menyamakan
+    // keduanya membuat kegagalan sesaat — misalnya 401 saat token login
+    // sedang diperbarui — terbaca sebagai "belum ada pengajuan" dan
+    // layarnya terlihat bersih padahal datanya ada. Pola yang sama sudah
+    // diperbaiki di Board 28 Sep 2026.
+    if (!errRows && data) setRows(data as OvertimeRequest[]);
 
     // Daftar akun diambil dari tabel profiles supaya setiap user baru yang
     // ditambahkan lewat Kelola Akses langsung muncul di filter — tanpa perlu
@@ -657,6 +663,92 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     [scoped, filter],
   );
 
+  /* ------------------------------------------------------------------ *
+   * Pengelompokan per bulan
+   *
+   * Sebelum ini seluruh pengajuan menumpuk jadi satu daftar. Per 26 Okt
+   * 2026 isinya 527 baris untuk 3 bulan, dan 123 yang menunggu keputusan
+   * tenggelam di antaranya. Pengelompokan ini murni tampilan: datanya
+   * tetap diambil sekaligus seperti sebelumnya, cuma disusun per bulan.
+   * ------------------------------------------------------------------ */
+
+  /** 'YYYY-MM' dari kolom work_date yang bertipe date ('YYYY-MM-DD').
+   *  Dipotong sebagai teks, BUKAN lewat new Date(), supaya tidak ada
+   *  pergeseran zona waktu seperti yang dijelaskan di todayLocal(). */
+  const kunciBulan = (d: string) => (d || '').slice(0, 7);
+
+  const labelBulan = (k: string) => {
+    const b = new Date(k + '-01T00:00:00');
+    return b.toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+  };
+
+  /** Bulan berjalan menurut jam lokal — ini yang dibuka otomatis. */
+  const bulanIni = todayLocal().slice(0, 7);
+
+  /** Bulan yang sengaja ditutup pengguna, atau dibuka padahal bawaannya tutup.
+   *  Nilai true berarti TERTUTUP. Bulan yang belum pernah disentuh tidak ada
+   *  di sini sama sekali, dan nasibnya ditentukan bulanTerbuka() di bawah. */
+  const [bulanTutup, setBulanTutup] = useState<Record<string, boolean>>({});
+
+  /**
+   * Daftar bulan beserta isinya.
+   *
+   * `filtered` sudah urut work_date menurun dari query, jadi urutan bulannya
+   * ikut menurun tanpa perlu disortir ulang. Kalau suatu saat urutan query
+   * diubah, sortir di bawah yang menjaganya tetap benar.
+   */
+  const bulanan = useMemo(() => {
+    const peta: Record<string, {
+      kunci: string; items: OvertimeRequest[];
+      menit: number; menunggu: number;
+    }> = {};
+    const urut: string[] = [];
+    filtered.forEach((r) => {
+      const k = kunciBulan(r.work_date);
+      if (!peta[k]) { peta[k] = { kunci: k, items: [], menit: 0, menunggu: 0 }; urut.push(k); }
+      peta[k].items.push(r);
+      peta[k].menit += menitLembur(r);
+      if (r.status === 'diajukan') peta[k].menunggu += 1;
+    });
+    urut.sort((a, b) => b.localeCompare(a));
+    return urut.map((k) => peta[k]);
+  }, [filtered]);
+
+  /**
+   * Bawaannya: bulan berjalan terbuka, bulan lama tertutup.
+   *
+   * Kalau hasil saringan cuma menyisakan SATU bulan, bulan itu selalu
+   * dibuka — tanpa aturan ini, menyaring "Ditolak" bisa menghasilkan layar
+   * yang isinya satu baris kelompok tertutup dan terlihat seperti kosong.
+   */
+  const bulanTerbuka = (k: string) => {
+    if (bulanan.length === 1) return true;
+    const disentuh = Object.prototype.hasOwnProperty.call(bulanTutup, k);
+    return disentuh ? !bulanTutup[k] : k === bulanIni;
+  };
+
+  const setelBulan = (k: string) => {
+    // Dihitung di luar updater: di dalam updater, bulanTerbuka() tetap
+    // membaca state hasil render ini, bukan `s`, jadi lebih jujur
+    // menghitungnya sekali di sini.
+    const tutupkan = bulanTerbuka(k);
+    setBulanTutup((s) => {
+      const baru: Record<string, boolean> = {};
+      // Disalin manual, bukan { ...s }: tsconfig repo bertarget ES5 dan
+      // spread pada objek di sini sudah pernah jadi sumber masalah.
+      Object.keys(s).forEach((x) => { baru[x] = s[x]; });
+      baru[k] = tutupkan;
+      return baru;
+    });
+  };
+
+  const semuaBulan = (tutup: boolean) =>
+    setBulanTutup(() => {
+      const baru: Record<string, boolean> = {};
+      bulanan.forEach((b) => { baru[b.kunci] = tutup; });
+      return baru;
+    });
+
   /**
    * Rekap & KPI memakai `scoped`, bukan `personRows` — supaya ikut tombol
    * "Lembur saya / Semua tim" persis seperti tabelnya.
@@ -718,6 +810,19 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                 {f === 'all' ? 'Semua' : STATUS_META[f].label}
               </button>
             ))}
+            {/* Muncul hanya kalau memang ada lebih dari satu bulan untuk
+                dilipat. Dengan satu bulan, tombolnya tidak ada gunanya. */}
+            {bulanan.length > 1 && (
+              <>
+                <span style={{ width: 1, background: 'var(--border)', margin: '0 2px' }} />
+                <button className="chip-btn" onClick={() => semuaBulan(false)} title="Buka semua bulan">
+                  Buka semua
+                </button>
+                <button className="chip-btn" onClick={() => semuaBulan(true)} title="Lipat semua bulan">
+                  Tutup semua
+                </button>
+              </>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             {/* Filter per orang hanya untuk yang berwenang melihat lembur tim —
@@ -763,7 +868,40 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                 <tr><th>Tanggal</th><th>Jam</th><th>Durasi</th><th>Project</th><th>Yang dikerjakan</th><th>Pemohon</th><th>Status</th><th style={{ width: 150 }}></th></tr>
               </thead>
               <tbody>
-                {filtered.map((o) => {
+                {bulanan.map((b) => {
+                  const buka = bulanTerbuka(b.kunci);
+                  return (
+                  <Fragment key={b.kunci}>
+                    <tr
+                      className="ot-bulan"
+                      onClick={() => setelBulan(b.kunci)}
+                      style={{ cursor: 'pointer' }}
+                      title={buka ? 'Klik untuk melipat bulan ini' : 'Klik untuk membuka bulan ini'}
+                    >
+                      <td colSpan={8} style={{ background: 'var(--raised)', borderTop: '2px solid var(--border-strong)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 10, color: 'var(--text-3)', width: 10, display: 'inline-block' }}>
+                            {buka ? '▾' : '▸'}
+                          </span>
+                          <b style={{ fontSize: 13 }}>{labelBulan(b.kunci)}</b>
+                          <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+                            {b.items.length} pengajuan · {jamTeksMenit(b.menit)}
+                          </span>
+                          {b.menunggu > 0 && (
+                            <span
+                              title={`${b.menunggu} pengajuan masih menunggu keputusan`}
+                              style={{
+                                fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 20,
+                                background: 'var(--accent-soft)', color: 'var(--st-review)',
+                              }}
+                            >
+                              {b.menunggu} menunggu
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                    {buka && b.items.map((o) => {
                   const jr = jamRingkas(o);
                   return (
                   <tr key={o.id} className="tracker-row" onClick={() => setDetail(o)}>
@@ -836,6 +974,9 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                       </div>
                     </td>
                   </tr>
+                  );
+                })}
+                  </Fragment>
                   );
                 })}
               </tbody>
