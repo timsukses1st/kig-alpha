@@ -20,15 +20,15 @@
  * Sama = deploy masuk. Beda = buka Vercel → Deployments → cek Build Logs.
  *
  * Pola ini sudah dipakai di kig-loka sejak 17 September 2026. Di Alpha
- * nomornya mulai dari v1 karena penandanya baru dipasang hari ini —
+ * nomornya mulai dari v1 karena penandanya baru dipasang 28 September —
  * jangan dibandingkan dengan nomor Loka, dua repo itu punya deret sendiri.
  */
 
 /** Nomor build. WAJIB naik setiap kirim berkas untuk deploy. */
-export const VERSI = 'v2';
+export const VERSI = 'v3';
 
 /** Tanggal build ini disiapkan. Ditampilkan di samping nomor. */
-export const VERSI_TANGGAL = '28 September 2026';
+export const VERSI_TANGGAL = '26 Oktober 2026';
 
 /**
  * Isi build ini — muncul sebagai tooltip saat kursor diarahkan ke nomornya.
@@ -36,8 +36,7 @@ export const VERSI_TANGGAL = '28 September 2026';
  * "ini versi yang mana?" jawabannya bisa dibaca langsung dari layar.
  */
 export const VERSI_ISI = [
-  'Penanda versi build dipasang (file ini + kaki sidebar)',
-  'Board Pitching: tahap "Running" ditambahkan',
-  'Ekspor: filter project pakai project_ids, tidak lagi kehilangan baris',
-  'Board/Akses/Project: gagal muat tidak lagi mengosongkan layar',
+  'Lembur: daftar pengajuan dikelompokkan per bulan, bisa dilipat',
+  'Lembur: Rekap Jam disaring per bulan dan disusun jadi kartu',
+  'Lembur: gagal muat tidak lagi mengosongkan daftar',
 ];

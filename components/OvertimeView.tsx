@@ -758,14 +758,54 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
    * Yang TIDAK ikut cuma saringan status (Diajukan/Disetujui/Ditolak) — rekap
    * memang perlu semuanya untuk bisa memisahkan mana yang disetujui.
    */
+  /** Bahan Rekap Jam: hanya yang disetujui, belum disaring bulan. */
+  const rekapSumber = useMemo(
+    () => scoped.filter((r) => r.status === 'disetujui'),
+    [scoped],
+  );
+
+  /** Bulan apa saja yang punya jam disetujui, untuk deret tombol di Rekap Jam. */
+  const bulanRekapOpsi = useMemo(() => {
+    const peta: Record<string, number> = {};
+    const urut: string[] = [];
+    rekapSumber.forEach((r) => {
+      const k = kunciBulan(r.work_date);
+      if (peta[k] === undefined) { peta[k] = 0; urut.push(k); }
+      peta[k] += menitLembur(r);
+    });
+    urut.sort((a, b) => b.localeCompare(a));
+    return urut.map((k) => ({ kunci: k, menit: peta[k] }));
+  }, [rekapSumber]);
+
+  /** Bulan yang sedang dilihat di Rekap Jam. Bawaannya bulan berjalan. */
+  const [rekapBulan, setRekapBulan] = useState<string>(bulanIni);
+
+  /**
+   * Bulan yang benar-benar dipakai menghitung.
+   *
+   * Pilihan pengguna bisa jadi tidak ada isinya — misalnya dia memilih
+   * Oktober lalu mengganti saringan ke "Lembur saya" dan ternyata bulan itu
+   * kosong untuknya. Daripada menampilkan rekap kosong yang terlihat seperti
+   * kerusakan, layar jatuh ke bulan terbaru yang ada isinya.
+   */
+  const bulanRekapAktif = useMemo(() => {
+    if (rekapBulan === 'all') return 'all';
+    const ada = bulanRekapOpsi.some((b) => b.kunci === rekapBulan);
+    if (ada) return rekapBulan;
+    return bulanRekapOpsi.length > 0 ? bulanRekapOpsi[0].kunci : 'all';
+  }, [rekapBulan, bulanRekapOpsi]);
+
   const rekap = useMemo(() => {
+    const dipakai = bulanRekapAktif === 'all'
+      ? rekapSumber
+      : rekapSumber.filter((r) => kunciBulan(r.work_date) === bulanRekapAktif);
     const map = new Map<string, {
       key: string; name: string; menit: number; count: number;
-      /** Rincian pengajuannya, supaya barisnya bisa dibuka untuk melihat
+      /** Rincian pengajuannya, supaya kartunya bisa dibuka untuk melihat
        *  pekerjaan apa saja yang menghasilkan jam tersebut. */
       items: OvertimeRequest[];
     }>();
-    scoped.filter((r) => r.status === 'disetujui').forEach((r) => {
+    dipakai.forEach((r) => {
       const key = peopleKey(r);
       const cur = map.get(key) || { key, name: r.requester_name || '—', menit: 0, count: 0, items: [] };
       cur.menit += menitLembur(r);
@@ -776,10 +816,23 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
     return Array.from(map.values())
       .map((v) => ({ ...v, items: v.items.sort((a, b) => b.work_date.localeCompare(a.work_date)) }))
       .sort((a, b) => b.menit - a.menit);
-  }, [scoped]);
+  }, [rekapSumber, bulanRekapAktif]);
 
-  /** Baris rekap yang sedang dibuka rinciannya. */
+  /** Kartu rekap yang sedang dibuka rinciannya. */
   const [openRekap, setOpenRekap] = useState<string | null>(null);
+
+  /** Isi kartu yang sedang dibuka. Dicari dari `rekap` yang sudah tersaring
+   *  bulan, jadi kalau orangnya tidak ada di bulan yang dipilih, panelnya
+   *  ikut hilang sendiri — tidak perlu dibersihkan lewat useEffect. */
+  const rekapBuka = openRekap ? (rekap.filter((r) => r.key === openRekap)[0] || null) : null;
+
+  /** Total jam disetujui SELURUH periode, untuk kartu KPI di atas layar.
+   *  Sengaja tidak memakai `rekap`, karena sejak Rekap Jam disaring per bulan
+   *  angka itu tidak lagi mewakili keseluruhan. */
+  const totalMenitDisetujui = useMemo(
+    () => rekapSumber.reduce((a, r) => a + menitLembur(r), 0),
+    [rekapSumber],
+  );
 
   // `scoped` sudah menerapkan Lembur saya / Semua tim, jadi tidak perlu diulang di sini.
   const myPending = scoped.filter((r) => r.status === 'diajukan').length;
@@ -800,7 +853,7 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
         <div className="kpi-row">
           <div className="kpi"><div className="kpi-label">Menunggu keputusan</div><div className="kpi-value" style={{ color: 'var(--st-review)' }}>{myPending}</div></div>
           <div className="kpi"><div className="kpi-label">Disetujui (pengajuan)</div><div className="kpi-value" style={{ color: 'var(--green)' }}>{scoped.filter((r) => r.status === 'disetujui').length}</div></div>
-          <div className="kpi"><div className="kpi-label">Total jam disetujui</div><div className="kpi-value" style={{ fontSize: 20 }}>{jamTeksMenit(rekap.reduce((a, r) => a + r.menit, 0))}</div></div>
+          <div className="kpi"><div className="kpi-label">Total jam disetujui</div><div className="kpi-value" style={{ fontSize: 20 }}>{jamTeksMenit(totalMenitDisetujui)}</div></div>
         </div>
 
         <div className="team-filter" style={{ justifyContent: 'space-between' }}>
@@ -984,12 +1037,12 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
           )}
         </div>
 
-        {rekap.length > 0 && (
+        {bulanRekapOpsi.length > 0 && (
           <>
             <div className="section-title" style={{ marginTop: 28 }}>
               Rekap Jam (disetujui)
               <span className="sub" style={{ marginLeft: 8, fontWeight: 400, fontSize: 11.5 }}>
-                klik nama untuk melihat rincian pekerjaannya
+                klik kartu untuk melihat rincian pekerjaannya
               </span>
               {person !== 'all' && (
                 <span className="sub" style={{ marginLeft: 8, fontWeight: 400 }}>
@@ -997,78 +1050,159 @@ export default function OvertimeView({ profile, projects, projectFilter }: Props
                 </span>
               )}
             </div>
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Nama</th><th>Jumlah pengajuan</th><th>Total jam lembur</th></tr></thead>
-                <tbody>
+
+            {/* Deret bulan. Bentuknya meniru penyaring periode di Delta Portal:
+                satu baris tombol pendek, bukan daftar yang memanjang ke bawah. */}
+            <div className="team-filter" style={{ marginTop: 0, flexWrap: 'wrap', gap: 6 }}>
+              {bulanRekapOpsi.map((b) => (
+                <button
+                  key={b.kunci}
+                  className={`chip-btn ${bulanRekapAktif === b.kunci ? 'active' : ''}`}
+                  onClick={() => { setRekapBulan(b.kunci); setOpenRekap(null); }}
+                  title={`${labelBulan(b.kunci)} · ${jamTeksMenit(b.menit)}`}
+                >
+                  {labelBulan(b.kunci)}
+                </button>
+              ))}
+              {bulanRekapOpsi.length > 1 && (
+                <button
+                  className={`chip-btn ${bulanRekapAktif === 'all' ? 'active' : ''}`}
+                  onClick={() => { setRekapBulan('all'); setOpenRekap(null); }}
+                  title="Gabungkan seluruh bulan"
+                >
+                  Semua bulan
+                </button>
+              )}
+            </div>
+
+            {/* Tiga angka ringkas, pola kartu KPI yang sudah dipakai di layar ini. */}
+            <div className="kpi-row" style={{ marginTop: 10 }}>
+              <div className="kpi">
+                <div className="kpi-label">Periode</div>
+                <div className="kpi-value" style={{ fontSize: 17 }}>
+                  {bulanRekapAktif === 'all' ? 'Semua bulan' : labelBulan(bulanRekapAktif)}
+                </div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label">Total jam disetujui</div>
+                <div className="kpi-value" style={{ fontSize: 20 }}>
+                  {jamTeksMenit(rekap.reduce((a, r) => a + r.menit, 0))}
+                </div>
+              </div>
+              <div className="kpi">
+                <div className="kpi-label">Orang</div>
+                <div className="kpi-value">{rekap.length}</div>
+              </div>
+            </div>
+
+            {rekap.length === 0 ? (
+              <p className="empty">Belum ada jam disetujui pada periode ini.</p>
+            ) : (
+              <>
+                {/* Kartu berjajar, bukan tabel memanjang. Dengan 20 orang,
+                    daftar satu kolom membuat layar harus digulir jauh hanya
+                    untuk melihat siapa saja yang lembur bulan itu. */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(186px, 1fr))',
+                    gap: 10, marginTop: 10,
+                  }}
+                >
                   {rekap.map((r) => {
                     const buka = openRekap === r.key;
                     return (
-                      <Fragment key={r.key}>
-                        <tr
-                          className="tracker-row"
-                          style={{ cursor: 'pointer' }}
-                          onClick={() => setOpenRekap(buka ? null : r.key)}
-                          title={buka ? 'Tutup rincian' : 'Lihat pekerjaan yang dikerjakan'}
-                        >
-                          <td>
-                            <span className="row-avatar">{initials(r.name)}</span>
-                            <b>{r.name}</b>
-                            <span style={{
-                              marginLeft: 8, color: 'var(--text-3)', fontSize: 11,
-                              display: 'inline-block',
-                              transform: buka ? 'rotate(90deg)' : 'none',
-                              transition: 'transform .12s',
-                            }}>▸</span>
-                          </td>
-                          <td>{r.count}×</td>
-                          <td><b>{jamTeksMenit(r.menit)}</b></td>
-                        </tr>
-
-                        {buka && (
-                          <tr>
-                            {/* Rincian sengaja dipasang sebagai baris terpisah selebar
-                                tabel, bukan kolom baru. Uraian pekerjaan panjang-panjang;
-                                kalau dijejalkan jadi kolom, tabelnya melebar dan judulnya
-                                terpotong. */}
-                            <td colSpan={3} style={{ background: 'var(--raised)', padding: '4px 16px 12px' }}>
-                              {r.items.map((o) => (
-                                <div
-                                  key={o.id}
-                                  style={{
-                                    display: 'flex', gap: 12, alignItems: 'flex-start',
-                                    padding: '9px 0', borderTop: '1px solid var(--border)',
-                                  }}
-                                >
-                                  <div style={{ minWidth: 108, flexShrink: 0 }}>
-                                    <div style={{ fontSize: 12.5, fontWeight: 700 }}>{fmtDate(o.work_date)}</div>
-                                    <div className="sub" style={{ fontSize: 11 }}>
-                                      {sesiLembur(o).map((s) => `${s.mulai}–${s.selesai}`).join(', ')}
-                                    </div>
-                                  </div>
-                                  <div style={{ minWidth: 54, flexShrink: 0, fontSize: 12.5, fontWeight: 700 }}>
-                                    {jamTeksMenit(menitLembur(o))}
-                                  </div>
-                                  <div style={{ minWidth: 0, flex: 1 }}>
-                                    <div style={{ fontSize: 12.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-                                      {o.description}
-                                    </div>
-                                    <div className="sub" style={{ fontSize: 11, marginTop: 2 }}>
-                                      {namaProject(o)}
-                                      {o.approver_name ? ` · disetujui ${o.approver_name}` : ''}
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
+                      <button
+                        key={r.key}
+                        type="button"
+                        onClick={() => setOpenRekap(buka ? null : r.key)}
+                        title={buka ? 'Tutup rincian' : 'Lihat pekerjaan yang dikerjakan'}
+                        style={{
+                          textAlign: 'left', padding: '11px 13px', borderRadius: 10,
+                          background: buka ? 'var(--accent-soft)' : 'var(--panel)',
+                          border: `1px solid ${buka ? 'var(--accent)' : 'var(--border)'}`,
+                          cursor: 'pointer', font: 'inherit', display: 'block', width: '100%',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+                          <span className="row-avatar">{initials(r.name)}</span>
+                          <b style={{
+                            fontSize: 12.5, minWidth: 0, overflow: 'hidden',
+                            textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
+                            {r.name}
+                          </b>
+                        </div>
+                        <div style={{
+                          marginTop: 7, fontSize: 19, fontWeight: 800, lineHeight: 1.15,
+                          color: buka ? 'var(--accent)' : 'var(--text)',
+                        }}>
+                          {jamTeksMenit(r.menit)}
+                        </div>
+                        <div className="sub" style={{ fontSize: 11, marginTop: 1 }}>
+                          {r.count}× pengajuan
+                        </div>
+                      </button>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                </div>
+
+                {/* Rincian dibuka SEKALI di bawah jajaran kartu, bukan di dalam
+                    kartunya. Kalau dibuka di dalam kartu, satu kartu melar dan
+                    seluruh baris grid ikut memanjang. */}
+                {rekapBuka && (
+                  <div
+                    style={{
+                      marginTop: 12, padding: '4px 16px 12px', borderRadius: 10,
+                      background: 'var(--raised)', border: '1px solid var(--border)',
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      gap: 10, padding: '10px 0 2px', flexWrap: 'wrap',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span className="row-avatar">{initials(rekapBuka.name)}</span>
+                        <b style={{ fontSize: 13 }}>{rekapBuka.name}</b>
+                        <span className="sub" style={{ fontSize: 11.5 }}>
+                          {rekapBuka.count}× · {jamTeksMenit(rekapBuka.menit)}
+                          {bulanRekapAktif === 'all' ? '' : ` · ${labelBulan(bulanRekapAktif)}`}
+                        </span>
+                      </div>
+                      <button className="btn act" onClick={() => setOpenRekap(null)}>Tutup</button>
+                    </div>
+                    {rekapBuka.items.map((o) => (
+                      <div
+                        key={o.id}
+                        style={{
+                          display: 'flex', gap: 12, alignItems: 'flex-start',
+                          padding: '9px 0', borderTop: '1px solid var(--border)',
+                        }}
+                      >
+                        <div style={{ minWidth: 108, flexShrink: 0 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 700 }}>{fmtDate(o.work_date)}</div>
+                          <div className="sub" style={{ fontSize: 11 }}>
+                            {sesiLembur(o).map((s) => `${s.mulai}–${s.selesai}`).join(', ')}
+                          </div>
+                        </div>
+                        <div style={{ minWidth: 54, flexShrink: 0, fontSize: 12.5, fontWeight: 700 }}>
+                          {jamTeksMenit(menitLembur(o))}
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 12.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                            {o.description}
+                          </div>
+                          <div className="sub" style={{ fontSize: 11, marginTop: 2 }}>
+                            {namaProject(o)}
+                            {o.approver_name ? ` · disetujui ${o.approver_name}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
           </>
         )}
 
