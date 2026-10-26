@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { boleh, initials, TUGAS, type BudgetRequest, type Profile, type Project } from '@/lib/types';
 
@@ -488,6 +488,106 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
     return !!tglAjukan && tglCatat !== tglAjukan;
   };
 
+  /* ------------------------------------------------------------------ *
+   * Pengelompokan baris
+   *
+   * Per 26 Okt 2026 isinya 278 pengajuan menumpuk jadi satu daftar.
+   * Dikelompokkan per BULAN saja tidak cukup: datanya cuma membentang dua
+   * bulan, jadi Oktober tetap berisi 153 baris. Yang benar-benar memecahnya
+   * adalah per PROJECT — 30 project di Oktober, yang terbesar 51 baris.
+   * Karena itu dua-duanya disediakan dan pengguna yang memilih.
+   * ------------------------------------------------------------------ */
+
+  type ModeKelompok = 'bulan' | 'project' | 'tidak';
+  const [kelompok, setKelompok] = useState<ModeKelompok>('bulan');
+  /** Kunci grup yang sengaja ditutup/dibuka pengguna. true berarti TERTUTUP. */
+  const [grupTutup, setGrupTutup] = useState<Record<string, boolean>>({});
+
+  const labelBulan = (k: string) =>
+    new Date(k + '-01T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' });
+
+  interface Grup {
+    kunci: string; label: string; items: BudgetBaris[];
+    nilai: number; menunggu: number;
+  }
+
+  const grup = useMemo<Grup[]>(() => {
+    const total = (xs: BudgetBaris[]) => xs.reduce((a, r) => a + (r.amount || 0), 0);
+    const tunggu = (xs: BudgetBaris[]) => xs.filter((r) => r.status === 'diajukan').length;
+    if (kelompok === 'tidak') {
+      return [{ kunci: '__semua__', label: '', items: filtered, nilai: total(filtered), menunggu: tunggu(filtered) }];
+    }
+    const peta: Record<string, Grup> = {};
+    const urut: string[] = [];
+    filtered.forEach((b) => {
+      const k = kelompok === 'bulan'
+        ? (b.tanggal_pengajuan || '').slice(0, 7)
+        : (b.project_id || '__umum__');
+      if (!peta[k]) {
+        peta[k] = {
+          kunci: k,
+          label: kelompok === 'bulan' ? labelBulan(k) : (b.project_id ? projName(b.project_id) : '— umum —'),
+          items: [], nilai: 0, menunggu: 0,
+        };
+        urut.push(k);
+      }
+      peta[k].items.push(b);
+      peta[k].nilai += b.amount || 0;
+      if (b.status === 'diajukan') peta[k].menunggu += 1;
+    });
+    const out = urut.map((k) => peta[k]);
+    if (kelompok === 'bulan') {
+      out.sort((a, b) => b.kunci.localeCompare(a.kunci));
+    } else {
+      // Project yang paling banyak menunggu keputusan naik ke atas. Urutan
+      // abjad tidak menolong siapa pun di layar yang gunanya memutuskan.
+      out.sort((a, b) => (b.menunggu - a.menunggu) || (b.nilai - a.nilai));
+    }
+    return out;
+  }, [filtered, kelompok, projects]);
+
+  /**
+   * Bawaan terbuka/tertutup.
+   *
+   * Bulan: bulan berjalan terbuka, bulan lama tertutup — sama seperti Lembur.
+   * Project: SEMUA tertutup, karena 30 project yang terbuka semua sama saja
+   * dengan daftar panjang yang mau dihindari. Baris kepalanya sendiri sudah
+   * memuat jumlah, nilai, dan berapa yang menunggu, jadi tanpa dibuka pun
+   * pertanyaan "project mana yang perlu diurus" sudah terjawab.
+   */
+  const grupTerbuka = (k: string) => {
+    if (kelompok === 'tidak') return true;
+    if (grup.length === 1) return true;
+    const disentuh = Object.prototype.hasOwnProperty.call(grupTutup, k);
+    if (disentuh) return !grupTutup[k];
+    return kelompok === 'bulan' ? k === hariIniLokal().slice(0, 7) : false;
+  };
+
+  const setelGrup = (k: string) => {
+    const tutupkan = grupTerbuka(k);
+    setGrupTutup((s) => {
+      // Disalin manual, bukan { ...s }: tsconfig repo bertarget ES5.
+      const baru: Record<string, boolean> = {};
+      Object.keys(s).forEach((x) => { baru[x] = s[x]; });
+      baru[k] = tutupkan;
+      return baru;
+    });
+  };
+
+  const semuaGrup = (tutup: boolean) =>
+    setGrupTutup(() => {
+      const baru: Record<string, boolean> = {};
+      grup.forEach((g) => { baru[g.kunci] = tutup; });
+      return baru;
+    });
+
+  const gantiKelompok = (m: ModeKelompok) => {
+    setKelompok(m);
+    // Kunci grup bulan dan project tidak sejenis, jadi ingatan lipatan lama
+    // tidak ada artinya di mode baru — dibersihkan supaya bawaannya jelas.
+    setGrupTutup({});
+  };
+
   return (
     <>
       <div className="topbar">
@@ -546,6 +646,29 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
           </div>
         </div>
 
+        <div className="team-filter" style={{ justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="sub" style={{ fontFamily: 'inherit' }}>Kelompokkan</span>
+            <button className={`chip-btn ${kelompok === 'bulan' ? 'active' : ''}`}
+              onClick={() => gantiKelompok('bulan')}>Per bulan</button>
+            {/* Mengelompokkan per project tidak ada gunanya kalau pemilih
+                project di sidebar sudah menyaring ke satu project — hasilnya
+                cuma satu grup berisi segalanya. */}
+            {projectFilter === 'all' && (
+              <button className={`chip-btn ${kelompok === 'project' ? 'active' : ''}`}
+                onClick={() => gantiKelompok('project')}>Per project</button>
+            )}
+            <button className={`chip-btn ${kelompok === 'tidak' ? 'active' : ''}`}
+              onClick={() => gantiKelompok('tidak')}>Satu daftar</button>
+          </div>
+          {kelompok !== 'tidak' && grup.length > 1 && (
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button className="chip-btn" onClick={() => semuaGrup(false)}>Buka semua</button>
+              <button className="chip-btn" onClick={() => semuaGrup(true)}>Tutup semua</button>
+            </div>
+          )}
+        </div>
+
         <div className="table-wrap">
           {loading ? <p className="empty">Memuat…</p> : filtered.length === 0 ? (
             <p className="empty">Belum ada pengajuan pada filter ini.</p>
@@ -555,7 +678,41 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                 <tr><th style={{ width: 120 }}>Tanggal</th><th>Pengajuan</th><th>Project</th><th>Kategori</th><th>Jumlah</th><th>Pemohon</th><th>Status</th><th style={{ width: 200 }}></th></tr>
               </thead>
               <tbody>
-                {filtered.map((b) => (
+                {grup.map((g) => {
+                  const buka = grupTerbuka(g.kunci);
+                  return (
+                  <Fragment key={g.kunci}>
+                    {kelompok !== 'tidak' && (
+                      <tr
+                        onClick={() => setelGrup(g.kunci)}
+                        style={{ cursor: 'pointer' }}
+                        title={buka ? 'Klik untuk melipat' : 'Klik untuk membuka'}
+                      >
+                        <td colSpan={8} style={{ background: 'var(--raised)', borderTop: '2px solid var(--border-strong)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 10, color: 'var(--text-3)', width: 10, display: 'inline-block' }}>
+                              {buka ? '▾' : '▸'}
+                            </span>
+                            <b style={{ fontSize: 13 }}>{g.label}</b>
+                            <span style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
+                              {g.items.length} pengajuan · {rupiah(g.nilai)}
+                            </span>
+                            {g.menunggu > 0 && (
+                              <span
+                                title={`${g.menunggu} pengajuan masih menunggu ACC`}
+                                style={{
+                                  fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 20,
+                                  background: 'var(--accent-soft)', color: 'var(--st-review)',
+                                }}
+                              >
+                                {g.menunggu} menunggu ACC
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    {buka && g.items.map((b) => (
                   <tr key={b.id} className="tracker-row" onClick={() => openDetail(b)}>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <b>{fmtTgl(b.tanggal_pengajuan)}</b>
@@ -629,6 +786,9 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
                     </td>
                   </tr>
                 ))}
+                  </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -642,6 +802,12 @@ export default function BudgetView({ profile, projects, projectFilter }: Props) 
           boleh dimundurkan untuk yang sudah lewat WhatsApp lebih dulu. Baris yang tanggal catatnya berbeda
           diberi keterangan kecil di bawah tanggalnya. Penyaring periode dan seluruh angka ringkasan di atas
           mengikuti kolom ini.
+        </p>
+        <p className="cal-legend">
+          <b>Kelompokkan</b> memecah daftar jadi beberapa bagian yang bisa dilipat. <b>Per bulan</b> membuka
+          bulan berjalan saja. <b>Per project</b> menutup semuanya dan menaikkan project yang paling banyak
+          menunggu ACC ke atas — jumlah, nilai, dan berapa yang menunggu sudah tertulis di baris kepalanya,
+          jadi tidak perlu dibuka untuk tahu mana yang perlu diurus.
         </p>
         {!canRequest && (
           <p className="cal-legend" style={{ color: 'var(--amber)' }}>
